@@ -1,0 +1,11 @@
+{
+  "name": "hardhat-project",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox-viem": "^3.0.0",
+    "hardhat": "^2.22.6"
+  },
+  "dependencies": {
+    "multicaller": "^1.3.2",
+    "solady": "^0.0.228"
+  }
+}
