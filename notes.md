@@ -3,10 +3,9 @@ I got to thinking about randomness over the weekend. I think it is a perfect fir
 * it is difficult to make randomness synchronously available, but we can make it available async in a heavily gas optimized way, allowing it to be readily accessible
 * preimages can be placed on chain (as randomness for sale) for very cheap as immutable data using sstore2 batches (written into contract bytecode)
 * immutable preimages can be stored on chain and can be written when gas prices are low, to arbitrage gas prices
-* i did a calculation and found that if 1 address put the max number of preimages on chain, it would cost ~22c per 100k gwei gas price and could provide 1 preimage per block for 1 day.
-* So 5 preimage providers would spend ~$1 total per day per 100k gwei to put it on chain and provide randomness for every single block.
+* So 5 preimage providers would spend ~$1 total per 100k gwei to put preimages on chain and provide randomness for every single block.
 * the other half of this is of course the revealing of the preimages
-* so the consumer pays for preimages, which triggers the randomness providers to publish their randomness on msgboard.
+* consumer pays for preimages, which triggers the randomness providers to publish their randomness on msgboard.
 * providers will have to monitor to make sure that it gets on chain and we can even do things like let the providers post the data to the contract themselves
 * the only other issue that occurs is the censorship by ommission that can occur.
 * this can be solved by requiring the consumer to also post a preimage with a block deadline that the consumer (or someone with the secret) has to meet.
