@@ -81,7 +81,7 @@ contract Random {
         uint256 seed;
     }
 
-    constructor(address t, uint256 p, uint256 _blockTime) {
+    constructor(address t, uint256 p, uint256 _blockTime) payable {
         price = p;
         token = t;
         if (_blockTime == ZERO) {
