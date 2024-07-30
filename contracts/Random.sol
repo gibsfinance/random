@@ -237,7 +237,9 @@ contract Random {
     }
 
     function _toId(bytes32 hashed, uint256 len) internal pure returns (bytes32) {
-        return bytes32((uint256(hashed) << EIGHT) | uint256(uint8(len)));
+        unchecked {
+            return bytes32((uint256(hashed) << EIGHT) | uint256(uint8(len)));
+        }
     }
 
     function _distribute(address recipient, uint256 amount) internal {
@@ -253,11 +255,12 @@ contract Random {
         }
     }
 
-    function _heat(uint256 required, uint256 expiryOffset, bytes32 orderPreimage, bytes32[] calldata locations)
+    function _heat(uint256 required, uint256 expiryOffset, bytes32 orderPreimage, bytes32[] calldata potentialLocations)
         internal
         returns (bytes32)
     {
         unchecked {
+            bytes32[] memory locations = new bytes32[](required);
             {
                 if (required == ZERO || required >= TWO_FIVE_FIVE) {
                     // only 254 len or fewer allowed
@@ -268,11 +271,12 @@ contract Random {
                     revert MissingPayment();
                 }
                 uint256 i;
-                uint256 len = locations.length;
+                uint256 len = potentialLocations.length;
                 uint256 contributing;
                 do {
                     // non zero means that the value exists
-                    if (_ignite(uint256(locations[i])) == ONE) {
+                    if (_ignite(uint256(potentialLocations[i])) == ONE) {
+                        locations[i] = potentialLocations[i];
                         ++contributing;
                         if (contributing == required) {
                             break;
@@ -287,8 +291,8 @@ contract Random {
                 }
             }
             {
-                bytes32 locsHash = locations.hash();
-                bytes32 key = _toId(EfficientHashLib.hash(locsHash, orderPreimage), locations.length);
+                bytes32 locationsHash = locations.hash();
+                bytes32 key = _toId(EfficientHashLib.hash(locationsHash, orderPreimage), locations.length);
                 address owner = LibMulticaller.senderOrSigner();
                 // front load the cost of requesting randomness
                 // put it on the shoulders of the consumer
@@ -299,7 +303,7 @@ contract Random {
                             uint256((uint48((expiryOffset << TWO_FIVE_FIVE > ZERO) ? block.number : block.timestamp)))
                                 << FOUR_EIGHT
                         ) | uint256(uint48(expiryOffset)),
-                    locationsHash: locsHash,
+                    locationsHash: locationsHash,
                     orderPreimage: orderPreimage,
                     // extra cost + saves later
                     seed: ONE
