@@ -5,11 +5,10 @@ import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {LibPRNG} from "solady/src/utils/LibPRNG.sol";
 import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
+import {ERC20} from "./implementations/ERC20.sol";
+import {Random as RandImplementation} from "./implementations/Random.sol";
 
-interface IERC20 {
-    function transfer(address to, uint256 amount) external returns (bool);
-}
-
+error DeploymentFailed();
 error Misconfigured();
 error UnableToService();
 error MissingPayment();
@@ -25,7 +24,7 @@ event Bleached(bytes32 pointerKey);
 
 event Reprice(address indexed provider, uint256 pricePer);
 
-event Ink(address indexed provider, uint256 markers, address pointer);
+event Ink(address indexed provider, uint256 offset, address pointer);
 
 event Heat(address indexed to, uint256 index);
 
@@ -39,7 +38,7 @@ event OrderPreimageUpdate(bytes32 key, bytes32 before, bytes32 next);
 
 event FundingScattered(address indexed recipient, uint256 amount, bytes32 key);
 
-contract Random {
+contract Random is RandImplementation {
     using SSTORE2 for address;
     using SSTORE2 for bytes;
 
@@ -50,7 +49,6 @@ contract Random {
 
     address internal immutable token;
     uint256 internal immutable price;
-    uint256 internal immutable targetedBlockTime;
     uint256 internal constant ZERO = 0;
     uint256 internal constant ONE = 1;
     uint256 internal constant EIGHT = 8;
@@ -67,12 +65,12 @@ contract Random {
     uint256 internal constant TWO_FIVE_SIX = 256;
     uint256 internal constant ONE_HUNDRED_ETHER = 100 ether;
 
-    mapping(address provider => mapping(uint256 index => uint256 accessFlags)) internal _accessFlags;
-    mapping(address provider => uint256 max) internal _preimageCount;
     mapping(bytes32 key => address pointer) internal _pointers;
+    mapping(address provider => uint256 max) internal _preimageCount;
+    mapping(address provider => mapping(uint256 index => uint256 accessFlags)) internal _accessFlags;
     mapping(bytes32 key => Randomness campaign) internal randomness;
-    mapping(bytes32 key => bytes32 formerSecret) internal _noLongerSecret;
     mapping(address account => uint256 amount) internal _custodied;
+    mapping(bytes32 key => bytes32 formerSecret) internal _noLongerSecret;
     mapping(bytes32 preimage => bytes32 formerSecret) internal _preimageToSecret;
     mapping(bytes32 key => bool completeWhenExpired) internal _completeWhenExpired;
 
@@ -83,36 +81,9 @@ contract Random {
         uint256 seed;
     }
 
-    constructor(address t, uint256 p, uint256 _blockTime) payable {
+    constructor(address t, uint256 p) payable {
         price = p;
         token = t;
-        if (_blockTime == ZERO) {
-            revert Misconfigured();
-        }
-        targetedBlockTime = _blockTime;
-    }
-    /**
-     * provide stored randomness for the future. imagine painting a die with invisible ink
-     * @param provider the account that has provided the randomness preimage
-     * @dev if data length is > 24576, then this method will fail
-     * @dev it is best to call this infrequently but to do so with a lot of calldata to increase gas savings
-     */
-
-    function _ink(address provider, bytes memory data) internal {
-        unchecked {
-            uint256 count = data.length / THREE_TWO;
-            if (data.length % THREE_TWO != ZERO) {
-                revert Misconfigured();
-            }
-            uint256 start = _preimageCount[provider];
-            address pointer = data.write();
-            // over an address's lifetime, it can write up to 2^80 preimages (1.2089*1e24)
-            // currently the count will be limited to 24_576/32=768 per _ink call, but future updates
-            // could improve this, so 15 bits are allocated for that situation (up to 32,768)
-            _pointers[bytes32((uint256(uint160(provider)) << NINE_SIX) | (start << ONE_SIX))] = pointer;
-            _preimageCount[provider] = start + count;
-            emit Ink(provider, start, pointer);
-        }
     }
     /**
      * start the process to reveal the ink that was written (using invisible ink as a visual analogy)
@@ -144,18 +115,18 @@ contract Random {
     }
 
     function _pointerSize(bytes32 preimageKey) internal view returns(uint256 size) {
-        address pointer = _pointers[preimageKey];
-        if (pointer == address(0)) {
+        address pntr = _pointers[preimageKey];
+        if (pntr == address(0)) {
             revert Misconfigured();
         }
         assembly {
-            size := extcodesize(pointer)
+            size := extcodesize(pntr)
         }
     }
 
     function _flick(bytes32 randomnessKey, bytes32 preimageKeyWithIndex, bytes32 formerSecret) internal {
         unchecked {
-            address pointer = _pointers[preimageKeyWithIndex >> ONE_SIX << ONE_SIX];
+            address pntr = _pointers[preimageKeyWithIndex >> ONE_SIX << ONE_SIX];
             uint256 offset = uint256(uint16(uint256(preimageKeyWithIndex)));
             // secret cannot be zero
             if (formerSecret == bytes32(ZERO)) {
@@ -164,16 +135,18 @@ contract Random {
             // length check is skipped because if one goes out of bounds you either err
             // or you end up with zero bytes, which would be quite the feat to find the hash for
             // always read 32 bytes
-            if (formerSecret.hash() != bytes32(pointer.read((offset * THREE_TWO), ((offset * THREE_TWO) + THREE_TWO)))) {
+            if (formerSecret.hash() != bytes32(pntr.read((offset * THREE_TWO), ((offset * THREE_TWO) + THREE_TWO)))) {
                 revert SecretMismatch();
             }
             // only ever set once but do not penalize for lack of coordination
-            address provider = address(uint160(uint256(preimageKeyWithIndex) >> NINE_SIX));
-            uint256 index = uint256(uint80(uint256(preimageKeyWithIndex) >> ONE_SIX)) + offset;
             if (_noLongerSecret[preimageKeyWithIndex] == bytes32(ZERO)) {
                 _noLongerSecret[preimageKeyWithIndex] = formerSecret;
                 ++randomness[randomnessKey].seed;
-                emit SecretRevealed(provider, index, formerSecret);
+                emit SecretRevealed(
+                    address(uint160(uint256(preimageKeyWithIndex) >> NINE_SIX)),
+                    uint256(uint80(uint256(preimageKeyWithIndex) >> ONE_SIX)) + offset,
+                    formerSecret
+                );
             }
         }
     }
@@ -247,10 +220,25 @@ contract Random {
                 _bubbleRevert(b);
             }
         } else {
-            if (!IERC20(token).transfer(recipient, amount)) {
+            if (!ERC20(token).transfer(recipient, amount)) {
                 _bubbleRevert("");
             }
         }
+    }
+
+    function _scatter(bytes32 key, bytes32[] calldata providerKeys) internal {
+        uint256 len = providerKeys.length;
+        uint256 cost = _cost(len, price);
+        address ender = LibMulticaller.senderOrSigner();
+        address recipient = address(uint160(uint256(providerKeys[_random(key, len)]) >> NINE_SIX));
+        if (_expired(randomness[key].timeline)) {
+            uint256 expiredCallerPayout = cost / 2; // take half if expiry happens late
+            _custodied[ender] += expiredCallerPayout;
+            cost -= expiredCallerPayout;
+            // can / should be used as reputation
+            emit CampaignExpired(recipient, ender, key);
+        }
+        _custodied[recipient] += cost;
     }
 
     function _heat(uint256 required, uint256 expiryOffset, bytes32 orderPreimage, bytes32[] calldata potentialLocations)
@@ -312,6 +300,10 @@ contract Random {
         }
     }
 
+    function pointer(address provider, uint256 start) external override view returns(address) {
+        return _pointers[bytes32(uint256(uint160(provider)) << NINE_SIX | start << ONE_SIX)];
+    }
+
     function fin(bytes32 key) external view returns (uint256) {
         unchecked {
             return (randomness[key].seed < TWO_FIVE_SIX ? ZERO : ONE)
@@ -338,8 +330,29 @@ contract Random {
         return _heat(required, expiryOffset, orderPreimage, locations);
     }
 
+    /**
+     * provide stored randomness for the future. imagine painting a die with invisible ink
+     * @param data the concatenated, immutable preimages to write on chain
+     * @dev if data length is > (24576-32), then this method will fail
+     * @dev it is best to call this infrequently but to do so with as
+     * much calldata as possible to increase gas savings for randomness providers
+     */
     function ink(bytes calldata data) external payable {
-        _ink(LibMulticaller.senderOrSigner(), data);
+        address provider = LibMulticaller.senderOrSigner();
+        unchecked {
+            uint256 count = data.length / THREE_TWO;
+            if (data.length % THREE_TWO != ZERO) {
+                revert Misconfigured();
+            }
+            uint256 start = _preimageCount[provider];
+            address pntr = data.write();
+            // over an address's lifetime, it can write up to 2^80 preimages (1.2089*1e24)
+            // currently the count will be limited to 24_576/32=768 per _ink call, but future updates
+            // could improve this, so 15 bits are allocated for that situation (up to 32,768)
+            _pointers[bytes32((uint256(uint160(provider)) << NINE_SIX) | (start << ONE_SIX))] = pntr;
+            _preimageCount[provider] = start + count;
+            emit Ink(provider, start, pntr);
+        }
     }
 
     function chop(bytes32 key) external payable {
@@ -378,25 +391,10 @@ contract Random {
         }
     }
 
-    function _scatter(bytes32 key, bytes32[] calldata providerKeys) internal {
-        uint256 len = providerKeys.length;
-        uint256 cost = _cost(len, price);
-        address ender = LibMulticaller.senderOrSigner();
-        address recipient = address(uint160(uint256(providerKeys[_random(key, len)]) >> NINE_SIX));
-        if (_expired(randomness[key].timeline)) {
-            uint256 expiredCallerPayout = cost / 2; // take half if expiry happens late
-            _custodied[ender] += expiredCallerPayout;
-            cost -= expiredCallerPayout;
-            // can / should be used as reputation
-            emit CampaignExpired(recipient, ender, key);
-        }
-        _custodied[recipient] += cost;
-    }
     /**
      * if the data is on chain (in storage), one can pull the data from on chain and validate it
      * @param key the key for the randomness campaign
      */
-
     function dig(bytes32 key, bytes32[] calldata providerKeys) external payable {
         unchecked {
             uint256 len = uint256(uint8(uint256(key)));
