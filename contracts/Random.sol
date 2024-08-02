@@ -3,10 +3,10 @@ pragma solidity ^0.8.24;
 
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {LibPRNG} from "solady/src/utils/LibPRNG.sol";
+import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
-import {ERC20} from "./implementations/ERC20.sol";
-import {Random as RandImplementation} from "./implementations/Random.sol";
+import {Random as RandomImplementation} from "./implementations/Random.sol";
 
 error DeploymentFailed();
 error Misconfigured();
@@ -38,17 +38,19 @@ event OrderPreimageUpdate(bytes32 key, bytes32 before, bytes32 next);
 
 event FundingScattered(address indexed recipient, uint256 amount, bytes32 key);
 
-contract Random is RandImplementation {
+contract Random is RandomImplementation {
     using SSTORE2 for address;
     using SSTORE2 for bytes;
+
+    using SafeTransferLib for address;
 
     using LibPRNG for LibPRNG.PRNG;
 
     using EfficientHashLib for bytes32;
     using EfficientHashLib for bytes32[];
 
-    address internal immutable token;
-    uint256 internal immutable price;
+    // address internal immutable token;
+    // uint256 internal immutable price;
     uint256 internal constant ZERO = 0;
     uint256 internal constant ONE = 1;
     uint256 internal constant EIGHT = 8;
@@ -69,7 +71,7 @@ contract Random is RandImplementation {
     mapping(address provider => uint256 max) internal _preimageCount;
     mapping(address provider => mapping(uint256 index => uint256 accessFlags)) internal _accessFlags;
     mapping(bytes32 key => Randomness campaign) internal randomness;
-    mapping(address account => uint256 amount) internal _custodied;
+    mapping(address account => mapping(address token => uint256 amount)) internal _custodied;
     mapping(bytes32 key => bytes32 formerSecret) internal _noLongerSecret;
     mapping(bytes32 preimage => bytes32 formerSecret) internal _preimageToSecret;
     mapping(bytes32 key => bool completeWhenExpired) internal _completeWhenExpired;
@@ -79,11 +81,7 @@ contract Random is RandImplementation {
         bytes32 orderPreimage;
         bytes32 locationsHash;
         uint256 seed;
-    }
-
-    constructor(address t, uint256 p) payable {
-        price = p;
-        token = t;
+        uint256 tokenAndAmount;
     }
     /**
      * start the process to reveal the ink that was written (using invisible ink as a visual analogy)
@@ -94,24 +92,38 @@ contract Random is RandImplementation {
      * @dev notice that the index is derived from the preimage key by adding [95..16] and [15..1] together
      */
 
-    function _ignite(uint256 preimageKeyWithIndex) internal returns (uint256) {
+    function _ignite(uint256 preimageKeyWithIndex) internal returns (bool) {
         unchecked {
-            address provider = address(uint160(preimageKeyWithIndex >> NINE_SIX));
-            uint256 offset = uint256(uint16(preimageKeyWithIndex));
-            // offset too high
-            if (_pointerSize(bytes32(preimageKeyWithIndex >> ONE_SIX << ONE_SIX)) / THREE_TWO <= offset) {
-                revert Misconfigured();
+            if (_consumed(preimageKeyWithIndex)) {
+                return false;
             }
-            uint256 index = uint256(uint80(preimageKeyWithIndex >> ONE_SIX)) + offset;
-            // returning zero means that the secret has not been requested yet on chain
-            uint256 section = _accessFlags[provider][index / TWO_FIVE_SIX];
-            if ((section << (TWO_FIVE_FIVE - (index % TWO_FIVE_SIX)) >> TWO_FIVE_FIVE) > ZERO) {
-                return ZERO;
-            }
-            _accessFlags[provider][index / TWO_FIVE_SIX] = (section | (ONE << (index % TWO_FIVE_SIX)));
-            emit Heat(provider, index);
-            return ONE;
+            uint256 index = uint256(uint80(preimageKeyWithIndex >> ONE_SIX)) + uint256(uint16(preimageKeyWithIndex));
+            _accessFlags[
+                address(uint160(preimageKeyWithIndex >> NINE_SIX))
+            ][index / TWO_FIVE_SIX] |= (ONE << (index % TWO_FIVE_SIX));
+            emit Heat(
+                address(uint160(preimageKeyWithIndex >> NINE_SIX)),
+                index
+            );
+            return true;
         }
+    }
+
+    function _consumed(uint256 preimageKeyWithIndex) internal view returns(bool) {
+        address provider = address(uint160(preimageKeyWithIndex >> NINE_SIX));
+        uint256 offset = uint256(uint16(preimageKeyWithIndex));
+        // offset too high
+        if (_pointerSize(bytes32(preimageKeyWithIndex >> ONE_SIX << ONE_SIX)) / THREE_TWO <= offset) {
+            revert Misconfigured();
+        }
+        uint256 index = uint256(uint80(preimageKeyWithIndex >> ONE_SIX)) + offset;
+        // returning zero means that the secret has not been requested yet on chain
+        uint256 section = _accessFlags[provider][index / TWO_FIVE_SIX];
+        return (section << (TWO_FIVE_FIVE - (index % TWO_FIVE_SIX)) >> TWO_FIVE_FIVE) == ONE;
+    }
+
+    function consumed(uint256 preimageKeyWithIndex) external override view returns(bool) {
+        return _consumed(preimageKeyWithIndex);
     }
 
     function _pointerSize(bytes32 preimageKey) internal view returns(uint256 size) {
@@ -213,65 +225,73 @@ contract Random is RandImplementation {
         }
     }
 
-    function _distribute(address recipient, uint256 amount) internal {
+    function _distribute(address token, address recipient, uint256 amount) internal {
         if (token == address(0)) {
-            (bool success, bytes memory b) = recipient.call{value: amount}("");
-            if (!success) {
-                _bubbleRevert(b);
-            }
+            recipient.safeTransferETH(amount);
         } else {
-            if (!ERC20(token).transfer(recipient, amount)) {
-                _bubbleRevert("");
-            }
+            token.safeTransfer(recipient, amount);
         }
     }
 
     function _scatter(bytes32 key, bytes32[] calldata providerKeys) internal {
         uint256 len = providerKeys.length;
-        uint256 cost = _cost(len, price);
+        // uint256 cost = _cost(len, price);
         address ender = LibMulticaller.senderOrSigner();
         address recipient = address(uint160(uint256(providerKeys[_random(key, len)]) >> NINE_SIX));
+        uint256 tokenAndAmount = randomness[key].tokenAndAmount;
+        address token = address(uint160(uint256(tokenAndAmount) >> NINE_SIX));
+        uint256 cost = uint256(uint96(uint256(tokenAndAmount)));
         if (_expired(randomness[key].timeline)) {
             uint256 expiredCallerPayout = cost / 2; // take half if expiry happens late
-            _custodied[ender] += expiredCallerPayout;
+            _custodied[ender][token] += expiredCallerPayout;
             cost -= expiredCallerPayout;
             // can / should be used as reputation
             emit CampaignExpired(recipient, ender, key);
         }
-        _custodied[recipient] += cost;
+        _custodied[recipient][token] += cost;
     }
 
-    function _heat(uint256 required, uint256 expiryOffset, bytes32 orderPreimage, bytes32[] calldata potentialLocations)
+    function _heat(
+        uint256 required, uint256 expiryOffset,
+        address token,
+        bytes32 orderPreimage, bytes32[] calldata potentialLocations
+    )
         internal
         returns (bytes32)
     {
         unchecked {
             bytes32[] memory locations = new bytes32[](required);
+            uint256 amount;
+            address owner = LibMulticaller.senderOrSigner();
             {
                 if (required == ZERO || required >= TWO_FIVE_FIVE) {
                     // only 254 len or fewer allowed
                     revert UnableToService();
-                }
-                uint256 cost = _cost(required, price);
-                if (cost > msg.value) {
-                    revert MissingPayment();
                 }
                 uint256 i;
                 uint256 len = potentialLocations.length;
                 uint256 contributing;
                 do {
                     // non zero means that the value exists
-                    if (_ignite(uint256(potentialLocations[i])) == ONE) {
-                        locations[i] = potentialLocations[i];
+                    if (_ignite(uint256(potentialLocations[i]))) {
+                        locations[contributing] = potentialLocations[i];
                         ++contributing;
-                        if (contributing == required) {
+                        if (required == contributing) {
                             break;
                         }
                     }
                     ++i;
                 } while (i < len);
 
-                if (contributing < required) {
+                if (token == address(0)) {
+                    if (amount > msg.value) {
+                        revert MissingPayment();
+                    }
+                    amount = msg.value;
+                } else {
+                    token.safeTransferFrom2(owner, address(this), amount);
+                }
+                if (i == len) {
                     // let other contracts revert if they must
                     revert UnableToService();
                 }
@@ -279,25 +299,27 @@ contract Random is RandImplementation {
             {
                 bytes32 locationsHash = locations.hash();
                 bytes32 key = _toId(locationsHash.hash(orderPreimage), locations.length);
-                address owner = LibMulticaller.senderOrSigner();
                 // front load the cost of requesting randomness
                 // put it on the shoulders of the consumer
                 // this can probably be optimized
                 randomness[key] = Randomness({
-                    timeline: uint256(uint160(owner)) << NINE_SIX
-                        | (
-                            uint256((uint48((expiryOffset << TWO_FIVE_FIVE > ZERO) ? block.number : block.timestamp)))
-                                << FOUR_EIGHT
-                        ) | uint256(uint48(expiryOffset)),
+                    timeline: _timeline(owner, expiryOffset),
                     locationsHash: locationsHash,
                     orderPreimage: orderPreimage,
                     // extra cost + saves later
-                    seed: ONE
+                    seed: ONE,
+                    tokenAndAmount: (uint256(uint160(token)) << NINE_SIX) | uint256(uint96(amount))
                 });
                 emit RandomnessStart(owner, key);
                 return key;
             }
         }
+    }
+    function _timeline(address owner, uint256 expiryOffset) internal view returns(uint256) {
+        return uint256(uint160(owner)) << NINE_SIX
+            | (uint256((uint48(
+                (expiryOffset << TWO_FIVE_FIVE > ZERO) ? block.number : block.timestamp
+            ))) << FOUR_EIGHT) | uint256(uint48(expiryOffset));
     }
 
     function pointer(address provider, uint256 start) external override view returns(address) {
@@ -322,12 +344,15 @@ contract Random is RandImplementation {
         return _expired(randomness[key].timeline);
     }
 
-    function heat(uint256 required, uint256 expiryOffset, bytes32 orderPreimage, bytes32[] calldata locations)
+    function heat(
+        uint256 required, uint256 expiryOffset,
+        address token,
+        bytes32 orderPreimage, bytes32[] calldata locations)
         external
         payable
         returns (bytes32)
     {
-        return _heat(required, expiryOffset, orderPreimage, locations);
+        return _heat(required, expiryOffset, token, orderPreimage, locations);
     }
 
     /**
@@ -356,22 +381,18 @@ contract Random is RandImplementation {
     }
 
     function chop(bytes32 key) external payable {
-        address sender = LibMulticaller.senderOrSigner();
-        address owner = address(uint160(randomness[key].timeline >> NINE_SIX));
-        if (sender != owner) {
-            revert Misconfigured();
-        }
-        if (_expired(uint160(randomness[key].timeline))) {
-            uint256 len = uint256(uint8(uint256(key)));
-            if (randomness[key].seed - ONE == len) {
-                // refund request is invalid - all secrets are on chain
-                //
-            } else {
-                // this should delete all of the struct's keys as well
-                delete randomness[key];
-                // not all secrets have been revealed. this is a valid refund
-                _custodied[owner] += _cost(len, price);
+        unchecked {
+            if (randomness[key].seed > TWO_FIVE_FIVE || randomness[key].seed == ZERO) {
+                // don't penalize, as someone could slip in before
+                return;
             }
+            if (LibMulticaller.senderOrSigner() != address(uint160(randomness[key].timeline >> NINE_SIX))) {
+                revert Misconfigured();
+            }
+            address token = address(uint160(uint256(randomness[key].tokenAndAmount) >> NINE_SIX));
+            uint256 amount = uint256(uint96(uint256(randomness[key].tokenAndAmount)));
+            _custodied[address(uint160(randomness[key].timeline >> NINE_SIX))][token] += amount;
+            delete randomness[key];
         }
     }
 
@@ -455,13 +476,17 @@ contract Random is RandImplementation {
         return prng.uniform(upper);
     }
 
-    function handoff(address recipient, uint256 amount) external payable {
+    function handoff(
+        address token,
+        address recipient,
+        uint256 amount
+    ) external payable {
         unchecked {
             address account = LibMulticaller.senderOrSigner();
-            uint256 limit = _custodied[account];
+            uint256 limit = _custodied[account][token];
             amount = amount == ZERO ? limit : (amount > limit ? limit : amount);
-            _custodied[account] -= amount;
-            _distribute(recipient == address(0) ? account : recipient, amount);
+            _custodied[account][token] -= amount;
+            _distribute(token, recipient == address(0) ? account : recipient, amount);
         }
     }
     /**

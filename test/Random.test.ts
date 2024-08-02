@@ -1,26 +1,51 @@
 import * as utils from '../lib/utils'
 import * as viem from 'viem'
 import _ from "lodash";
-import * as helpers from '@nomicfoundation/hardhat-toolbox/network-helpers'
+import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
 import { expect } from 'chai';
+import * as expectations from './expectations'
+import * as testUtils from './utils'
 
 describe("Random", () => {
   describe('writing preimages', () => {
     it('fails if read occurs before write', async () => {
-      const ctx = await helpers.loadFixture(utils.deploy)
-      await utils.expectRevertedWithCustomError(utils.readPreimages(ctx), 'Misconfigured')
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      await expectations.revertedWithCustomError(testUtils.readPreimages(ctx), 'Misconfigured')
     })
     it('will not err if an index that is presented is out of bounds on random contract', async () => {
-      const ctx = await helpers.loadFixture(utils.deploy)
+      const ctx = await helpers.loadFixture(testUtils.deploy)
       await expect(ctx.random.read.pointer([viem.zeroAddress, 0n]))
         .eventually.to.equal(viem.zeroAddress)
     })
     it('writes them to a known location', async () => {
-      const ctx = await helpers.loadFixture(utils.deployWithRandomness)
+      const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
       const [secrets] = ctx.secretGroups
-      const [readBatches] = await utils.readPreimages(ctx)
+      const [readBatches] = await testUtils.readPreimages(ctx)
       const preimages = _.map(secrets, 'preimage')
       expect(preimages).to.deep.equal(readBatches)
+    })
+  })
+  describe('requesting secrets', () => {
+    it('emits a Heat event', async function () {
+      const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+      const [signer] = await ctx.hre.viem.getWalletClients()
+      const [[s]] = await utils.createPreimages(signer.account!.address)
+      const selections = await testUtils.selectPreimages(ctx)
+      const keys = _.map(selections, 'providerKeyWithIndex')
+      const required = 5n
+      const heatHash = await ctx.random.write.heat([required, 12n, viem.zeroAddress, s.preimage, keys])
+      const emitArgs = [ctx, heatHash, ctx.random, 'Heat'] as const
+      const expectedUsed = keys.slice(0, Number(required))
+      if (Number(required) > expectedUsed.length) {
+        return this.skip()
+      }
+      await Promise.all(expectedUsed.map(async (key) => {
+        const parts = utils.providerKeyParts(key)
+        await expectations.emit(...emitArgs, {
+          to: parts.provider,
+          index: parts.index,
+        })
+      }))
     })
   })
   // We define a fixture to reuse the same setup in every test.

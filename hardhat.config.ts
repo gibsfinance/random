@@ -4,6 +4,7 @@ import { HARDHAT_NETWORK_MNEMONIC } from 'hardhat/internal/core/config/default-c
 import "@nomicfoundation/hardhat-toolbox-viem";
 import '@nomicfoundation/hardhat-viem'
 import '@nomicfoundation/hardhat-chai-matchers'
+import 'hardhat-tracer'
 // import '@nomicfoundation/hardhat-verify'
 
 const { env } = process
@@ -15,7 +16,7 @@ const config: HardhatUserConfig = {
       accounts: {
         accountsBalance: ((10n ** 18n) * (10n ** 9n)).toString(),
         mnemonic: env.MNEMONIC || HARDHAT_NETWORK_MNEMONIC,
-        count: 13, // 512
+        count: 20, // 512
       },
     },
   },

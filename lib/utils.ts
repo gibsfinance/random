@@ -3,50 +3,6 @@ import * as fs from 'fs'
 import _ from 'lodash'
 import promiseLimit from 'promise-limit'
 import * as viem from 'viem'
-import { HardhatRuntimeEnvironment } from 'hardhat/types'
-import hre from 'hardhat'
-import * as ethers from 'ethers'
-import { loadFixture } from '@nomicfoundation/hardhat-toolbox/network-helpers'
-
-export const ntrfc = (contract: {
-  abi: viem.Abi,
-}) => {
-  return {
-    interface: new ethers.Interface(contract.abi as unknown as ethers.InterfaceAbi),
-  }
-}
-
-export const expectRevertedWithCustomError = async (p: Promise<any>, errorName: string, args?: any[]) => {
-  let threw = false
-  let e!: Error
-  try {
-    await p
-  } catch (err: any) {
-    threw = true
-    e = err
-  }
-  if (!threw) {
-    throw new Error('expected revert, did not')
-  }
-  const rpcError = e as viem.RpcError
-  if (e) {
-    // console.dir(rpcError.walk())
-    if (rpcError.details && rpcError.details.includes(errorName)) {
-      // check args
-      if (!args || !args.length) {
-        return
-      }
-      // be sure to implement args check!
-    }
-  }
-  console.dir(rpcError.walk())
-  throw new Error('unable to check error')
-}
-
-export const contractName = {
-  Random: 'contracts/Random.sol:Random',
-  Reader: 'contracts/Reader.sol:Reader',
-} as const
 
 export const limiters = {
   range: promiseLimit<number>(16),
@@ -63,42 +19,6 @@ export const folders = {
 export type Secret = {
   secret: viem.Hex;
   preimage: viem.Hex;
-}
-
-export const deploy = async () => {
-  const random = await hre.viem.deployContract(contractName.Random, [
-    viem.zeroAddress,
-    viem.parseEther('100'),
-  ])
-  const reader = await hre.viem.deployContract(contractName.Reader)
-  console.log('random=%o', random.address)
-  console.log('reader=%o', reader.address)
-  const randomnessProviders = await getRandomnessProviders(hre)
-  console.log('randomness_providers=%o', randomnessProviders.length)
-  return {
-    hre,
-    random,
-    reader,
-  }
-}
-
-export const deployWithRandomness = async () => {
-  const ctx = await loadFixture(deploy)
-  const secretGroups = await writePreimages(ctx)
-  return {
-    ...ctx,
-    secretGroups,
-  }
-}
-
-export type Context = Awaited<ReturnType<typeof deploy>>
-
-export const confirmTx = async (prov: Promise<viem.PublicClient>, hash: Promise<viem.WriteContractReturnType>) => {
-  const provider = await prov
-  const receipt = await provider.waitForTransactionReceipt({
-    hash: await hash,
-  })
-  return receipt
 }
 
 export const createPreimages = async (address: viem.Hex, offset = 0n, count = max) => {
@@ -133,50 +53,22 @@ export const createPreimages = async (address: viem.Hex, offset = 0n, count = ma
   })
 }
 
-export const getRandomnessProviders = async (hre: HardhatRuntimeEnvironment) => {
-  const signers = await hre.viem.getWalletClients()
-  return signers.slice(12)
+export const dataToPreimages = (data: viem.Hex) => {
+  return _(viem.hexToBytes(data))
+    .chunk(32)
+    .map((chunk) => viem.bytesToHex(Uint8Array.from(chunk)))
+    .value()
 }
 
-export const writePreimages = async (ctx: Context, index = 0n) => {
-  const rand = await ctx.hre.viem.getContractAt(contractName.Random, ctx.random.address)
-  const signers = await getRandomnessProviders(ctx.hre)
-  return await limiters.signers.map(signers, async (signer: viem.WalletClient) => {
-    const secretBatches = await createPreimages(signer.account!.address, index)
-    await Promise.all(secretBatches.map(async (secrets) => {
-      const preimages = _.map(secrets, 'preimage')
-      // const r =
-      await confirmTx(ctx.hre.viem.getPublicClient(), rand.write.ink([viem.concatHex(preimages)], {
-        account: signer.account,
-      }))
-      // const logs = viem.parseEventLogs({
-      //   logs: r.logs,
-      //   abi: ctx.random.abi,
-      // })
-      // console.log(logs)
-    }))
-    return secretBatches[0]
-  })
-}
-
-export const readPreimages = async (ctx: Context, offset = 0n) => {
-  // const random = await hre.viem.getContractAt(contractName.Random, address)
-  const signers = await getRandomnessProviders(ctx.hre)
-  // const provider = await ctx.hre.viem.getPublicClient()
-  return await limiters.signers.map(signers, async (signer) => {
-    const data = await ctx.reader.read.all([
-      ctx.random.address,
-      signer.account!.address,
-      offset,
-      // 0n,
-    ])
-    return _(viem.hexToBytes(data))
-      .chunk(32)
-      .map((chunk) => viem.bytesToHex(Uint8Array.from(chunk)))
-      .value()
-    // const code = await provider.getCode({
-    //   address: pointer,
-    // })
-    // console.log('pointer prefix', ((code!.length - 2) / 2) - 1, code!.slice(0, 66))
-  })
+export const providerKeyParts = (key: viem.Hex) => {
+  const num = BigInt(key)
+  const provider = viem.toHex(num >> 96n, { size: 20 })
+  const offset = BigInt.asUintN(80, num >> 16n)
+  const localIndex = BigInt.asUintN(16, num)
+  return {
+    provider: viem.getAddress(provider),
+    offset,
+    localIndex,
+    index: offset + localIndex,
+  }
 }
