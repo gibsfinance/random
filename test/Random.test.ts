@@ -33,7 +33,7 @@ describe("Random", () => {
       const selections = await testUtils.selectPreimages(ctx)
       const keys = _.map(selections, 'providerKeyWithIndex')
       const required = 5n
-      const heatHash = await ctx.random.write.heat([required, 12n, viem.zeroAddress, s.preimage, keys])
+      const heatHash = await ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, s.preimage, keys])
       const emitArgs = [ctx, heatHash, ctx.random, 'Heat'] as const
       const expectedUsed = keys.slice(0, Number(required))
       if (Number(required) > expectedUsed.length) {
@@ -46,6 +46,34 @@ describe("Random", () => {
           index: parts.index,
         })
       }))
+    })
+    it('does not allow secrets to be requested twice', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+      const [signer] = await ctx.hre.viem.getWalletClients()
+      const [[s]] = await utils.createPreimages(signer.account!.address)
+      const selections = await testUtils.selectPreimages(ctx)
+      const keys = _.map(selections, 'providerKeyWithIndex')
+      const required = 5n
+      await expectations.revertedWithCustomError(ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, s.preimage, keys]), 'UnableToService')
+      // const emitArgs = [ctx, heatHash, ctx.random, 'Heat'] as const
+      // const expectedUsed = keys.slice(0, Number(required))
+      // if (Number(required) > expectedUsed.length) {
+      //   return this.skip()
+      // }
+      // await Promise.all(expectedUsed.map(async (key) => {
+      //   const parts = utils.providerKeyParts(key)
+      //   await expectations.emit(...emitArgs, {
+      //     to: parts.provider,
+      //     index: parts.index,
+      //   })
+      // }))
+    })
+  })
+  describe('submitting secrets', () => {
+    describe('when to send', async () => {
+      it('can detect by checking a section directly', async () => {
+
+      })
     })
   })
   // We define a fixture to reuse the same setup in every test.

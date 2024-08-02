@@ -283,6 +283,10 @@ contract Random is RandomImplementation {
                     ++i;
                 } while (i < len);
 
+                if (contributing < required) {
+                    // let other contracts revert if they must
+                    revert UnableToService();
+                }
                 if (token == address(0)) {
                     if (amount > msg.value) {
                         revert MissingPayment();
@@ -290,10 +294,6 @@ contract Random is RandomImplementation {
                     amount = msg.value;
                 } else {
                     token.safeTransferFrom2(owner, address(this), amount);
-                }
-                if (i == len) {
-                    // let other contracts revert if they must
-                    revert UnableToService();
                 }
             }
             {
