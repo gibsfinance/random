@@ -7,7 +7,7 @@ import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {Random as RandomImplementation} from "./implementations/Random.sol";
-import {PreimageInfo} from "./PreimageInfo.sol";
+import {PreimageLocation} from "./PreimageLocation.sol";
 
 error DeploymentFailed();
 error Misconfigured();
@@ -50,7 +50,7 @@ contract Random is RandomImplementation {
     using EfficientHashLib for bytes32;
     using EfficientHashLib for bytes32[];
 
-    using PreimageInfo for PreimageInfo.Info;
+    using PreimageLocation for PreimageLocation.Info;
 
     uint256 internal constant ZERO = 0;
     uint256 internal constant ONE = 1;
@@ -103,7 +103,7 @@ contract Random is RandomImplementation {
      * @dev notice that the index is derived from the preimage key by adding [95..16] and [15..1] together
      */
 
-    function _ignite(PreimageInfo.Info memory nfo, bytes32 section) internal returns (bool) {
+    function _ignite(PreimageLocation.Info memory nfo, bytes32 section) internal returns (bool) {
         unchecked {
             if (_consumed(nfo)) {
                 return false;
@@ -118,7 +118,7 @@ contract Random is RandomImplementation {
         }
     }
 
-    function _consumed(PreimageInfo.Info memory nfo) internal view returns(bool) {
+    function _consumed(PreimageLocation.Info memory nfo) internal view returns(bool) {
         if (_pointerSize(nfo) / THREE_TWO <= nfo.offset) {
             revert Misconfigured();
         }
@@ -127,11 +127,11 @@ contract Random is RandomImplementation {
         return (section << (TWO_FIVE_FIVE - ((nfo.index + nfo.offset) % TWO_FIVE_SIX)) >> TWO_FIVE_FIVE) == ONE;
     }
 
-    function consumed(PreimageInfo.Info calldata nfo) external override view returns(bool) {
+    function consumed(PreimageLocation.Info calldata nfo) external override view returns(bool) {
         return _consumed(nfo);
     }
 
-    function _pointerSize(PreimageInfo.Info memory nfo) internal view returns(uint256 size) {
+    function _pointerSize(PreimageLocation.Info memory nfo) internal view returns(uint256 size) {
         address pntr = _pointers[nfo.provider][nfo.token][nfo.price][nfo.offset];
         if (pntr == address(0)) {
             revert Misconfigured();
@@ -141,7 +141,7 @@ contract Random is RandomImplementation {
         }
     }
 
-    function _flick(bytes32 randomnessKey, PreimageInfo.Info calldata nfo, bytes32 formerSecret) internal {
+    function _flick(bytes32 randomnessKey, PreimageLocation.Info calldata nfo, bytes32 formerSecret) internal {
         unchecked {
             address pntr = _pointers[nfo.provider][nfo.token][nfo.price][nfo.offset];
             // secret cannot be zero
@@ -176,7 +176,7 @@ contract Random is RandomImplementation {
 
     function _cast(
         bytes32 key,
-        PreimageInfo.Info[] calldata preimageInfo,
+        PreimageLocation.Info[] calldata preimageInfo,
         bytes32[] memory revealedSecrets
     ) internal returns (bool) {
         unchecked {
@@ -237,11 +237,11 @@ contract Random is RandomImplementation {
         }
     }
 
-    function _scatter(bytes32 key, PreimageInfo.Info[] calldata info) internal {
+    function _scatter(bytes32 key, PreimageLocation.Info[] calldata info) internal {
         unchecked {
             uint256 len = info.length;
             address ender = LibMulticaller.senderOrSigner();
-            PreimageInfo.Info calldata item = info[_random(key, len)];
+            PreimageLocation.Info calldata item = info[_random(key, len)];
             uint256 total;
             uint256 i;
             do {
@@ -264,7 +264,7 @@ contract Random is RandomImplementation {
         uint256 required, uint256 expiryOffset,
         address token,
         bytes32 orderPreimage,
-        PreimageInfo.Info[] calldata potentialLocations
+        PreimageLocation.Info[] calldata potentialLocations
     )
         external payable
         returns (bytes32)
@@ -332,7 +332,7 @@ contract Random is RandomImplementation {
             | uint256(uint48(expiryOffset));
     }
 
-    function pointer(PreimageInfo.Info calldata info) external override view returns(address) {
+    function pointer(PreimageLocation.Info calldata info) external override view returns(address) {
         return _pointers[info.provider][info.token][info.price][info.offset];
     }
 
@@ -389,7 +389,7 @@ contract Random is RandomImplementation {
         }
     }
 
-    function chop(bytes32 key, PreimageInfo.Info[] calldata preimageInfo) external payable {
+    function chop(bytes32 key, PreimageLocation.Info[] calldata preimageInfo) external payable {
         unchecked {
             if (randomness[key].seed > TWO_FIVE_FIVE || randomness[key].seed == ZERO) {
                 // don't penalize, because a provider could slip in before
@@ -410,11 +410,11 @@ contract Random is RandomImplementation {
         }
     }
 
-    function flick(bytes32 key, PreimageInfo.Info calldata preimageInfo, bytes32 revealedSecret) external payable {
+    function flick(bytes32 key, PreimageLocation.Info calldata preimageInfo, bytes32 revealedSecret) external payable {
         _flick(key, preimageInfo, revealedSecret);
     }
 
-    function cast(bytes32 key, PreimageInfo.Info[] calldata preimageInfo, bytes32[] calldata revealed)
+    function cast(bytes32 key, PreimageLocation.Info[] calldata preimageInfo, bytes32[] calldata revealed)
         external
         payable
     {
@@ -430,7 +430,7 @@ contract Random is RandomImplementation {
      * if the data is on chain (in storage), one can pull the data from on chain and validate it
      * @param key the key for the randomness campaign
      */
-    function dig(bytes32 key, PreimageInfo.Info[] calldata preimageInfo) external payable {
+    function dig(bytes32 key, PreimageLocation.Info[] calldata preimageInfo) external payable {
         unchecked {
             uint256 len = uint256(uint8(uint256(key)));
             if (randomness[key].seed - ONE != len) {
@@ -504,7 +504,7 @@ contract Random is RandomImplementation {
      * invalidate the data that he has written so that he does not confuse front ends
      */
 
-    function bleach(PreimageInfo.Info memory info) external payable {
+    function bleach(PreimageLocation.Info memory info) external payable {
         unchecked {
             address provider = LibMulticaller.senderOrSigner();
             if (provider != info.provider) {

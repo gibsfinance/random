@@ -10,7 +10,7 @@ describe("Random", () => {
   describe('writing preimages', () => {
     it('fails if read occurs before write', async () => {
       const ctx = await helpers.loadFixture(testUtils.deploy)
-      await expectations.revertedWithCustomError(testUtils.readPreimages(ctx), 'Misconfigured')
+      await expectations.revertedWithCustomError(ctx.reader, testUtils.readPreimages(ctx), 'Misconfigured')
     })
     it('will not err if an index that is presented is out of bounds on random contract', async () => {
       const ctx = await helpers.loadFixture(testUtils.deploy)
@@ -32,7 +32,7 @@ describe("Random", () => {
       const [[s]] = await utils.createPreimages(signer.account!.address)
       const selections = await testUtils.selectPreimages(ctx)
       const required = 5n
-      const heatHash = await ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, s.preimage, selections])
+      const heatHash = await testUtils.confirmTx(ctx, ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, s.preimage, selections]))
       const emitArgs = [ctx, heatHash, ctx.random, 'Heat'] as const
       const expectedUsed = selections.slice(0, Number(required))
       if (Number(required) > expectedUsed.length) {
@@ -48,7 +48,7 @@ describe("Random", () => {
     })
     it('does not allow secrets to be requested twice', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
-      await expectations.revertedWithCustomError(ctx.random.write.heat(
+      await expectations.revertedWithCustomError(ctx.random, ctx.random.write.heat(
         [ctx.required, 12n << 1n, viem.zeroAddress, ctx.heat.preimage, ctx.selections]
       ), 'UnableToService')
     })

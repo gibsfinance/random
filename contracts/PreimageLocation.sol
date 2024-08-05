@@ -3,15 +3,14 @@ pragma solidity ^0.8.24;
 
 import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 
-library PreimageInfo {
-
+library PreimageLocation {
   struct Info {
     address provider;
     address token;
     uint256 price;
     uint256 offset;
     uint256 index;
-}
+  }
 
   function hash(Info memory info) internal pure returns(bytes32) {
     return EfficientHashLib.hash(

@@ -51,7 +51,7 @@ export const deployWithAndConsumeRandomness = async () => {
     heat.preimage,
     selections,
   ])
-  await confirmTx(ctx.hre.viem.getPublicClient(), heatTx)
+  await confirmTx(ctx, heatTx)
   return {
     ...ctx,
     required,
@@ -64,12 +64,12 @@ export const deployWithAndConsumeRandomness = async () => {
 
 export type Context = Awaited<ReturnType<typeof deploy>>
 
-export const confirmTx = async (prov: Promise<viem.PublicClient> | viem.PublicClient, hash: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType) => {
-  const provider = await prov
+export const confirmTx = async (ctx: Context, hash: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType) => {
+  const provider = await ctx.hre.viem.getPublicClient()
   const receipt = await provider.waitForTransactionReceipt({
     hash: await hash,
   })
-  return receipt
+  return receipt.transactionHash
 }
 
 export const getRandomnessProviders = async (hre: HardhatRuntimeEnvironment) => {
@@ -85,7 +85,7 @@ export const writePreimages = async (ctx: Context, index = 0n, token = viem.zero
     await Promise.all(secretBatches.map(async (secrets) => {
       const preimages = _.map(secrets, 'preimage')
       // const r =
-      await confirmTx(ctx.hre.viem.getPublicClient(), rand.write.ink(
+      await confirmTx(ctx, rand.write.ink(
         [token, price, viem.concatHex(preimages)], {
         account: signer.account,
       }))
