@@ -103,7 +103,7 @@ contract Random is RandomImplementation {
      * @dev notice that the index is derived from the preimage key by adding [95..16] and [15..1] together
      */
 
-    function _ignite(PreimageInfo.Info memory nfo) internal returns (bool) {
+    function _ignite(PreimageInfo.Info memory nfo, bytes32 section) internal returns (bool) {
         unchecked {
             if (_consumed(nfo)) {
                 return false;
@@ -111,7 +111,7 @@ contract Random is RandomImplementation {
             _accessFlags[nfo.provider][nfo.token][nfo.price][(nfo.offset + nfo.index) / TWO_FIVE_SIX] |= (ONE << ((nfo.offset + nfo.index) % TWO_FIVE_SIX));
             emit Heat(
                 nfo.provider,
-                nfo.section(),
+                section,
                 nfo.index
             );
             return true;
@@ -283,7 +283,7 @@ contract Random is RandomImplementation {
                 uint256 contributing;
                 do {
                     // non zero means that the value exists
-                    if (_ignite(potentialLocations[i])) {
+                    if (_ignite(potentialLocations[i], potentialLocations[i].section())) {
                         locations[contributing] = potentialLocations[i].hash();
                         ++contributing;
                         if (required == contributing) {
@@ -513,12 +513,13 @@ contract Random is RandomImplementation {
             uint256 size = _pointerSize(info) / THREE_TWO;
             size /= THREE_TWO;
             if (size > ZERO) {
+                bytes32 section = info.section();
                 emit Bleached(info.provider, info.section());
                 // consumes a whole pointer
                 uint256 i;
                 do {
                     info.index = i;
-                    _ignite(info);
+                    _ignite(info, section);
                     ++i;
                 } while (i < size);
             }
