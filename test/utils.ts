@@ -18,6 +18,7 @@ export const deploy = async () => {
   const randomnessProviders = await getRandomnessProviders(hre)
   console.log('randomness_providers=%o', randomnessProviders.length)
   return {
+    randomnessProviders,
     hre,
     random,
     reader,
@@ -37,6 +38,10 @@ export const deployWithAndConsumeRandomness = async () => {
   const ctx = await helpers.loadFixture(deployWithRandomness)
   const [consumer] = await ctx.hre.viem.getWalletClients()
   const [[heat]] = await utils.createPreimages(consumer.account!.address)
+  const provider = await ctx.hre.viem.getPublicClient()
+  const blockBeforeHeat = await provider.getBlock({
+    blockTag: 'latest',
+  })
   const selections = await selectPreimages(ctx)
   const required = 5n
   const heatTx = await ctx.random.write.heat([
@@ -53,6 +58,7 @@ export const deployWithAndConsumeRandomness = async () => {
     selections,
     consumer,
     heat,
+    blockBeforeHeat,
   }
 }
 

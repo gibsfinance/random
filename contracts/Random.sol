@@ -8,7 +8,6 @@ import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {Random as RandomImplementation} from "./implementations/Random.sol";
 import {PreimageInfo} from "./PreimageInfo.sol";
-// import {console} from "hardhat/console.sol";
 
 error DeploymentFailed();
 error Misconfigured();
@@ -109,7 +108,6 @@ contract Random is RandomImplementation {
             if (_consumed(nfo)) {
                 return false;
             }
-            // console.log("consuming", nfo.offset, nfo.index);
             _accessFlags[nfo.provider][nfo.token][nfo.price][(nfo.offset + nfo.index) / TWO_FIVE_SIX] |= (ONE << ((nfo.offset + nfo.index) % TWO_FIVE_SIX));
             emit Heat(
                 nfo.provider,
@@ -126,8 +124,6 @@ contract Random is RandomImplementation {
         }
         // returning zero means that the secret has not been requested yet on chain
         uint256 section = _accessFlags[nfo.provider][nfo.token][nfo.price][(nfo.index + nfo.offset) / TWO_FIVE_SIX];
-        // console.logBytes32(bytes32(section));
-        // console.log(nfo.offset, nfo.index);
         return (section << (TWO_FIVE_FIVE - ((nfo.index + nfo.offset) % TWO_FIVE_SIX)) >> TWO_FIVE_FIVE) == ONE;
     }
 
@@ -280,7 +276,6 @@ contract Random is RandomImplementation {
             {
                 if (required == ZERO || required >= TWO_FIVE_FIVE) {
                     // only 254 len or fewer allowed
-                    // console.log("before start");
                     revert UnableToService();
                 }
                 uint256 i;
@@ -333,7 +328,8 @@ contract Random is RandomImplementation {
         return uint256(uint160(owner)) << NINE_SIX
             | (uint256((uint48(
                 (expiryOffset << TWO_FIVE_FIVE > ZERO) ? block.number : block.timestamp
-            ))) << FOUR_EIGHT) | uint256(uint48(expiryOffset));
+            ))) << FOUR_EIGHT)
+            | uint256(uint48(expiryOffset));
     }
 
     function pointer(PreimageInfo.Info calldata info) external override view returns(address) {
@@ -356,6 +352,16 @@ contract Random is RandomImplementation {
 
     function expired(bytes32 key) external view returns (bool) {
         return _expired(randomness[key].timeline);
+    }
+    /**
+     * get the seed of the requested randomness
+     * get a random number on the bounds of upper
+     */
+    function hear(bytes32 key, uint256 upper) external view returns (uint256) {
+        if (randomness[key].seed < TWO_FIVE_SIX) {
+            revert Incomplete();
+        }
+        return _random(key, upper);
     }
 
     /**
@@ -436,19 +442,15 @@ contract Random is RandomImplementation {
             uint256 i;
             do {
                 secrets[i] = _formerSecret[preimageInfo[i].provider][preimageInfo[i].token][preimageInfo[i].price][preimageInfo[i].offset + preimageInfo[i].index];
+                if (secrets[i] == bytes32(0x00)) {
+                    return;
+                }
                 ++i;
             } while (i < len);
             if (_cast(key, preimageInfo, secrets)) {
                 _scatter(key, preimageInfo);
             }
         }
-    }
-
-    function hear(bytes32 key) external payable returns (uint256) {
-        if (randomness[key].seed < TWO_FIVE_SIX) {
-            revert Incomplete();
-        }
-        return _random(key, uint256(_preimageToSecret[randomness[key].orderPreimage]));
     }
 
     function tell(bytes32 key, bytes32 revealedOrderSecret) external payable {
