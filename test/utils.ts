@@ -38,12 +38,17 @@ export const deployWithAndConsumeRandomness = async () => {
   const [consumer] = await ctx.hre.viem.getWalletClients()
   const [[heat]] = await utils.createPreimages(consumer.account!.address)
   const selections = await selectPreimages(ctx)
-  const keys = _.map(selections, 'providerKeyWithIndex')
   const required = 5n
-  await ctx.random.write.heat([required, 12n << 1n | 0n, viem.zeroAddress, heat.preimage, keys])
+  const heatTx = await ctx.random.write.heat([
+    required,
+    12n << 1n | 0n,
+    viem.zeroAddress,
+    heat.preimage,
+    selections,
+  ])
+  await confirmTx(ctx.hre.viem.getPublicClient(), heatTx)
   return {
     ...ctx,
-    keys,
     required,
     selections,
     consumer,
@@ -53,7 +58,7 @@ export const deployWithAndConsumeRandomness = async () => {
 
 export type Context = Awaited<ReturnType<typeof deploy>>
 
-export const confirmTx = async (prov: Promise<viem.PublicClient>, hash: Promise<viem.WriteContractReturnType>) => {
+export const confirmTx = async (prov: Promise<viem.PublicClient> | viem.PublicClient, hash: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType) => {
   const provider = await prov
   const receipt = await provider.waitForTransactionReceipt({
     hash: await hash,
@@ -66,7 +71,7 @@ export const getRandomnessProviders = async (hre: HardhatRuntimeEnvironment) => 
   return signers.slice(12) as viem.WalletClient[]
 }
 
-export const writePreimages = async (ctx: Context, index = 0n) => {
+export const writePreimages = async (ctx: Context, index = 0n, token = viem.zeroAddress, price = utils.defaultPrice) => {
   const rand = await ctx.hre.viem.getContractAt(contractName.Random, ctx.random.address)
   const signers = await getRandomnessProviders(ctx.hre)
   return await utils.limiters.signers.map(signers, async (signer: viem.WalletClient) => {
@@ -74,7 +79,8 @@ export const writePreimages = async (ctx: Context, index = 0n) => {
     await Promise.all(secretBatches.map(async (secrets) => {
       const preimages = _.map(secrets, 'preimage')
       // const r =
-      await confirmTx(ctx.hre.viem.getPublicClient(), rand.write.ink([viem.concatHex(preimages)], {
+      await confirmTx(ctx.hre.viem.getPublicClient(), rand.write.ink(
+        [token, price, viem.concatHex(preimages)], {
         account: signer.account,
       }))
     }))
@@ -82,39 +88,45 @@ export const writePreimages = async (ctx: Context, index = 0n) => {
   })
 }
 
-export const readPreimages = async (ctx: Context, offset = 0n) => {
-  // const random = await hre.viem.getContractAt(contractName.Random, address)
+export const readPreimages = async (ctx: Context, options: utils.PreimageInfoOptions = utils.defaultPreImageInfo) => {
   const signers = await getRandomnessProviders(ctx.hre)
-  // const provider = await ctx.hre.viem.getPublicClient()
   return await utils.limiters.signers.map(signers, async (signer) => {
     const data = await ctx.reader.read.pointer([
       ctx.random.address,
-      signer.account!.address,
-      offset,
-      // 0n,
+      {
+        ...utils.defaultPreImageInfo,
+        ...options,
+        provider: signer.account!.address,
+      },
     ])
     return utils.dataToPreimages(data)
   })
 }
 
-export const selectPreimages = async (ctx: Context, count = 5, offsets = [0n]) => {
+export const selectPreimages = async (ctx: Context, count = 5, offsets: utils.PreimageInfoOptions[] = [utils.defaultPreImageInfo]) => {
   const producers = await getRandomnessProviders(ctx.hre)
   const preimageGroups = await utils.limiters.signers.map(producers, async (producer) => {
-    const dataSets = await Promise.all(offsets.map((offset) => (
+    const iterations = offsets.map((options) => ({
+      ...utils.defaultPreImageInfo,
+      ...options,
+      provider: producer.account!.address,
+    }))
+    const dataSets = await Promise.all(iterations.map((options) => (
       ctx.reader.read.pointer([
         ctx.random.address,
-        producer.account!.address,
-        offset,
+        options,
       ])
     )))
     return _(dataSets).map(utils.dataToPreimages).map((set, i) => {
-      const offset = offsets[i]
+      const offset = iterations[i]
       return _.map(set, (item, index) => ({
+        ...utils.defaultPreImageInfo,
+        ...offset,
         signer: producer,
-        offset,
-        index,
         item,
-        providerKeyWithIndex: viem.toHex(BigInt(producer.account!.address) << 96n | offset << 16n | BigInt(index), { size: 32 }),
+        index: BigInt(index),
+      } as utils.PreimageInfo & {
+        signer: viem.WalletClient;
       }))
     }).flatten().value()
   })

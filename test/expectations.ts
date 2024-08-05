@@ -25,6 +25,7 @@ export const revertedWithCustomError = async (p: Promise<any>, errorName: string
       // be sure to implement args check!
     }
   }
+  console.log(rpcError.details, errorName)
   console.dir(rpcError.walk())
   throw new Error('unable to check error')
 }

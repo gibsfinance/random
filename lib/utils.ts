@@ -60,15 +60,44 @@ export const dataToPreimages = (data: viem.Hex) => {
     .value()
 }
 
-export const providerKeyParts = (key: viem.Hex) => {
-  const num = BigInt(key)
-  const provider = viem.toHex(num >> 96n, { size: 20 })
-  const offset = BigInt.asUintN(80, num >> 16n)
-  const localIndex = BigInt.asUintN(16, num)
-  return {
-    provider: viem.getAddress(provider),
-    offset,
-    localIndex,
-    index: offset + localIndex,
-  }
+export type PreimageInfo = {
+  provider: viem.Hex;
+  token: viem.Hex;
+  price: bigint;
+  offset: bigint;
+  index: bigint;
+}
+
+export type PreimageInfoOptions = Partial<PreimageInfo>
+
+export const defaultPrice = viem.parseEther('100')
+
+export const defaultPreImageInfo: PreimageInfo = {
+  provider: viem.zeroAddress,
+  token: viem.zeroAddress,
+  price: defaultPrice,
+  offset: 0n,
+  index: 0n,
+}
+
+// export const providerKeyParts = (key: viem.Hex) => {
+//   const num = BigInt(key)
+//   const provider = viem.toHex(num >> 96n, { size: 20 })
+//   const offset = BigInt.asUintN(80, num >> 16n)
+//   const localIndex = BigInt.asUintN(16, num)
+//   return {
+//     provider: viem.getAddress(provider),
+//     offset,
+//     localIndex,
+//     index: offset + localIndex,
+//   }
+// }
+
+export const section = (inputs = defaultPreImageInfo) => {
+  return viem.keccak256(viem.concatHex([
+    viem.padHex(inputs.provider, { size: 32 }),
+    viem.padHex(inputs.token, { size: 32 }),
+    viem.numberToHex(inputs.price, { size: 32 }),
+    viem.numberToHex(inputs.offset, { size: 32 }),
+  ]), 'hex')
 }

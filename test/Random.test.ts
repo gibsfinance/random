@@ -14,7 +14,7 @@ describe("Random", () => {
     })
     it('will not err if an index that is presented is out of bounds on random contract', async () => {
       const ctx = await helpers.loadFixture(testUtils.deploy)
-      await expect(ctx.random.read.pointer([viem.zeroAddress, 0n]))
+      await expect(ctx.random.read.pointer([utils.defaultPreImageInfo]))
         .eventually.to.equal(viem.zeroAddress)
     })
     it('writes them to a known location', async () => {
@@ -31,18 +31,17 @@ describe("Random", () => {
       const [signer] = await ctx.hre.viem.getWalletClients()
       const [[s]] = await utils.createPreimages(signer.account!.address)
       const selections = await testUtils.selectPreimages(ctx)
-      const keys = _.map(selections, 'providerKeyWithIndex')
       const required = 5n
-      const heatHash = await ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, s.preimage, keys])
+      const heatHash = await ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, s.preimage, selections])
       const emitArgs = [ctx, heatHash, ctx.random, 'Heat'] as const
-      const expectedUsed = keys.slice(0, Number(required))
+      const expectedUsed = selections.slice(0, Number(required))
       if (Number(required) > expectedUsed.length) {
         return this.skip()
       }
-      await Promise.all(expectedUsed.map(async (key) => {
-        const parts = utils.providerKeyParts(key)
+      await Promise.all(expectedUsed.map(async (parts) => {
         await expectations.emit(...emitArgs, {
-          to: parts.provider,
+          provider: viem.getAddress(parts.provider),
+          section: utils.section(parts),
           index: parts.index,
         })
       }))
@@ -50,7 +49,7 @@ describe("Random", () => {
     it('does not allow secrets to be requested twice', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
       await expectations.revertedWithCustomError(ctx.random.write.heat(
-        [ctx.required, 12n << 1n, viem.zeroAddress, ctx.heat.preimage, ctx.keys]
+        [ctx.required, 12n << 1n, viem.zeroAddress, ctx.heat.preimage, ctx.selections]
       ), 'UnableToService')
     })
   })
@@ -59,13 +58,18 @@ describe("Random", () => {
       it('can detect by checking a section via the reader', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
 
-        const provider = ctx.selections[0].signer
+        const [selection] = ctx.selections
+        const provider = selection.signer
         const unused = await ctx.reader.read.unused([
           ctx.random.address!,
-          provider.account!.address,
-          0n,
+          {
+            ...utils.defaultPreImageInfo,
+            provider: provider.account!.address,
+          },
         ])
-        const unusedCompact = _.compact(unused)
+        const unusedCompact = _.reject(unused, {
+          provider: viem.zeroAddress,
+        })
         expect(unusedCompact.length).to.be.lessThan(unused.length)
       })
     })

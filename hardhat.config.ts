@@ -6,6 +6,7 @@ import '@nomicfoundation/hardhat-viem'
 import '@nomicfoundation/hardhat-chai-matchers'
 import 'hardhat-tracer'
 // import '@nomicfoundation/hardhat-verify'
+Error.stackTraceLimit = Infinity
 
 const { env } = process
 
