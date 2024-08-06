@@ -40,10 +40,10 @@ contract Reader {
         returns (PreimageLocation.Info[] memory providerKeyWithIndices)
     {
         unchecked {
-            uint256 i;
             bytes memory data = _pointer(rand, info).read();
             uint256 len = data.length / THREE_TWO;
             providerKeyWithIndices = new PreimageLocation.Info[](len);
+            uint256 i;
             do {
                 PreimageLocation.Info memory nfo = info;
                 nfo.index = i;
@@ -57,5 +57,23 @@ contract Reader {
 
     function at(address rand, PreimageLocation.Info calldata info) external view returns (bytes32) {
         return bytes32(_pointer(rand, info).read(info.index * THREE_TWO, info.index * THREE_TWO + THREE_TWO));
+    }
+    function expired(address rand, bytes32 key) external view returns (bool) {
+        return _expired(Random(rand).randomness(key).timeline);
+    }
+
+    uint256 constant internal ZERO = 0;
+    uint256 constant internal ONE = 1;
+    uint256 constant internal FOUR_EIGHT = 48;
+    uint256 constant internal TWO_FIVE_FIVE = 255;
+    function _expired(uint256 timeline) internal virtual view returns (bool) {
+        unchecked {
+            // end
+            return (timeline << TWO_FIVE_FIVE == ZERO ? block.number : block.timestamp)
+            // start
+            - (uint256(uint48(timeline >> FOUR_EIGHT)))
+            // expiration delta
+            > (uint256(uint48(timeline) >> ONE));
+        }
     }
 }

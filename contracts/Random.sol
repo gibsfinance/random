@@ -47,23 +47,6 @@ contract Random is RandomImplementation {
 
     using PreimageLocation for PreimageLocation.Info;
 
-    uint256 internal constant ZERO = 0;
-    uint256 internal constant ONE = 1;
-    uint256 internal constant EIGHT = 8;
-    uint256 internal constant ONE_SIX = 16;
-    uint256 internal constant THREE_TWO = 32;
-    uint256 internal constant FOUR_EIGHT = 48;
-    uint256 internal constant NINE_SIX = 96;
-    uint256 internal constant ONE_TWO_EIGHT = 128;
-    uint256 internal constant ONE_SIX_ZERO = 160;
-    uint256 internal constant TWO_ZERO_EIGHT = 208;
-    uint256 internal constant TWO_ZERO_NINE = ONE + TWO_ZERO_EIGHT;
-    uint256 internal constant TWO_FOUR_EIGHT = 248;
-    uint256 internal constant TWO_FIVE_FIVE = 255;
-    uint256 internal constant TWO_FIVE_SIX = 256;
-    uint256 internal constant ONE_HUNDRED_ETHER = 100 ether;
-    uint256 internal constant MAX_PREIMAGES = 65_535 - ONE;
-
     mapping(
         address provider
             => mapping(address token => mapping(uint256 price => mapping(uint256 offset => address pointer)))
@@ -73,7 +56,6 @@ contract Random is RandomImplementation {
         address provider
             => mapping(address token => mapping(uint256 price => mapping(uint256 index => uint256 accessFlags)))
     ) internal _accessFlags;
-    mapping(bytes32 key => Randomness campaign) internal _randomness;
     mapping(address account => mapping(address token => uint256 amount)) internal _custodied;
     mapping(
         address provider
@@ -136,6 +118,9 @@ contract Random is RandomImplementation {
             if (formerSecret == bytes32(ZERO)) {
                 revert Errors.ZeroSecret();
             }
+            if (pntr == address(0)) {
+                revert Errors.Misconfigured();
+            }
             // length check is skipped because if one goes out of bounds you either err
             // or you end up with zero bytes, which would be quite the feat to find the hash for
             // always read 32 bytes
@@ -152,13 +137,6 @@ contract Random is RandomImplementation {
                 ++_randomness[randomnessKey].seed;
                 emit SecretRevealed(nfo.provider, location, formerSecret);
             }
-        }
-    }
-
-    function _cost(uint256 required, uint256 priceFraction) internal pure virtual returns (uint256) {
-        unchecked {
-            return (uint256(priceFraction >> ONE_TWO_EIGHT) * (required + 2))
-                / (priceFraction << ONE_TWO_EIGHT >> ONE_TWO_EIGHT);
         }
     }
 
@@ -188,28 +166,16 @@ contract Random is RandomImplementation {
             return true;
         }
     }
-    /**
-     * after an error is caught, it can be reverted again
-     * @param data the data to repackage and revert with
-     */
-
-    function _bubbleRevert(bytes memory data) internal pure {
-        if (data.length == ZERO) revert();
-        assembly {
-            revert(add(32, data), mload(data))
-        }
-    }
-
-    function _expired(uint256 timeline) internal view returns (bool) {
-        unchecked {
-            // end
-            return (timeline << TWO_FIVE_FIVE > ZERO ? block.number : block.timestamp)
-            // start
-            - (uint256(uint48(timeline >> FOUR_EIGHT)))
-            // expiration delta
-            > (uint256(uint48(timeline) >> ONE));
-        }
-    }
+    // function _expired(uint256 timeline) internal view returns (bool) {
+    //     unchecked {
+    //         // end
+    //         return (timeline << TWO_FIVE_FIVE > ZERO ? block.number : block.timestamp)
+    //         // start
+    //         - (uint256(uint48(timeline >> FOUR_EIGHT)))
+    //         // expiration delta
+    //         > (uint256(uint48(timeline) >> ONE));
+    //     }
+    // }
 
     function _toId(bytes32 hashed, uint256 len) internal pure returns (bytes32) {
         unchecked {
@@ -295,7 +261,7 @@ contract Random is RandomImplementation {
             address owner = LibMulticaller.senderOrSigner();
             _attributePushedValue(owner);
             {
-                if (required == ZERO || required >= TWO_FIVE_FIVE) {
+                if (required == ZERO || required >= TWO_FIVE_FIVE || required < potentialLocations.length) {
                     // only 254 len or fewer allowed
                     revert Errors.UnableToService();
                 }
@@ -337,7 +303,7 @@ contract Random is RandomImplementation {
 
     function _timeline(address owner, uint256 expiryOffset) internal view returns (uint256) {
         return uint256(uint160(owner)) << NINE_SIX
-            | (uint256((uint48((expiryOffset << TWO_FIVE_FIVE > ZERO) ? block.number : block.timestamp))) << FOUR_EIGHT)
+            | (uint256((uint48((expiryOffset << TWO_FIVE_FIVE == ZERO) ? block.number : block.timestamp))) << FOUR_EIGHT)
             | uint256(uint48(expiryOffset));
     }
 
@@ -345,9 +311,6 @@ contract Random is RandomImplementation {
         return _pointers[info.provider][info.token][info.price][info.offset];
     }
 
-    function expired(bytes32 key) external view override returns (bool) {
-        return _expired(_randomness[key].timeline);
-    }
     /**
      * provide stored randomness for the future. imagine painting a die with invisible ink
      * @param data the concatenated, immutable preimages to write on chain
@@ -371,7 +334,7 @@ contract Random is RandomImplementation {
             // could improve this, so 16 bits are allocated for that situation (up to 65_535)
             _pointers[provider][token][price][start] = pntr;
             _preimageCount[provider][token][price] = start + count;
-            emit Ink(provider, start, pntr);
+            emit Ink(provider, (start << ONE_TWO_EIGHT) | (start + count), pntr);
         }
     }
 

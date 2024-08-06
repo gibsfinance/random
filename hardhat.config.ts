@@ -5,6 +5,7 @@ import "@nomicfoundation/hardhat-toolbox-viem";
 import '@nomicfoundation/hardhat-viem'
 import '@nomicfoundation/hardhat-chai-matchers'
 import 'hardhat-tracer'
+import 'solidity-coverage'
 // import '@nomicfoundation/hardhat-verify'
 Error.stackTraceLimit = Infinity
 
@@ -21,6 +22,7 @@ const config: HardhatUserConfig = {
         count: 20, // 512
         // path:
       },
+      allowUnlimitedContractSize: false,
       // forking: {
       //   url: 'https://rpc-pulsechain.g4mm4.io',
       //   blockNumber: 21_074_800,
