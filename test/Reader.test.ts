@@ -9,7 +9,7 @@ import * as testUtils from './utils'
 describe('Reader', () => {
   it('can read single preimages', async () => {
     const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
-    const [secrets] = ctx.secretGroups
+    const [secrets] = ctx.secretBatches
     const [s] = secrets
     const [provider] = ctx.randomnessProviders
 
@@ -23,7 +23,7 @@ describe('Reader', () => {
   })
   it('cannot read out of bounds', async () => {
     const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
-    const [secrets] = ctx.secretGroups
+    const [secrets] = ctx.secretBatches
     const [provider] = ctx.randomnessProviders
     await expectations.revertedWithCustomError(ctx.reader, ctx.reader.read.at([ctx.random.address, {
       provider: provider.account!.address,

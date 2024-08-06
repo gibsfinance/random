@@ -46,7 +46,8 @@ export const revertedWithCustomError = async (contract: viem.GetContractReturnTy
   throw new Error('unable to check error')
 }
 
-export const emit = async (ctx: Context, hash: viem.Hex, contract: viem.GetContractReturnType, eventName: string, args?: any[] | Record<string, any>) => {
+export const _emit = async (ctx: Context, _hash: viem.Hex | Promise<viem.Hex>, contract: viem.GetContractReturnType, eventName: string, args?: any[] | Record<string, any>) => {
+  const hash = await _hash
   const client = await ctx.hre.viem.getPublicClient()
   const receipt = await client.getTransactionReceipt({
     hash,
@@ -77,7 +78,29 @@ export const emit = async (ctx: Context, hash: viem.Hex, contract: viem.GetContr
     (filter as any).args = objectArgs
   }
   const parsed = _.filter(allEvents, filter)
-  if (!parsed.length) {
-    throw new Error('unable to find event')
+  // if (!parsed.length) {
+  //   throw new Error('unable to find event')
+  // }
+  return parsed
+}
+
+export const emit = async (...args: Parameters<typeof _emit>) => {
+  const emitted = await _emit(...args)
+  if (emitted.length) return
+  throw new Error('unable to find event')
+}
+
+export const not = {
+  emit: async (...args: Parameters<typeof _emit>) => {
+    const emitted = await _emit(...args)
+    if (emitted.length) {
+      throw new Error('found event!')
+    }
+    // try {
+    // } catch (err) {
+    //   console.log(err)
+    //   return
+    // }
+    // throw new Error('event found')
   }
 }

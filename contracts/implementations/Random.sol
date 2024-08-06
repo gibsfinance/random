@@ -4,6 +4,13 @@ pragma solidity ^0.8.24;
 import {PreimageLocation} from "../PreimageLocation.sol";
 
 abstract contract Random {
-  function pointer(PreimageLocation.Info calldata info) external virtual view returns(address);
-  function consumed(PreimageLocation.Info calldata info) external virtual view returns(bool);
+    struct Randomness {
+        uint256 timeline;
+        uint256 seed;
+    }
+
+    function pointer(PreimageLocation.Info calldata info) external view virtual returns (address);
+    function consumed(PreimageLocation.Info calldata info) external view virtual returns (bool);
+    function expired(bytes32 key) external view virtual returns (bool);
+    function randomness(bytes32 key) external view virtual returns (Randomness memory);
 }

@@ -29,16 +29,23 @@ export const deploy = async () => {
 
 export const deployWithRandomness = async () => {
   const ctx = await helpers.loadFixture(deploy)
-  const secretGroups = await writePreimages(ctx)
+  const generatedPreimages = await writePreimages(ctx)
+  const [{ preimageLocations, secretBatches }] = generatedPreimages
+  const [secretGroups] = secretBatches
   const secretByPreimage = new Map(
-    _(secretGroups).flatten().map(({ preimage, secret }) => ([
-      preimage, secret,
-    ] as const)).value()
+    _(generatedPreimages)
+      .map((generated) => generated.secretBatches)
+      .flattenDeep()
+      .map(({ preimage, secret }) => ([preimage, secret] as const))
+      .value()
   )
   return {
     ...ctx,
     secretGroups,
     secretByPreimage,
+    secretBatches,
+    generatedPreimages,
+    preimageLocations,
   }
 }
 
@@ -60,11 +67,11 @@ export const deployWithAndConsumeRandomness = async () => {
     selections,
   ])
   const receipt = await confirmTx(ctx, heatTx)
-  const r = await provider.getTransactionReceipt({
-    hash: receipt,
-  })
+  // const r = await provider.getTransactionReceipt({
+  //   hash: receipt,
+  // })
   const randomnessStarts = await ctx.random.getEvents.RandomnessStart({}, {
-    blockHash: r.blockHash,
+    blockHash: receipt.blockHash,
   })
   return {
     ...ctx,
@@ -84,7 +91,7 @@ export const confirmTx = async (ctx: Context, hash: Promise<viem.WriteContractRe
   const receipt = await provider.waitForTransactionReceipt({
     hash: await hash,
   })
-  return receipt.transactionHash
+  return receipt
 }
 
 export const getRandomnessProviders = async (hre: HardhatRuntimeEnvironment) => {
@@ -92,20 +99,31 @@ export const getRandomnessProviders = async (hre: HardhatRuntimeEnvironment) => 
   return signers.slice(12) as viem.WalletClient[]
 }
 
-export const writePreimages = async (ctx: Context, index = 0n, token = viem.zeroAddress, price = utils.defaultPrice) => {
+export const writePreimages = async (ctx: Context, offset = 0n, token = viem.zeroAddress, price = utils.defaultPrice) => {
   const rand = await ctx.hre.viem.getContractAt(contractName.Random, ctx.random.address)
   const signers = await getRandomnessProviders(ctx.hre)
   return await utils.limiters.signers.map(signers, async (signer: viem.WalletClient) => {
-    const secretBatches = await utils.createPreimages(signer.account!.address, index)
-    await Promise.all(secretBatches.map(async (secrets) => {
+    const secretBatches = await utils.createPreimages(signer.account!.address, offset)
+    const preimageLocations = await Promise.all(secretBatches.map(async (secrets) => {
       const preimages = _.map(secrets, 'preimage')
-      // const r =
+      const preimageLocations = preimages.map((preimage, index) => ({
+        provider: signer.account!.address,
+        token,
+        price,
+        offset,
+        index,
+        preimage,
+      }))
       await confirmTx(ctx, rand.write.ink(
         [token, price, viem.concatHex(preimages)], {
         account: signer.account,
       }))
+      return preimageLocations
     }))
-    return secretBatches[0]
+    return {
+      preimageLocations,
+      secretBatches,
+    }
   })
 }
 

@@ -19,7 +19,7 @@ describe("Random", () => {
     })
     it('writes them to a known location', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
-      const [secrets] = ctx.secretGroups
+      const [secrets] = ctx.secretBatches
       const [readBatches] = await testUtils.readPreimages(ctx)
       const preimages = _.map(secrets, 'preimage')
       expect(preimages).to.deep.equal(readBatches)
@@ -32,8 +32,8 @@ describe("Random", () => {
       const [[s]] = await utils.createPreimages(signer.account!.address)
       const selections = await testUtils.selectPreimages(ctx)
       const required = 5n
-      const heatHash = await testUtils.confirmTx(ctx, ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, s.preimage, selections]))
-      const emitArgs = [ctx, heatHash, ctx.random, 'Heat'] as const
+      const heatReceipt = await testUtils.confirmTx(ctx, ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, s.preimage, selections]))
+      const emitArgs = [ctx, heatReceipt.transactionHash, ctx.random, 'Heat'] as const
       const expectedUsed = selections.slice(0, Number(required))
       if (Number(required) > expectedUsed.length) {
         return this.skip()
@@ -125,6 +125,72 @@ describe("Random", () => {
         ))
         await testUtils.confirmTx(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]))
       })
+    })
+  })
+  describe('public signals to indicate the efficacy/health of preimages', () => {
+    it('can call ok to signal continued efficacy', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+      const [selection] = ctx.selections
+      await expectations.emit(ctx, ctx.random.write.ok([[selection]], {
+        account: ctx.randomnessProviders.find((provider) => provider.account!.address == selection.provider)!.account,
+      }), ctx.random, 'Ok')
+    })
+    it('can call bleach to shut down a whole section of preimages', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+      const [provider] = ctx.randomnessProviders
+      await expectations.emit(ctx, ctx.random.write.bleach([{
+        ...utils.defaultPreImageInfo,
+        provider: provider.account!.address,
+      }], {
+        account: provider.account!,
+      }), ctx.random, 'Bleach')
+    })
+    it('can call bleach on a pointer that does not exist, but will revert', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+      const [randomnessProvider] = ctx.randomnessProviders
+      const existing = _(ctx.generatedPreimages).map('preimageLocations').flattenDeep().reduce((highest, location) => {
+        const globalIndex = location.offset + BigInt(location.index)
+        return highest > globalIndex ? highest : globalIndex
+      }, 0n)
+      await expect(ctx.random.read.pointer([{
+        ...utils.defaultPreImageInfo,
+        provider: randomnessProvider.account!.address,
+        offset: existing,
+      }])).eventually.to.equal(viem.zeroAddress)
+      await expectations.revertedWithCustomError(ctx.random, ctx.random.write.bleach([{
+        ...utils.defaultPreImageInfo,
+        provider: randomnessProvider.account!.address,
+        offset: existing,
+      }], {
+        account: randomnessProvider.account!,
+      }), 'Misconfigured')
+    })
+    it('cannot call bleach for other providers', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+      const [randomnessProvider, rp2] = ctx.randomnessProviders
+      const existing = _(ctx.generatedPreimages).map('preimageLocations').flattenDeep().reduce((highest, location) => {
+        const globalIndex = location.offset + BigInt(location.index)
+        return highest > globalIndex ? highest : globalIndex
+      }, 0n)
+      await expect(ctx.random.read.pointer([{
+        ...utils.defaultPreImageInfo,
+        provider: randomnessProvider.account!.address,
+      }])).eventually.not.to.equal(viem.zeroAddress)
+      await expectations.revertedWithCustomError(ctx.random, ctx.random.write.bleach([{
+        ...utils.defaultPreImageInfo,
+        provider: randomnessProvider.account!.address,
+        offset: existing,
+      }], {
+        account: rp2.account!,
+      }), 'SignerMismatch')
+    })
+  })
+  describe('token custody', () => {
+    it('custodies tokens in the contract', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+      const oneEther = viem.parseEther('1')
+
+      ctx.random.write.handoff([viem.zeroAddress, viem.zeroAddress, oneEther])
     })
   })
 })
