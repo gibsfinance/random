@@ -8,7 +8,7 @@
     "mocha": "^10.7.0"
   },
   "dependencies": {
-    "@nomicfoundation/hardhat-verify": "^2.0.9",
+    "@nomicfoundation/hardhat-verify": "^2.0.8",
     "@nomicfoundation/hardhat-viem": "^2.0.3",
     "@solidstate/hardhat-4byte-uploader": "^1.2.2",
     "@types/chai": "^4.3.17",
