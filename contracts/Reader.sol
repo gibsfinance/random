@@ -22,7 +22,7 @@ contract Reader {
     assembly {
       size := extcodesize(pntr)
     }
-    if (info.offset > size / THREE_TWO) {
+    if (info.index > ((size / THREE_TWO) - 1)) {
       revert IndexOutOfBounds();
     }
     return pntr;
