@@ -28,7 +28,7 @@ jobs:
         run: npm ci # switch to `npm ci` when Node.js 6 support is dropped
 
       - name: Run compile (+lint)
-        run: npm run compile
+        run: npm run build
 
       - name: Run tests
         run: npm run coverage
