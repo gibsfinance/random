@@ -16,8 +16,10 @@ export const deploy = async () => {
   console.log('random=%o', random.address)
   console.log('reader=%o', reader.address)
   const randomnessProviders = await getRandomnessProviders(hre)
+  const signers = await hre.viem.getWalletClients()
   console.log('randomness_providers=%o', randomnessProviders.length)
   return {
+    signers,
     randomnessProviders,
     hre,
     random,
@@ -28,9 +30,15 @@ export const deploy = async () => {
 export const deployWithRandomness = async () => {
   const ctx = await helpers.loadFixture(deploy)
   const secretGroups = await writePreimages(ctx)
+  const secretByPreimage = new Map(
+    _(secretGroups).flatten().map(({ preimage, secret }) => ([
+      preimage, secret,
+    ] as const)).value()
+  )
   return {
     ...ctx,
     secretGroups,
+    secretByPreimage,
   }
 }
 
@@ -51,7 +59,13 @@ export const deployWithAndConsumeRandomness = async () => {
     heat.preimage,
     selections,
   ])
-  await confirmTx(ctx, heatTx)
+  const receipt = await confirmTx(ctx, heatTx)
+  const r = await provider.getTransactionReceipt({
+    hash: receipt,
+  })
+  const randomnessStarts = await ctx.random.getEvents.RandomnessStart({}, {
+    blockHash: r.blockHash,
+  })
   return {
     ...ctx,
     required,
@@ -59,6 +73,7 @@ export const deployWithAndConsumeRandomness = async () => {
     consumer,
     heat,
     blockBeforeHeat,
+    randomnessStarts,
   }
 }
 
@@ -125,14 +140,15 @@ export const selectPreimages = async (ctx: Context, count = 5, offsets: utils.Pr
     )))
     return _(dataSets).map(utils.dataToPreimages).map((set, i) => {
       const offset = iterations[i]
-      return _.map(set, (item, index) => ({
+      return _.map(set, (preimage, index) => ({
         ...utils.defaultPreImageInfo,
         ...offset,
         signer: producer,
-        item,
+        preimage,
         index: BigInt(index),
       } as utils.PreimageInfo & {
         signer: viem.WalletClient;
+        preimage: viem.Hex;
       }))
     }).flatten().value()
   })

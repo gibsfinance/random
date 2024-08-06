@@ -8,6 +8,7 @@ import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {Random as RandomImplementation} from "./implementations/Random.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
+import {console} from "hardhat/console.sol";
 
 error DeploymentFailed();
 error Misconfigured();
@@ -31,7 +32,7 @@ event Heat(address indexed provider, bytes32 section, uint256 index);
 
 event RandomnessStart(address indexed owner, bytes32 key); // no need to index because all keys should be unique
 
-event SecretRevealed(address indexed provider, uint256 index, bytes32 formerSecret);
+event SecretRevealed(address indexed provider, bytes32 hash, bytes32 formerSecret);
 
 event CampaignExpired(address indexed recipient, address indexed ender, bytes32 key);
 
@@ -141,7 +142,7 @@ contract Random is RandomImplementation {
         }
     }
 
-    function _flick(bytes32 randomnessKey, PreimageLocation.Info calldata nfo, bytes32 formerSecret) internal {
+    function _flick(bytes32 randomnessKey, PreimageLocation.Info calldata nfo, bytes32 formerSecret) internal returns(bytes32 hashed) {
         unchecked {
             address pntr = _pointers[nfo.provider][nfo.token][nfo.price][nfo.offset];
             // secret cannot be zero
@@ -151,16 +152,17 @@ contract Random is RandomImplementation {
             // length check is skipped because if one goes out of bounds you either err
             // or you end up with zero bytes, which would be quite the feat to find the hash for
             // always read 32 bytes
-            if (formerSecret.hash() != bytes32(pntr.read((nfo.offset * THREE_TWO), ((nfo.offset * THREE_TWO) + THREE_TWO)))) {
+            if (formerSecret.hash() != bytes32(pntr.read((nfo.index * THREE_TWO), ((nfo.index * THREE_TWO) + THREE_TWO)))) {
                 revert SecretMismatch();
             }
             // only ever set once but do not penalize for lack of coordination
-            if (_formerSecret[nfo.provider][nfo.token][nfo.price][nfo.offset] == bytes32(ZERO)) {
-                _formerSecret[nfo.provider][nfo.token][nfo.price][nfo.offset] = formerSecret;
+            hashed = nfo.hash();
+            if (_formerSecret[nfo.provider][nfo.token][nfo.price][nfo.offset + nfo.index] == bytes32(ZERO)) {
+                _formerSecret[nfo.provider][nfo.token][nfo.price][nfo.offset + nfo.index] = formerSecret;
                 ++randomness[randomnessKey].seed;
                 emit SecretRevealed(
                     nfo.provider,
-                    nfo.offset + nfo.index,
+                    hashed,
                     formerSecret
                 );
             }
@@ -188,8 +190,7 @@ contract Random is RandomImplementation {
             }
             bytes32[] memory locations = new bytes32[](len);
             do {
-                _flick(key, preimageInfo[i], revealedSecrets[i]);
-                locations[i] = preimageInfo[i].hash();
+                locations[i] = _flick(key, preimageInfo[i], revealedSecrets[i]);
                 ++i;
             } while (i < len);
             if (random.locationsHash != locations.hash()) {
@@ -240,7 +241,6 @@ contract Random is RandomImplementation {
     function _scatter(bytes32 key, PreimageLocation.Info[] calldata info) internal {
         unchecked {
             uint256 len = info.length;
-            address ender = LibMulticaller.senderOrSigner();
             PreimageLocation.Info calldata item = info[_random(key, len)];
             uint256 total;
             uint256 i;
@@ -249,9 +249,9 @@ contract Random is RandomImplementation {
                 ++i;
             } while (i < len);
             if (_expired(randomness[key].timeline)) {
-                address owner = address(uint160(randomness[key].timeline >> NINE_SIX));
+                address ender = LibMulticaller.senderOrSigner();
                 uint256 expiredCallerPayout = total / 2; // take half if expiry happens late
-                _custodied[owner][item.token] += expiredCallerPayout;
+                _custodied[ender][item.token] += expiredCallerPayout;
                 total -= expiredCallerPayout;
                 // can be used as reputation
                 emit CampaignExpired(item.provider, ender, key);
@@ -410,8 +410,12 @@ contract Random is RandomImplementation {
         }
     }
 
-    function flick(bytes32 key, PreimageLocation.Info calldata preimageInfo, bytes32 revealedSecret) external payable {
-        _flick(key, preimageInfo, revealedSecret);
+    function flick(bytes32 key, PreimageLocation.Info calldata preimageInfo, bytes32 revealed)
+        external
+        payable
+        returns(bytes32)
+    {
+        return _flick(key, preimageInfo, revealed);
     }
 
     function cast(bytes32 key, PreimageLocation.Info[] calldata preimageInfo, bytes32[] calldata revealed)

@@ -88,5 +88,43 @@ describe("Random", () => {
         expect(events.length).to.be.greaterThanOrEqual(1)
       })
     })
+    describe('how to use secrets once received', async () => {
+      it('can be written and read on chain by anyone', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { signers, selections, randomnessStarts, secretByPreimage } = ctx
+        const [start] = randomnessStarts
+        const [, signer2] = signers
+        const duplicatedAndShuffled = _.shuffle(selections.concat(selections))
+        for (const selection of duplicatedAndShuffled) {
+          // duplicated flicks should not make a difference
+          await testUtils.confirmTx(ctx, ctx.random.write.flick([
+            start.args.key!,
+            selection,
+            secretByPreimage.get(selection.preimage) as viem.Hex,
+          ], {
+            account: signer2.account!,
+          }))
+        }
+        await testUtils.confirmTx(ctx, ctx.random.write.dig([start.args.key!, selections]))
+      })
+      it('can be written and provided via calldata but will fail if out of order', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { selections, randomnessStarts, secretByPreimage } = ctx
+        const [start] = randomnessStarts
+        const secrets = selections.map((selection) => (
+          secretByPreimage.get(selection.preimage) as viem.Hex
+        ))
+        await expectations.revertedWithCustomError(ctx.random, ctx.random.write.cast([start.args.key!, selections, _.shuffle(secrets)]), 'SecretMismatch')
+      })
+      it('can be written and provided via calldata on chain by anyone', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { selections, randomnessStarts, secretByPreimage } = ctx
+        const [start] = randomnessStarts
+        const secrets = selections.map((selection) => (
+          secretByPreimage.get(selection.preimage) as viem.Hex
+        ))
+        await testUtils.confirmTx(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]))
+      })
+    })
   })
 })
