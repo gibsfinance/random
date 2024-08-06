@@ -545,19 +545,30 @@ describe("Random", () => {
         const { all, selections } = await testUtils.selectPreimages(ctx)
         await expect(ctx.random.read.consumed([ctx.selections[0]]))
           .eventually.to.equal(true)
-        for (const item of all) {
-          if (selections.includes(item)) {
-            continue
-          }
-          await expect(ctx.random.read.consumed([ctx.selections[0]]))
-            .eventually.to.equal(true)
-          break
-        }
+        const notConsumed = all.find((item) => !selections.includes(item))!
+        await expect(ctx.random.read.consumed([notConsumed]))
+          .eventually.to.equal(false)
       })
-      it('fails if the index is outside of the section size')
+      it('fails if the index is outside of the section size', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { selections } = await testUtils.selectPreimages(ctx)
+        const [selection] = selections
+        await expect(ctx.random.read.consumed([{
+          ...selection,
+          index: 766n,
+        }]))
+          .eventually.to.equal(false)
+        await expectations.revertedWithCustomError(ctx.errors,
+          ctx.random.read.consumed([{
+            ...selection,
+            index: 767n,
+          }]),
+          'Misconfigured',
+        )
+      })
     })
     describe('#randomness', () => {
-      it('returns randomness struct in whatever state it is in')
+      it('returns randomness struct')
     })
   })
 })
