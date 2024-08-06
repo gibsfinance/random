@@ -66,7 +66,7 @@ describe("Random", () => {
   describe('requesting secrets', () => {
     it('emits a Heat event', async function () {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
-      const selections = await testUtils.selectPreimages(ctx)
+      const { selections } = await testUtils.selectPreimages(ctx)
       const required = 5n
       const heatReceipt = await testUtils.confirmTx(ctx, ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections]))
       const emitArgs = [ctx, heatReceipt.transactionHash, ctx.random, 'Heat'] as const
@@ -98,7 +98,7 @@ describe("Random", () => {
       })
       it('no more than 254', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
-        const selections = await testUtils.selectPreimages(ctx)
+        const { selections } = await testUtils.selectPreimages(ctx)
         await expectations.revertedWithCustomError(ctx.errors,
           ctx.random.write.heat([255n, 12n << 1n, viem.zeroAddress, selections]),
           'UnableToService',
@@ -106,7 +106,7 @@ describe("Random", () => {
       })
       it('greater than or equal to the potential locations', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
-        const selections = await testUtils.selectPreimages(ctx)
+        const { selections } = await testUtils.selectPreimages(ctx)
         await expectations.revertedWithCustomError(ctx.errors,
           ctx.random.write.heat([BigInt(selections.length + 1), 12n << 1n, viem.zeroAddress, selections]),
           'UnableToService',
@@ -511,7 +511,7 @@ describe("Random", () => {
       })
       it('can handle time deltas in addition to block deltas', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
-        const selections = await testUtils.selectPreimages(ctx)
+        const { selections } = await testUtils.selectPreimages(ctx)
         const required = 5n
         const heatTx = await ctx.random.write.heat([
           required,
@@ -540,7 +540,20 @@ describe("Random", () => {
       })
     })
     describe('#consumed', () => {
-      it('checks if a preimage at a particular location has been consumed')
+      it('checks if a preimage at a particular location has been consumed', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { all, selections } = await testUtils.selectPreimages(ctx)
+        await expect(ctx.random.read.consumed([ctx.selections[0]]))
+          .eventually.to.equal(true)
+        for (const item of all) {
+          if (selections.includes(item)) {
+            continue
+          }
+          await expect(ctx.random.read.consumed([ctx.selections[0]]))
+            .eventually.to.equal(true)
+          break
+        }
+      })
       it('fails if the index is outside of the section size')
     })
     describe('#randomness', () => {

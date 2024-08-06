@@ -59,7 +59,7 @@ export const deployWithAndConsumeRandomness = async () => {
   const blockBeforeHeat = await provider.getBlock({
     blockTag: 'latest',
   })
-  const selections = await selectPreimages(ctx)
+  const { all, selections } = await selectPreimages(ctx)
   const required = 5n
   const heatTx = await ctx.random.write.heat([
     required,
@@ -76,6 +76,7 @@ export const deployWithAndConsumeRandomness = async () => {
   })
   return {
     ...ctx,
+    all,
     required,
     selections,
     consumer,
@@ -171,5 +172,9 @@ export const selectPreimages = async (ctx: Context, count = 5, offsets: utils.Pr
       }))
     }).flatten().value()
   })
-  return _(preimageGroups).flatten().sampleSize(count).value()
+  const _flattened = _(preimageGroups).flatten()
+  return {
+    all: _flattened.value(),
+    selections: _flattened.sampleSize(count).value(),
+  }
 }
