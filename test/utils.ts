@@ -11,6 +11,7 @@ export const contractName = {
 } as const
 
 export const deploy = async () => {
+  const errors = await hre.viem.getContractAt('Errors', viem.zeroAddress)
   const random = await hre.viem.deployContract(contractName.Random)
   const reader = await hre.viem.deployContract(contractName.Reader)
   console.log('random=%o', random.address)
@@ -19,6 +20,7 @@ export const deploy = async () => {
   const signers = await hre.viem.getWalletClients()
   console.log('randomness_providers=%o', randomnessProviders.length)
   return {
+    errors,
     signers,
     randomnessProviders,
     hre,
@@ -63,7 +65,6 @@ export const deployWithAndConsumeRandomness = async () => {
     required,
     12n << 1n | 0n,
     viem.zeroAddress,
-    heat.preimage,
     selections,
   ])
   const receipt = await confirmTx(ctx, heatTx)

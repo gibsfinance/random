@@ -1,6 +1,6 @@
 import * as viem from 'viem'
 import _ from 'lodash'
-import type { Context } from './utils'
+import { confirmTx, type Context } from './utils'
 
 export const revertedWithCustomError = async (contract: viem.GetContractReturnType, p: Promise<any>, errorName: string, args?: any[]) => {
   let threw = false
@@ -96,11 +96,46 @@ export const not = {
     if (emitted.length) {
       throw new Error('found event!')
     }
-    // try {
-    // } catch (err) {
-    //   console.log(err)
-    //   return
-    // }
-    // throw new Error('event found')
   }
+}
+
+const changeBalances = async (accounts: (viem.WalletClient | viem.Hex)[], deltas: bigint[], getter: (addr: viem.Hex) => Promise<bigint>) => {
+  const addresses = accounts.map((acc) => (
+    _.isString(acc) ? acc : acc.account!.address
+  ))
+  const actualDeltas = await Promise.all(addresses.map(getter))
+  const nonMatch = _.filter(addresses, (addr, index) => {
+    const positedDelta = deltas[index]
+    const actualDelta = actualDeltas[index]
+    if (positedDelta !== actualDelta) {
+      console.log('%o expected delta %o, actual %o', addr, positedDelta, actualDelta)
+      return true
+    }
+  })
+  if (nonMatch.length) {
+    throw new Error('change check failed')
+  }
+}
+
+export const changeEtherBalances = async (ctx: Context, _receipt: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType, accounts: (viem.WalletClient | viem.Hex)[], deltas: bigint[], excludeGasConsumption = true) => {
+  const provider = await ctx.hre.viem.getPublicClient()
+  const receipt = await confirmTx(ctx, _receipt)
+  const consumed = receipt.gasUsed * receipt.effectiveGasPrice
+  return await changeBalances(accounts, deltas, async (address) => {
+    const before = provider.getBalance({
+      address,
+      blockNumber: receipt.blockNumber - 1n,
+    })
+    const after = provider.getBalance({
+      address,
+      blockNumber: receipt.blockNumber,
+    })
+    let [b, a] = await Promise.all([before, after])
+    if (excludeGasConsumption) {
+      if (receipt.from === address) {
+        a += consumed
+      }
+    }
+    return a - b
+  })
 }

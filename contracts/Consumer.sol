@@ -10,16 +10,7 @@ import {Random as RandomImplementation} from "./implementations/Random.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
 import {console} from "hardhat/console.sol";
 
-error DeploymentFailed();
-error Misconfigured();
-error UnableToService();
-error MissingPayment();
 error SecretMismatch();
-error ZeroSecret();
-error NotInCohort();
-error NotExpired();
-error Incomplete();
-error SignerMismatch();
 
 event OrderPreimageUpdate(bytes32 key, bytes32 before, bytes32 next);
 
@@ -47,12 +38,13 @@ contract Consumer {
 
     mapping(bytes32 key => bool completeWhenExpired) internal _completeWhenExpired;
     mapping(bytes32 preimage => bytes32 formerSecret) internal _preimageToSecret;
+    mapping(bytes32 key => bytes32 preimage) internal _keyToPreimage;
 
     function tell(bytes32 key, bytes32 revealedOrderSecret) external {
         unchecked {
             RandomImplementation.Randomness memory r = RandomImplementation(rand).randomness(key);
             bytes32 hashed = revealedOrderSecret.hash();
-            if (RandomImplementation(rand).expired(r.timeline)) {
+            if (RandomImplementation(rand).expired(key)) {
                 // order preimage cannot be overriden until after all secrets have been revealed
                 // this creates a high incentive for both player 1, and rule enforcer so that either way,
                 // entities are incented to submit secret info before the expired line is crossed
@@ -62,20 +54,21 @@ contract Consumer {
                 // 3) if either one waits too long - and allows others overwrite the preimage,
                 //    then the benefiting party risks a re-roll of the randomness seed
                 if (r.seed > TWO_FIVE_FIVE && uint256(uint8(uint256(r.seed))) > uint256(uint8(uint256(key)))) {
-                    if (hashed != r.orderPreimage) {
+                    if (hashed != _keyToPreimage[key]) {
                         // we allow non secret holdes to update the order preimage in order to maximally incent
                         // randomenss campaign completion
                         // think of it like chips with an expiry time. you might be able to cash them in,
                         // but the desk might also refuse to honor them if the expiry time is too far from the defined values
                         // in that case, they are worthless
                         // if a casino wants to have an intermediate period they can enforce that in their own contract
-                        emit OrderPreimageUpdate(key, r.orderPreimage, hashed);
-                        r.orderPreimage = hashed;
+                        emit OrderPreimageUpdate(key, _keyToPreimage[key], hashed);
+                        _keyToPreimage[key] = hashed;
                     }
+                    // note that the preimage may not be what was originally intended - we do not track in the contract
                     _completeWhenExpired[key] = true;
                 }
             }
-            if (hashed != r.orderPreimage) {
+            if (hashed != _keyToPreimage[key]) {
                 revert SecretMismatch();
             }
             _preimageToSecret[hashed] = revealedOrderSecret;
@@ -85,17 +78,19 @@ contract Consumer {
     }
 
     function fin(bytes32 key) external view returns (uint256) {
-        RandomImplementation.Randomness memory r = RandomImplementation(rand).randomness(key);
         unchecked {
-            return (r.seed < TWO_FIVE_SIX ? ZERO : ONE)
-                + (RandomImplementation(rand).expired(r.timeline) && _completeWhenExpired[key] ? ONE : ZERO);
+            return (RandomImplementation(rand).randomness(key).seed < TWO_FIVE_SIX ? ZERO : ONE)
+                + (RandomImplementation(rand).expired(key) && _completeWhenExpired[key] ? ONE : ZERO);
         }
     }
 
-    // function held(bytes32 key, uint256 len) external view returns (bool) {
-    //     // if this id does not match then either
-    //     // a) the order preimage was alteredhj because the owner took too long to reveal it or
-    //     // b) a refund was requsted and the data in the struct has been wiped
-    //     return key == _toId(randomness[key].locationsHash.hash(randomness[key].orderPreimage), len);
-    // }
+    function heat(
+        uint256 required,
+        uint256 expiryOffset,
+        address token,
+        bytes32 preimage,
+        PreimageLocation.Info[] calldata potentialLocations
+    ) external payable {
+        //
+    }
 }

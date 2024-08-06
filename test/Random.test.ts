@@ -6,16 +6,43 @@ import { expect } from 'chai'
 import * as expectations from './expectations'
 import * as testUtils from './utils'
 
+const oneEther = viem.parseEther('1')
+
 describe("Random", () => {
   describe('writing preimages', () => {
     it('fails if read occurs before write', async () => {
       const ctx = await helpers.loadFixture(testUtils.deploy)
-      await expectations.revertedWithCustomError(ctx.reader, testUtils.readPreimages(ctx), 'Misconfigured')
+      await expectations.revertedWithCustomError(ctx.errors, testUtils.readPreimages(ctx), 'Misconfigured')
     })
     it('will not err if an index that is presented is out of bounds on random contract', async () => {
       const ctx = await helpers.loadFixture(testUtils.deploy)
       await expect(ctx.random.read.pointer([utils.defaultPreImageInfo]))
         .eventually.to.equal(viem.zeroAddress)
+    })
+    it('cannot write if data is missing', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      await expectations.revertedWithCustomError(ctx.errors,
+        ctx.random.write.ink([viem.zeroAddress, utils.defaultPrice, '0x']),
+        'Misconfigured',
+      )
+    })
+    it('cannot write if data is uneven', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      await expectations.revertedWithCustomError(ctx.errors,
+        ctx.random.write.ink([viem.zeroAddress, utils.defaultPrice, '0x00']),
+        'Misconfigured',
+      )
+    })
+    it('cannot write if data is too large', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      await expectations.revertedWithCustomError(ctx.errors,
+        ctx.random.write.ink([viem.zeroAddress, utils.defaultPrice, `0x${'ff'.repeat(Number(utils.maxContractSize - 1n))}`]),
+        'Misconfigured',
+      )
+      await expectations.revertedWithCustomError(ctx.errors,
+        ctx.random.write.ink([viem.zeroAddress, utils.defaultPrice, `0x${'ff'.repeat(Number(utils.maxContractSize))}`]),
+        'DeploymentFailed',
+      )
     })
     it('writes them to a known location', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
@@ -29,10 +56,9 @@ describe("Random", () => {
     it('emits a Heat event', async function () {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
       const [signer] = await ctx.hre.viem.getWalletClients()
-      const [[s]] = await utils.createPreimages(signer.account!.address)
       const selections = await testUtils.selectPreimages(ctx)
       const required = 5n
-      const heatReceipt = await testUtils.confirmTx(ctx, ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, s.preimage, selections]))
+      const heatReceipt = await testUtils.confirmTx(ctx, ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections]))
       const emitArgs = [ctx, heatReceipt.transactionHash, ctx.random, 'Heat'] as const
       const expectedUsed = selections.slice(0, Number(required))
       if (Number(required) > expectedUsed.length) {
@@ -48,8 +74,8 @@ describe("Random", () => {
     })
     it('does not allow secrets to be requested twice', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
-      await expectations.revertedWithCustomError(ctx.random, ctx.random.write.heat(
-        [ctx.required, 12n << 1n, viem.zeroAddress, ctx.heat.preimage, ctx.selections]
+      await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.heat(
+        [ctx.required, 12n << 1n, viem.zeroAddress, ctx.selections]
       ), 'UnableToService')
     })
   })
@@ -107,6 +133,69 @@ describe("Random", () => {
         }
         await testUtils.confirmTx(ctx, ctx.random.write.dig([start.args.key!, selections]))
       })
+      it('deposit native token at the same time', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { signers, selections, randomnessStarts, secretByPreimage } = ctx
+        const [start] = randomnessStarts
+        const [, signer2] = signers
+        const duplicatedAndShuffled = _.shuffle(selections.concat(selections))
+        for (const selection of duplicatedAndShuffled) {
+          // duplicated flicks should not make a difference
+          await testUtils.confirmTx(ctx, ctx.random.write.flick([
+            start.args.key!,
+            selection,
+            secretByPreimage.get(selection.preimage) as viem.Hex,
+          ], {
+            account: signer2.account!,
+          }))
+        }
+        await testUtils.confirmTx(ctx, ctx.random.write.dig([start.args.key!, selections], {
+          value: oneEther, // the important line
+        }))
+      })
+      it('deposit native token during flick', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { signers, selections, randomnessStarts, secretByPreimage } = ctx
+        const [start] = randomnessStarts
+        const [, signer2] = signers
+        const duplicatedAndShuffled = _.shuffle(selections.concat(selections))
+        for (const selection of duplicatedAndShuffled) {
+          // duplicated flicks should not make a difference
+          await expectations.changeEtherBalances(ctx,
+            ctx.random.write.flick([
+              start.args.key!,
+              selection,
+              secretByPreimage.get(selection.preimage) as viem.Hex,
+            ], {
+              account: signer2.account!,
+              value: oneEther,
+            }),
+            [signer2.account!.address, ctx.random.address],
+            [-oneEther, oneEther],
+          )
+        }
+        await testUtils.confirmTx(ctx, ctx.random.write.dig([start.args.key!, selections]))
+      })
+      it('will return if not all secrets have been written', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { signers, selections, randomnessStarts, secretByPreimage } = ctx
+        const [start] = randomnessStarts
+        const [, signer2] = signers
+        const subset = selections.slice(1)
+        for (const selection of subset) {
+          // duplicated flicks should not make a difference
+          await testUtils.confirmTx(ctx, ctx.random.write.flick([
+            start.args.key!,
+            selection,
+            secretByPreimage.get(selection.preimage) as viem.Hex,
+          ], {
+            account: signer2.account!,
+          }))
+        }
+        // even if you have all of them, if you have not written them with .flick(
+        // then it will simply not call cast
+        await expectations.not.emit(ctx, ctx.random.write.dig([start.args.key!, selections]), ctx.random, 'Cast')
+      })
       it('can be written and provided via calldata but will fail if out of order', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
         const { selections, randomnessStarts, secretByPreimage } = ctx
@@ -114,7 +203,7 @@ describe("Random", () => {
         const secrets = selections.map((selection) => (
           secretByPreimage.get(selection.preimage) as viem.Hex
         ))
-        await expectations.revertedWithCustomError(ctx.random, ctx.random.write.cast([start.args.key!, selections, _.shuffle(secrets)]), 'SecretMismatch')
+        await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.cast([start.args.key!, selections, _.shuffle(secrets)]), 'SecretMismatch')
       })
       it('can be written and provided via calldata on chain by anyone', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
@@ -124,6 +213,86 @@ describe("Random", () => {
           secretByPreimage.get(selection.preimage) as viem.Hex
         ))
         await testUtils.confirmTx(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]))
+      })
+      it('can collect native token at the same time', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { selections, signers, randomnessStarts, secretByPreimage } = ctx
+        const [start] = randomnessStarts
+        const secrets = selections.map((selection) => (
+          secretByPreimage.get(selection.preimage) as viem.Hex
+        ))
+        await expectations.changeEtherBalances(ctx,
+          ctx.random.write.cast([start.args.key!, selections, secrets], { value: oneEther }),
+          [signers[0].account!.address, ctx.random.address],
+          [-oneEther, oneEther],
+        )
+      })
+    })
+    describe('secrets provided too late', async () => {
+      it('can collect native token at the same time', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { selections, signers, randomnessStarts } = ctx
+        const [start] = randomnessStarts
+        let i = 0
+        do {
+          await helpers.time.increase(1)
+          ++i
+        } while (i < 15);
+        const chopResult = ctx.random.write.chop([start.args.key!, selections], { value: oneEther })
+        await expectations.changeEtherBalances(ctx,
+          chopResult,
+          [signers[0].account!.address, ctx.random.address],
+          [-oneEther, oneEther],
+        )
+        await expectations.emit(ctx, chopResult, ctx.random, 'Chop', {
+          key: start.args.key!,
+        })
+      })
+      it('cannot collect refund if signer does not match', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { selections, signers, randomnessStarts } = ctx
+        const [start] = randomnessStarts
+        const [, signer2] = signers
+        let i = 0
+        do {
+          await helpers.time.increase(1)
+          ++i
+        } while (i < 15);
+        await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.chop([start.args.key!, selections], {
+          account: signer2.account,
+        }), 'SignerMismatch')
+      })
+      it('will not refund if chop is last', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { selections, signers, randomnessStarts, secretByPreimage } = ctx
+        const [, signer2] = signers
+        const [start] = randomnessStarts
+        let i = 0
+        do {
+          await helpers.time.increase(1)
+          ++i
+        } while (i < 15);
+        for (const selection of selections) {
+          // duplicated flicks should not make a difference
+          await testUtils.confirmTx(ctx, ctx.random.write.flick([
+            start.args.key!,
+            selection,
+            secretByPreimage.get(selection.preimage) as viem.Hex,
+          ], {
+            account: signer2.account!,
+          }))
+        }
+        const secrets = selections.map((selection) => (
+          secretByPreimage.get(selection.preimage) as viem.Hex
+        ))
+        await testUtils.confirmTx(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]))
+        const chopResult = ctx.random.write.chop([start.args.key!, selections], { value: oneEther })
+        await expectations.changeEtherBalances(ctx,
+          chopResult,
+          [signers[0].account!.address, ctx.random.address],
+          [-oneEther, oneEther],
+        )
+        await expectations.not.emit(ctx, chopResult, ctx.random, 'Chop')
       })
     })
   })
@@ -157,7 +326,7 @@ describe("Random", () => {
         provider: randomnessProvider.account!.address,
         offset: existing,
       }])).eventually.to.equal(viem.zeroAddress)
-      await expectations.revertedWithCustomError(ctx.random, ctx.random.write.bleach([{
+      await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.bleach([{
         ...utils.defaultPreImageInfo,
         provider: randomnessProvider.account!.address,
         offset: existing,
@@ -176,7 +345,7 @@ describe("Random", () => {
         ...utils.defaultPreImageInfo,
         provider: randomnessProvider.account!.address,
       }])).eventually.not.to.equal(viem.zeroAddress)
-      await expectations.revertedWithCustomError(ctx.random, ctx.random.write.bleach([{
+      await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.bleach([{
         ...utils.defaultPreImageInfo,
         provider: randomnessProvider.account!.address,
         offset: existing,
@@ -186,11 +355,39 @@ describe("Random", () => {
     })
   })
   describe('token custody', () => {
+    it('must pass the value as a parameter', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+      await expectations.revertedWithCustomError(ctx.errors,
+        ctx.random.write.handoff([viem.zeroAddress, viem.zeroAddress, -oneEther], {
+          value: oneEther - 1n,
+        }),
+        'MissingPayment',
+      )
+    })
     it('custodies tokens in the contract', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
-      const oneEther = viem.parseEther('1')
-
-      ctx.random.write.handoff([viem.zeroAddress, viem.zeroAddress, oneEther])
+      await expectations.changeEtherBalances(ctx,
+        ctx.random.write.handoff([viem.zeroAddress, viem.zeroAddress, -oneEther], {
+          value: oneEther,
+        }),
+        [ctx.signers[0].account!.address, ctx.random.address],
+        [-oneEther, oneEther]
+      )
+      // tries to remove 1 ether, succeeds
+      await expectations.changeEtherBalances(ctx,
+        ctx.random.write.handoff([viem.zeroAddress, viem.zeroAddress, oneEther]),
+        [ctx.signers[0].account!.address, ctx.random.address],
+        [oneEther, -oneEther],
+      )
+    })
+    it('cannot remove more tokens than allotted', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+      // tries to remove 1 ether, fails
+      await expectations.changeEtherBalances(ctx,
+        ctx.random.write.handoff([viem.zeroAddress, viem.zeroAddress, oneEther]),
+        [ctx.signers[0].account!.address],
+        [0n],
+      )
     })
   })
 })

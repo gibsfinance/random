@@ -8,18 +8,8 @@ import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {Random as RandomImplementation} from "./implementations/Random.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
+import {Errors} from "./Errors.sol";
 import {console} from "hardhat/console.sol";
-
-error DeploymentFailed();
-error Misconfigured();
-error UnableToService();
-error MissingPayment();
-error SecretMismatch();
-error ZeroSecret();
-error NotInCohort();
-error NotExpired();
-error Incomplete();
-error SignerMismatch();
 
 event Ok(address indexed provider, bytes32 section);
 
@@ -33,13 +23,18 @@ event Heat(address indexed provider, bytes32 section, uint256 index);
 
 event RandomnessStart(address indexed owner, bytes32 key); // no need to index because all keys should be unique
 
-event SecretRevealed(address indexed provider, bytes32 hash, bytes32 formerSecret);
+event SecretRevealed(address indexed provider, bytes32 location, bytes32 formerSecret);
 
 event CampaignExpired(address indexed recipient, address indexed ender, bytes32 key);
 
 event FundingScattered(address indexed recipient, uint256 amount, bytes32 key);
 
+event Cast(bytes32 key, bytes32 seed);
+
+event Chop(bytes32 key);
+
 contract Random is RandomImplementation {
+    // this error is used inside of sstore to so we surface it here so that it sticks in the abi
     using SSTORE2 for address;
     using SSTORE2 for bytes;
 
@@ -110,7 +105,7 @@ contract Random is RandomImplementation {
 
     function _consumed(PreimageLocation.Info memory nfo) internal view returns (bool) {
         if (_pointerSize(nfo) / THREE_TWO <= nfo.index) {
-            revert Misconfigured();
+            revert Errors.Misconfigured();
         }
         // returning zero means that the secret has not been requested yet on chain
         uint256 section = _accessFlags[nfo.provider][nfo.token][nfo.price][(nfo.index + nfo.offset) / TWO_FIVE_SIX];
@@ -124,7 +119,7 @@ contract Random is RandomImplementation {
     function _pointerSize(PreimageLocation.Info memory nfo) internal view returns (uint256 size) {
         address pntr = _pointers[nfo.provider][nfo.token][nfo.price][nfo.offset];
         if (pntr == address(0)) {
-            revert Misconfigured();
+            revert Errors.Misconfigured();
         }
         assembly {
             size := extcodesize(pntr)
@@ -133,13 +128,13 @@ contract Random is RandomImplementation {
 
     function _flick(bytes32 randomnessKey, PreimageLocation.Info calldata nfo, bytes32 formerSecret)
         internal
-        returns (bytes32 hashed)
+        returns (bytes32 location)
     {
         unchecked {
             address pntr = _pointers[nfo.provider][nfo.token][nfo.price][nfo.offset];
             // secret cannot be zero
             if (formerSecret == bytes32(ZERO)) {
-                revert ZeroSecret();
+                revert Errors.ZeroSecret();
             }
             // length check is skipped because if one goes out of bounds you either err
             // or you end up with zero bytes, which would be quite the feat to find the hash for
@@ -148,14 +143,14 @@ contract Random is RandomImplementation {
                 formerSecret.hash()
                     != bytes32(pntr.read((nfo.index * THREE_TWO), ((nfo.index * THREE_TWO) + THREE_TWO)))
             ) {
-                revert SecretMismatch();
+                revert Errors.SecretMismatch();
             }
             // only ever set once but do not penalize for lack of coordination
-            hashed = nfo.hash();
+            location = nfo.hash();
             if (_formerSecret[nfo.provider][nfo.token][nfo.price][nfo.offset + nfo.index] == bytes32(ZERO)) {
                 _formerSecret[nfo.provider][nfo.token][nfo.price][nfo.offset + nfo.index] = formerSecret;
                 ++_randomness[randomnessKey].seed;
-                emit SecretRevealed(nfo.provider, hashed, formerSecret);
+                emit SecretRevealed(nfo.provider, location, formerSecret);
             }
         }
     }
@@ -184,10 +179,12 @@ contract Random is RandomImplementation {
                 ++i;
             } while (i < len);
             if (key != _toId(locations.hash(), locations.length)) {
-                revert NotInCohort();
+                revert Errors.NotInCohort();
             }
             // mark as generated
-            random.seed = uint256(revealedSecrets.hash());
+            bytes32 seed = revealedSecrets.hash();
+            random.seed = uint256(seed);
+            emit Cast(key, seed);
             return true;
         }
     }
@@ -255,7 +252,7 @@ contract Random is RandomImplementation {
         unchecked {
             if (token == address(0)) {
                 if (amount > msg.value) {
-                    revert MissingPayment();
+                    revert Errors.MissingPayment();
                 }
                 amount = msg.value;
             } else {
@@ -300,7 +297,7 @@ contract Random is RandomImplementation {
             {
                 if (required == ZERO || required >= TWO_FIVE_FIVE) {
                     // only 254 len or fewer allowed
-                    revert UnableToService();
+                    revert Errors.UnableToService();
                 }
                 uint256 i;
                 uint256 len = potentialLocations.length;
@@ -322,12 +319,11 @@ contract Random is RandomImplementation {
 
                 if (contributing < required) {
                     // let other contracts revert if they must
-                    revert UnableToService();
+                    revert Errors.UnableToService();
                 }
                 amount = _decrementValue(owner, token, amount);
             }
             {
-                // bytes32 locationsHash = locations.hash();
                 bytes32 key = _toId(locations.hash(), locations.length);
                 // front load the cost of requesting randomness
                 // put it on the shoulders of the consumer
@@ -364,7 +360,7 @@ contract Random is RandomImplementation {
         unchecked {
             uint256 count = data.length / THREE_TWO;
             if (data.length == ZERO || data.length % THREE_TWO != ZERO || count > MAX_PREIMAGES) {
-                revert Misconfigured();
+                revert Errors.Misconfigured();
             }
             address provider = LibMulticaller.senderOrSigner();
             _attributePushedValue(provider);
@@ -383,13 +379,13 @@ contract Random is RandomImplementation {
         address signer = LibMulticaller.senderOrSigner();
         _attributePushedValue(signer);
         unchecked {
+            address owner = address(uint160(_randomness[key].timeline >> NINE_SIX));
+            if (signer != owner) {
+                revert Errors.SignerMismatch();
+            }
             if (_randomness[key].seed > TWO_FIVE_FIVE || _randomness[key].seed == ZERO) {
                 // don't penalize, because a provider could slip in before
                 return;
-            }
-            address owner = address(uint160(_randomness[key].timeline >> NINE_SIX));
-            if (signer != owner) {
-                revert SignerMismatch();
             }
             uint256 total;
             uint256 i;
@@ -399,7 +395,7 @@ contract Random is RandomImplementation {
                 ++i;
             } while (i < len);
             _custodied[owner][preimageInfo[ZERO].token] += total;
-            delete _randomness[key];
+            emit Chop(key);
         }
     }
 
@@ -461,23 +457,19 @@ contract Random is RandomImplementation {
     }
 
     function _random(bytes32 key, uint256 upper) internal view returns (uint256) {
-        LibPRNG.PRNG memory prng = LibPRNG.PRNG({state: _randomness[key].seed});
-        return prng.uniform(upper);
+        return LibPRNG.PRNG({state: _randomness[key].seed}).uniform(upper);
     }
 
     function handoff(address token, address recipient, int256 amount) external payable {
         unchecked {
             address account = LibMulticaller.senderOrSigner();
+            recipient = recipient == address(0) ? account : recipient;
             if (amount < 0) {
                 // move take tokens from signer to recipient custodied by signer
                 _custodied[recipient][token] += _receiveTokens(account, token, uint256(-amount));
             } else {
                 // move tokens from signer to recipient custodied by contract
-                _distribute(
-                    token,
-                    recipient == address(0) ? account : recipient,
-                    _decrementValue(account, token, uint256(amount))
-                );
+                _distribute(token, recipient, _decrementValue(account, token, uint256(amount)));
             }
         }
     }
@@ -491,7 +483,7 @@ contract Random is RandomImplementation {
             address provider = LibMulticaller.senderOrSigner();
             _attributePushedValue(provider);
             if (provider != info.provider) {
-                revert SignerMismatch();
+                revert Errors.SignerMismatch();
             }
             uint256 size = _pointerSize(info) / THREE_TWO;
             size /= THREE_TWO;
@@ -515,7 +507,7 @@ contract Random is RandomImplementation {
             uint256 i;
             do {
                 if (infos[i].provider != provider) {
-                    revert SignerMismatch();
+                    revert Errors.SignerMismatch();
                 }
                 emit Ok(provider, infos[i].section());
                 ++i;
