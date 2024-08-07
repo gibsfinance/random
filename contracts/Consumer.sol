@@ -8,13 +8,17 @@ import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {Random as RandomImplementation} from "./implementations/Random.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
+import {ERC20} from "solady/src/tokens/ERC20.sol";
 
 error SecretMismatch();
 
 event OrderPreimageUpdate(bytes32 key, bytes32 before, bytes32 next);
 
+event Chain(address indexed owner, bytes32 key, uint256 id);
+
 contract Consumer {
     using EfficientHashLib for bytes32;
+    using SafeTransferLib for address;
 
     uint256 internal constant ZERO = 0;
     uint256 internal constant ONE = 1;
@@ -30,43 +34,55 @@ contract Consumer {
     uint256 internal constant TWO_FOUR_EIGHT = 248;
     uint256 internal constant TWO_FIVE_FIVE = 255;
     uint256 internal constant TWO_FIVE_SIX = 256;
-    uint256 internal constant ONE_HUNDRED_ETHER = 100 ether;
 
     address internal immutable rand;
 
+    mapping(address sender => bytes32 latest) internal latest;
+
     mapping(bytes32 key => bool completeWhenExpired) internal _completeWhenExpired;
     mapping(bytes32 preimage => bytes32 formerSecret) internal _preimageToSecret;
-    mapping(bytes32 key => bytes32 preimage) internal _keyToPreimage;
+    mapping(bytes32 preimage => uint256 id) internal _preimageToId;
+    Link[] internal _preimageToKey;
 
-    function tell(bytes32 key, bytes32 revealedOrderSecret) external {
+    struct Link {
+        address owner;
+        bytes32 preimage;
+        bytes32 key;
+    }
+
+    function tell(bytes32 key, uint256 id, bytes32 revealedOrderSecret) external {
         unchecked {
             RandomImplementation.Randomness memory r = RandomImplementation(rand).randomness(key);
             bytes32 hashed = revealedOrderSecret.hash();
+            Link storage l = _preimageToKey[id];
             if (RandomImplementation(rand).expired(key)) {
                 // order preimage cannot be overriden until after all secrets have been revealed
                 // this creates a high incentive for both player 1, and rule enforcer so that either way,
-                // entities are incented to submit secret info before the expired line is crossed
+                // entities are incented to submit secret on chain before the expired line is crossed
                 // either:
-                // 1) player 1 wins, and they want to claim their winnings
+                // 1) player 1 wins, and they want to claim their winnings (high incentive to keep secret safe)
                 // 2) player 1 loses, so the rule enforcer is incented to claim their winnings
                 // 3) if either one waits too long - and allows others overwrite the preimage,
                 //    then the benefiting party risks a re-roll of the randomness seed
+                if (_completeWhenExpired[key]) {
+                    return;
+                }
                 if (r.seed > TWO_FIVE_FIVE && uint256(uint8(uint256(r.seed))) > uint256(uint8(uint256(key)))) {
-                    if (hashed != _keyToPreimage[key]) {
+                    if (hashed != l.preimage) {
                         // we allow non secret holdes to update the order preimage in order to maximally incent
                         // randomenss campaign completion
                         // think of it like chips with an expiry time. you might be able to cash them in,
                         // but the desk might also refuse to honor them if the expiry time is too far from the defined values
                         // in that case, they are worthless
                         // if a casino wants to have an intermediate period they can enforce that in their own contract
-                        emit OrderPreimageUpdate(key, _keyToPreimage[key], hashed);
-                        _keyToPreimage[key] = hashed;
+                        emit OrderPreimageUpdate(key, l.preimage, hashed);
+                        _preimageToKey[id].preimage = hashed;
                     }
                     // note that the preimage may not be what was originally intended - we do not track in the contract
                     _completeWhenExpired[key] = true;
                 }
             }
-            if (hashed != _keyToPreimage[key]) {
+            if (hashed != l.preimage) {
                 revert SecretMismatch();
             }
             _preimageToSecret[hashed] = revealedOrderSecret;
@@ -86,9 +102,22 @@ contract Consumer {
         uint256 required,
         uint256 expiryOffset,
         address token,
-        bytes32 preimage,
         PreimageLocation.Info[] calldata potentialLocations
-    ) external payable {
-        //
+    ) external payable returns (bytes32 key) {
+        if (token != address(0)) {
+            token.safeApprove(rand, type(uint256).max);
+        }
+        key = RandomImplementation(rand).heat{value: msg.value}(required, expiryOffset, token, potentialLocations);
+        latest[LibMulticaller.senderOrSigner()] = key;
+    }
+
+    function chain(address owner, bytes32 preimage) external {
+        if (_preimageToKey[_preimageToId[preimage]].preimage == preimage) {
+            return;
+        }
+        uint256 id = _preimageToKey.length;
+        _preimageToKey.push(Link({owner: owner, preimage: preimage, key: latest[owner]}));
+        _preimageToId[preimage] = id;
+        emit Chain(owner, latest[owner], id);
     }
 }

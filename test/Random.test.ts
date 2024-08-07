@@ -68,24 +68,35 @@ describe("Random", () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
       const { selections } = await testUtils.selectPreimages(ctx)
       const required = 5n
-      const heatReceipt = await testUtils.confirmTx(ctx, ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections]))
-      const emitArgs = [ctx, heatReceipt.transactionHash, ctx.random, 'Heat'] as const
       const expectedUsed = selections.slice(0, Number(required))
-      if (Number(required) > expectedUsed.length) {
-        return this.skip()
-      }
-      await Promise.all(expectedUsed.map(async (parts) => {
-        await expectations.emit(...emitArgs, {
-          provider: viem.getAddress(parts.provider),
-          section: utils.section(parts),
-          index: parts.index,
-        })
+      const expectedEmitArgs = expectedUsed.map((parts) => ({
+        provider: viem.getAddress(parts.provider),
+        section: utils.section(parts),
+        index: parts.index,
       }))
+      await expectations.emit(ctx,
+        ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
+        ctx.random, 'Heat',
+        expectedEmitArgs,
+      )
+    })
+    it('enforces payment requirement', async function () {
+      const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+      const { selections } = await testUtils.selectPreimages(ctx)
+      const required = 5n
+      await expectations.revertedWithCustomError(ctx.errors,
+        ctx.random.write.heat(
+          [required, 12n << 1n, viem.zeroAddress, selections],
+          { value: utils.sum(selections) - 1n },
+        ),
+        'MissingPayment',
+      )
     })
     it('does not allow secrets to be requested twice', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
       await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.heat(
-        [ctx.required, 12n << 1n, viem.zeroAddress, ctx.selections]
+        [ctx.required, 12n << 1n, viem.zeroAddress, ctx.selections],
+        { value: utils.sum(ctx.selections) },
       ), 'UnableToService')
     })
     describe('the required parameter must be', () => {
@@ -100,7 +111,10 @@ describe("Random", () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
         const { selections } = await testUtils.selectPreimages(ctx)
         await expectations.revertedWithCustomError(ctx.errors,
-          ctx.random.write.heat([255n, 12n << 1n, viem.zeroAddress, selections]),
+          ctx.random.write.heat(
+            [255n, 12n << 1n, viem.zeroAddress, selections],
+            { value: utils.sum(selections) },
+          ),
           'UnableToService',
         )
       })
@@ -108,7 +122,10 @@ describe("Random", () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
         const { selections } = await testUtils.selectPreimages(ctx)
         await expectations.revertedWithCustomError(ctx.errors,
-          ctx.random.write.heat([BigInt(selections.length + 1), 12n << 1n, viem.zeroAddress, selections]),
+          ctx.random.write.heat(
+            [BigInt(selections.length + 1), 12n << 1n, viem.zeroAddress, selections],
+            { value: utils.sum(selections) },
+          ),
           'UnableToService',
         )
       })
@@ -490,10 +507,6 @@ describe("Random", () => {
         [0n],
       )
     })
-    describe('token custodyship', () => {
-      it('can custody tokens just like native')
-      it('does not handle tax tokens appropriately')
-    })
   })
   describe('view functions', () => {
     describe('#expired', () => {
@@ -518,7 +531,7 @@ describe("Random", () => {
           (120n << 1n) | 1n,
           viem.zeroAddress,
           selections,
-        ])
+        ], { value: utils.sum(selections) })
         const receipt = await testUtils.confirmTx(ctx, heatTx)
         const randomnessStarts = await ctx.random.getEvents.RandomnessStart({}, {
           blockHash: receipt.blockHash,
@@ -581,7 +594,22 @@ describe("Random", () => {
     })
   })
   describe('tokens', () => {
-    it('can take tokens as payment')
+    it('can take tokens as payment', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+      const { selections } = await testUtils.selectPreimages(ctx)
+      const required = 5n
+      const expectedUsed = selections.slice(0, Number(required))
+      const expectedEmitArgs = expectedUsed.map((parts) => ({
+        provider: viem.getAddress(parts.provider),
+        section: utils.section(parts),
+        index: parts.index,
+      }))
+      await expectations.emit(ctx,
+        ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
+        ctx.random, 'Heat',
+        expectedEmitArgs,
+      )
+    })
     it('can deposit and withdraw tokens', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
       const [signer] = ctx.signers
@@ -594,6 +622,26 @@ describe("Random", () => {
         ctx.random.write.handoff([ctx.ERC20.address, viem.zeroAddress, oneEther]),
         [signer.account!.address, ctx.random.address],
         [oneEther, -oneEther],
+      )
+    })
+    it('can deposit and withdraw tax tokens', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+      const [signer] = ctx.signers
+      const taxRatio = await ctx.TAXERC20.read.taxRatio()
+      const tax = (amount: bigint) => amount * taxRatio / oneEther
+      let amountIn = oneEther
+      let afterTax = tax(amountIn)
+      await expectations.changeTokenBalances(ctx, ctx.taxERC20,
+        ctx.random.write.handoff([ctx.taxERC20.address, signer.account!.address, -amountIn]),
+        [signer.account!.address, ctx.random.address],
+        [-amountIn, afterTax],
+      )
+      amountIn = afterTax
+      afterTax = tax(amountIn)
+      await expectations.changeTokenBalances(ctx, ctx.taxERC20,
+        ctx.random.write.handoff([ctx.taxERC20.address, viem.zeroAddress, amountIn]),
+        [signer.account!.address, ctx.random.address],
+        [afterTax, -amountIn],
       )
     })
   })

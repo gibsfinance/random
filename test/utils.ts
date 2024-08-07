@@ -23,20 +23,23 @@ export const deploy = async () => {
   console.log('random=%o', random.address)
   console.log('reader=%o', reader.address)
   const randomnessProviders = await getRandomnessProviders(hre)
+  console.log('providers=%o', randomnessProviders.length)
   const signers = await hre.viem.getWalletClients()
   const oneThousandEther = (10n ** 18n) * 1_000n
-  await Promise.all(signers.map((signer) => (
-    _ERC20.write.mint([signer.account!.address, oneThousandEther])
-  )))
-  await Promise.all(signers.map((signer) => (
-    _ERC20.write.approve([random.address, oneThousandEther], {
-      account: signer.account!,
-    })
-  )))
-  console.log('providers=%o', randomnessProviders.length)
+  await Promise.all([_ERC20, _taxERC20].map(async (erc20) => {
+    await Promise.all(signers.map((signer) => (
+      erc20.write.mint([signer.account!.address, oneThousandEther])
+    )))
+    await Promise.all(signers.map((signer) => (
+      erc20.write.approve([random.address, oneThousandEther], {
+        account: signer.account!,
+      })
+    )))
+  }))
   return {
     ERC20,
     taxERC20,
+    TAXERC20: _taxERC20,
     errors,
     signers,
     randomnessProviders,
@@ -83,7 +86,9 @@ export const deployWithAndConsumeRandomness = async () => {
     12n << 1n | 0n,
     viem.zeroAddress,
     selections,
-  ])
+  ], {
+    value: utils.sum(selections),
+  })
   const receipt = await confirmTx(ctx, heatTx)
   const randomnessStarts = await ctx.random.getEvents.RandomnessStart({}, {
     blockHash: receipt.blockHash,

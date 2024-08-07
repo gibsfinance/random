@@ -48,7 +48,13 @@ export const revertedWithCustomError = async (contract: viem.GetContractReturnTy
   throw new Error('unable to check error')
 }
 
-export const _emit = async (ctx: Context, _hash: viem.Hex | Promise<viem.Hex>, contract: viem.GetContractReturnType, eventName: string, args?: any[] | Record<string, any>) => {
+type Filter = any[] | Record<string, any>
+
+export const _emit = async (
+  ctx: Context, _hash: viem.Hex | Promise<viem.Hex>,
+  contract: viem.GetContractReturnType,
+  eventName: string, args?: Filter | Filter[],
+): Promise<[(null | Filter)[], viem.Log[]]> => {
   const hash = await _hash
   const client = await ctx.hre.viem.getPublicClient()
   const receipt = await client.getTransactionReceipt({
@@ -58,44 +64,53 @@ export const _emit = async (ctx: Context, _hash: viem.Hex | Promise<viem.Hex>, c
     logs: receipt.logs,
     abi: contract.abi,
   })
-  const filter = {
-    eventName,
-    address: contract.address,
-  } as Partial<viem.ParseEventLogsReturnType<any, any, any, any>[0]>
-  if (args) {
+  let a!: (null | Filter)[]
+  if (!args) {
+    a = [null]
+  } else if (!Array.isArray(args) || !_.isObjectLike(args[0])) {
+    a = [args as any[]]
+  } else {
+    a = args
+  }
+  return [a, _(a).map((fltr) => {
     let objectArgs!: Record<string, any>
-    if (Array.isArray(args)) {
+    const filter = {
+      eventName,
+      address: contract.address,
+    } as Partial<viem.ParseEventLogsReturnType<any, any, any, any>[0]>
+    if (Array.isArray(fltr)) {
+      // no named args, order matters
       const entry = _.find(contract.abi, {
         type: 'event',
         name: eventName,
       }) as viem.AbiEvent
       objectArgs = _.reduce(entry.inputs, (a, arg, i) => {
-        a[arg.name!] = args[i]
+        a[arg.name!] = fltr[i]
         return a
       }, {} as Record<string, any>);
       (filter as any).args = objectArgs
-    } else {
-      objectArgs = args
-    }
-    (filter as any).args = objectArgs
-  }
-  const parsed = _.filter(allEvents, filter)
-  // if (!parsed.length) {
-  //   throw new Error('unable to find event')
-  // }
-  return parsed
+    } else if (fltr) {
+      // is an object
+      (filter as any).args = fltr
+    } // otherwise don't set the args property so that lodash doesn't filter against it
+    return _.find(allEvents, filter) as viem.Log
+  }).compact().value()]
 }
 
 export const emit = async (...args: Parameters<typeof _emit>) => {
-  const emitted = await _emit(...args)
-  if (emitted.length) return
+  const [filters, events] = await _emit(...args)
+  if (filters.length === events.length) {
+    return
+  }
+  console.log('filters=%o events=%o', filters, events)
   throw new Error('unable to find event')
 }
 
 export const not = {
   emit: async (...args: Parameters<typeof _emit>) => {
-    const emitted = await _emit(...args)
-    if (emitted.length) {
+    const [filters, events] = await _emit(...args)
+    if (filters.length === events.length) {
+      console.log('filters=%o events=%o', filters, events)
       throw new Error('found event!')
     }
   }

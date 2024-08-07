@@ -101,3 +101,5 @@ export const section = (inputs = defaultPreImageInfo) => {
     viem.numberToHex(inputs.offset, { size: 32 }),
   ]), 'hex')
 }
+
+export const sum = (s: PreimageInfo[]) => s.reduce<bigint>((total, { price }) => total + price, 0n)

@@ -9,6 +9,7 @@ import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {Random as RandomImplementation} from "./implementations/Random.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
 import {Errors} from "./Errors.sol";
+import {console} from "hardhat/console.sol";
 
 event Ok(address indexed provider, bytes32 section);
 
@@ -46,16 +47,16 @@ contract Random is RandomImplementation {
 
     using PreimageLocation for PreimageLocation.Info;
 
+    mapping(address account => mapping(address token => uint256 amount)) internal _custodied;
+    mapping(address provider => mapping(address token => mapping(uint256 price => uint256 max))) internal _preimageCount;
     mapping(
         address provider
             => mapping(address token => mapping(uint256 price => mapping(uint256 offset => address pointer)))
     ) internal _pointers;
-    mapping(address provider => mapping(address token => mapping(uint256 price => uint256 max))) internal _preimageCount;
     mapping(
         address provider
             => mapping(address token => mapping(uint256 price => mapping(uint256 index => uint256 accessFlags)))
     ) internal _accessFlags;
-    mapping(address account => mapping(address token => uint256 amount)) internal _custodied;
     mapping(
         address provider
             => mapping(address token => mapping(uint256 price => mapping(uint256 index => bytes32 formerSecret)))
@@ -165,6 +166,7 @@ contract Random is RandomImplementation {
             return true;
         }
     }
+
     function _toId(bytes32 hashed, uint256 len) internal pure returns (bytes32) {
         unchecked {
             return bytes32((uint256(hashed) << EIGHT) | uint256(uint8(len)));
@@ -212,7 +214,9 @@ contract Random is RandomImplementation {
             } else {
                 // because we do not check balanceof delta, we will
                 // not correctly attribute tax/reflection tokens
+                uint256 before = token.balanceOf(address(this));
                 token.safeTransferFrom2(owner, address(this), amount);
+                amount = token.balanceOf(address(this)) - before;
             }
             return amount;
         }
@@ -226,13 +230,13 @@ contract Random is RandomImplementation {
         }
     }
 
-    function _decrementValue(address owner, address token, uint256 desired) internal returns (uint256 delta) {
+    function _decrementValue(address account, address token, uint256 desired) internal returns (uint256 delta) {
         unchecked {
-            uint256 limit = _custodied[owner][token];
+            uint256 limit = _custodied[account][token];
             delta = desired == ZERO ? limit : desired;
-            delta = desired > limit ? limit : desired;
+            delta = delta > limit ? limit : delta;
             if (delta > ZERO) {
-                _custodied[owner][token] = limit - delta;
+                _custodied[account][token] = limit - delta;
             }
         }
     }
@@ -242,20 +246,20 @@ contract Random is RandomImplementation {
         uint256 expiryOffset,
         address token,
         PreimageLocation.Info[] calldata potentialLocations
-    ) external payable returns (bytes32) {
+    ) external payable override returns (bytes32) {
         unchecked {
             bytes32[] memory locations = new bytes32[](required);
-            uint256 amount;
-            address owner = LibMulticaller.senderOrSigner();
-            _attributePushedValue(owner);
+            address account = LibMulticaller.senderOrSigner();
+            _attributePushedValue(account);
             {
                 if (required == ZERO || required >= TWO_FIVE_FIVE || required > potentialLocations.length) {
                     // only 254 len or fewer allowed
                     revert Errors.UnableToService();
                 }
-                uint256 i;
                 uint256 len = potentialLocations.length;
+                uint256 i;
                 uint256 contributing;
+                uint256 amount;
                 do {
                     // non zero means that the value exists
                     if (
@@ -263,6 +267,7 @@ contract Random is RandomImplementation {
                             && _ignite(potentialLocations[i], potentialLocations[i].section())
                     ) {
                         locations[contributing] = potentialLocations[i].hash();
+                        amount += potentialLocations[i].price;
                         ++contributing;
                         if (required == contributing) {
                             break;
@@ -275,15 +280,17 @@ contract Random is RandomImplementation {
                     // let other contracts revert if they must
                     revert Errors.UnableToService();
                 }
-                amount = _decrementValue(owner, token, amount);
+                if (amount > ZERO && amount > _decrementValue(account, token, amount)) {
+                    revert Errors.MissingPayment();
+                }
             }
             {
                 bytes32 key = _toId(locations.hash(), locations.length);
                 // front load the cost of requesting randomness
                 // put it on the shoulders of the consumer
                 // this can probably be optimized
-                _randomness[key] = Randomness({timeline: _timeline(owner, expiryOffset), seed: ONE});
-                emit RandomnessStart(owner, key);
+                _randomness[key] = Randomness({timeline: _timeline(account, expiryOffset), seed: ONE});
+                emit RandomnessStart(account, key);
                 return key;
             }
         }
@@ -295,6 +302,10 @@ contract Random is RandomImplementation {
             | uint256(uint48(expiryOffset));
     }
 
+    /**
+     * @param info access the pointer as defined by the preimage location
+     * @return pointer the address that holds preimages
+     */
     function pointer(PreimageLocation.Info calldata info) external view override returns (address) {
         return _pointers[info.provider][info.token][info.price][info.offset];
     }
@@ -306,7 +317,6 @@ contract Random is RandomImplementation {
      * @dev it is best to call this infrequently but to do so with as
      * much calldata as possible to increase gas savings for randomness providers
      */
-
     function ink(address token, uint256 price, bytes calldata data) external payable {
         unchecked {
             uint256 count = data.length / THREE_TWO;
@@ -327,12 +337,13 @@ contract Random is RandomImplementation {
     }
 
     function chop(bytes32 key, PreimageLocation.Info[] calldata preimageInfo) external payable {
-        address signer = LibMulticaller.senderOrSigner();
-        _attributePushedValue(signer);
         unchecked {
-            address owner = address(uint160(_randomness[key].timeline >> NINE_SIX));
-            if (signer != owner) {
+            address signer = LibMulticaller.senderOrSigner();
+            if (signer != address(uint160(_randomness[key].timeline >> NINE_SIX))) {
                 revert Errors.SignerMismatch();
+            }
+            if (msg.value > ZERO) {
+                _attributePushedValue(signer);
             }
             if (_randomness[key].seed > TWO_FIVE_FIVE) {
                 // don't penalize, because a provider could slip in before
@@ -345,7 +356,7 @@ contract Random is RandomImplementation {
                 total += preimageInfo[i].price;
                 ++i;
             } while (i < len);
-            _custodied[owner][preimageInfo[ZERO].token] += total;
+            _custodied[signer][preimageInfo[ZERO].token] += total;
             emit Chop(key);
         }
     }

@@ -56,7 +56,7 @@ describe('Reader', () => {
         (120n << 1n) | 1n,
         viem.zeroAddress,
         selections,
-      ])
+      ], { value: utils.sum(selections) })
       const receipt = await testUtils.confirmTx(ctx, heatTx)
       const randomnessStarts = await ctx.random.getEvents.RandomnessStart({}, {
         blockHash: receipt.blockHash,
