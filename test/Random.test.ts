@@ -645,6 +645,20 @@ describe("Random", () => {
         [oneEther, -oneEther],
       )
     })
+    it('passing zero is equivalent to using the whole balance', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+      const [signer] = ctx.signers
+      await expectations.changeTokenBalances(ctx, ctx.ERC20,
+        ctx.random.write.handoff([ctx.ERC20.address, signer.account!.address, -oneEther]),
+        [signer.account!.address, ctx.random.address],
+        [-oneEther, oneEther],
+      )
+      await expectations.changeTokenBalances(ctx, ctx.ERC20,
+        ctx.random.write.handoff([ctx.ERC20.address, viem.zeroAddress, oneEther]),
+        [signer.account!.address, ctx.random.address],
+        [oneEther, -oneEther],
+      )
+    })
     it('can deposit and withdraw tax tokens', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
       const [signer] = ctx.signers

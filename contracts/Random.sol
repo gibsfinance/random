@@ -232,9 +232,9 @@ contract Random is RandomImplementation {
 
     function _decrementValue(address account, address token, uint256 desired) internal returns (uint256 delta) {
         unchecked {
+            if (desired == ZERO) return delta;
             uint256 limit = _custodied[account][token];
-            delta = desired == ZERO ? limit : desired;
-            delta = delta > limit ? limit : delta;
+            delta = desired > limit ? limit : desired;
             if (delta > ZERO) {
                 _custodied[account][token] = limit - delta;
             }
