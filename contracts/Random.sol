@@ -82,7 +82,7 @@ contract Random is RandomImplementation {
     }
 
     function randomness(bytes32 key) external view override returns (Randomness memory) {
-        return _randomness[key];
+        return Randomness({timeline: _timeline[key], seed: _seed[key]});
     }
 
     function _consumed(PreimageLocation.Info memory nfo) internal view returns (bool) {
@@ -134,7 +134,7 @@ contract Random is RandomImplementation {
             location = nfo.hash();
             if (_formerSecret[nfo.provider][nfo.token][nfo.price][nfo.offset + nfo.index] == bytes32(ZERO)) {
                 _formerSecret[nfo.provider][nfo.token][nfo.price][nfo.offset + nfo.index] = formerSecret;
-                ++_randomness[randomnessKey].seed;
+                ++_timeline[randomnessKey];
                 emit SecretRevealed(nfo.provider, location, formerSecret);
             }
         }
@@ -147,8 +147,8 @@ contract Random is RandomImplementation {
         unchecked {
             uint256 i;
             uint256 len = preimageInfo.length;
-            Randomness storage random = _randomness[key];
-            if (random.seed > TWO_FIVE_FIVE) {
+            bytes32 seed = _seed[key];
+            if (seed != bytes32(ZERO)) {
                 return false;
             }
             bytes32[] memory locations = new bytes32[](len);
@@ -160,8 +160,8 @@ contract Random is RandomImplementation {
                 revert Errors.NotInCohort();
             }
             // mark as generated
-            bytes32 seed = revealedSecrets.hash();
-            random.seed = uint256(seed);
+            seed = revealedSecrets.hash();
+            _seed[key] = seed;
             emit Cast(key, seed);
             return true;
         }
@@ -192,7 +192,7 @@ contract Random is RandomImplementation {
                 total += item.price;
                 ++i;
             } while (i < len);
-            if (_expired(_randomness[key].timeline)) {
+            if (_expired(_timeline[key])) {
                 address ender = LibMulticaller.senderOrSigner();
                 uint256 expiredCallerPayout = total / 2; // take half if expiry happens late
                 _custodied[ender][item.token] += expiredCallerPayout;
@@ -251,7 +251,7 @@ contract Random is RandomImplementation {
             address account = LibMulticaller.senderOrSigner();
             _attributePushedValue(account);
             {
-                if (required == ZERO || required >= TWO_FIVE_FIVE || required > potentialLocations.length) {
+                if (required == ZERO || required > TWO_FIVE_FIVE || required > potentialLocations.length) {
                     // only 254 len or fewer allowed
                     revert Errors.UnableToService();
                 }
@@ -288,17 +288,17 @@ contract Random is RandomImplementation {
                 // front load the cost of requesting randomness
                 // put it on the shoulders of the consumer
                 // this can probably be optimized
-                _randomness[key] = Randomness({timeline: _timeline(account, expiryOffset), seed: ONE});
+                _timeline[key] = _timelineFromInputs(account, expiryOffset);
                 emit RandomnessStart(account, key);
                 return key;
             }
         }
     }
 
-    function _timeline(address owner, uint256 expiryOffset) internal view returns (uint256) {
+    function _timelineFromInputs(address owner, uint256 expiryOffset) internal view returns (uint256) {
         return uint256(uint160(owner)) << NINE_SIX
             | (uint256((uint48((expiryOffset << TWO_FIVE_FIVE == ZERO) ? block.number : block.timestamp))) << FOUR_EIGHT)
-            | uint256(uint48(expiryOffset));
+            | uint256(uint40(expiryOffset)); // last 8 bits left blank for counting
     }
 
     /**
@@ -338,11 +338,11 @@ contract Random is RandomImplementation {
     function chop(bytes32 key, PreimageLocation.Info[] calldata preimageInfo) external payable {
         unchecked {
             address signer = LibMulticaller.senderOrSigner();
-            if (signer != address(uint160(_randomness[key].timeline >> NINE_SIX))) {
+            if (signer != address(uint160(_timeline[key] >> NINE_SIX))) {
                 revert Errors.SignerMismatch();
             }
             _attributePushedValue(signer);
-            if (_randomness[key].seed > TWO_FIVE_FIVE) {
+            if (_seed[key] != bytes32(ZERO)) {
                 // don't penalize, because a provider could slip in before
                 return;
             }
@@ -394,7 +394,7 @@ contract Random is RandomImplementation {
                 _attributePushedValue(LibMulticaller.senderOrSigner());
             }
             uint256 len = uint256(uint8(uint256(key)));
-            if (_randomness[key].seed - ONE != len) {
+            if (uint256(uint8(_timeline[key])) != len) {
                 return;
             }
             // all secrets have been written on chain and yet, the die has not been cast
@@ -416,7 +416,7 @@ contract Random is RandomImplementation {
     }
 
     function _random(bytes32 key, uint256 upper) internal view returns (uint256) {
-        return LibPRNG.PRNG({state: _randomness[key].seed}).uniform(upper);
+        return LibPRNG.PRNG({state: uint256(_seed[key])}).uniform(upper);
     }
 
     function handoff(address token, address recipient, int256 amount) external payable {

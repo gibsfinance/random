@@ -75,7 +75,7 @@ describe("Random", () => {
         index: parts.index,
       }))
       await expectations.emit(ctx,
-        ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
+        ctx.random.write.heat([required, 12n << 9n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
         ctx.random, 'Heat',
         expectedEmitArgs,
       )
@@ -94,7 +94,7 @@ describe("Random", () => {
       }))
       await expectations.emit(ctx,
         ctx.random.write.heat(
-          [required, 12n << 1n, viem.zeroAddress, selections],
+          [required, 12n << 9n, viem.zeroAddress, selections],
           /* { value: utils.sum(selections) }, */
         ),
         ctx.random, 'Heat',
@@ -107,7 +107,7 @@ describe("Random", () => {
       const required = 5n
       await expectations.revertedWithCustomError(ctx.errors,
         ctx.random.write.heat(
-          [required, 12n << 1n, viem.zeroAddress, selections],
+          [required, 12n << 9n, viem.zeroAddress, selections],
           { value: utils.sum(selections) - 1n },
         ),
         'MissingPayment',
@@ -116,7 +116,7 @@ describe("Random", () => {
     it('does not allow secrets to be requested twice', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
       await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.heat(
-        [ctx.required, 12n << 1n, viem.zeroAddress, ctx.selections],
+        [ctx.required, 12n << 9n, viem.zeroAddress, ctx.selections],
         { value: utils.sum(ctx.selections) },
       ), 'UnableToService')
     })
@@ -124,7 +124,7 @@ describe("Random", () => {
       it('greater than 0', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
         await expectations.revertedWithCustomError(ctx.errors,
-          ctx.random.write.heat([0n, 12n << 1n, viem.zeroAddress, []]),
+          ctx.random.write.heat([0n, 12n << 9n, viem.zeroAddress, []]),
           'UnableToService',
         )
       })
@@ -133,7 +133,7 @@ describe("Random", () => {
         const { selections } = await testUtils.selectPreimages(ctx)
         await expectations.revertedWithCustomError(ctx.errors,
           ctx.random.write.heat(
-            [255n, 12n << 1n, viem.zeroAddress, selections],
+            [256n, 12n << 9n, viem.zeroAddress, selections],
             { value: utils.sum(selections) },
           ),
           'UnableToService',
@@ -144,7 +144,7 @@ describe("Random", () => {
         const { selections } = await testUtils.selectPreimages(ctx)
         await expectations.revertedWithCustomError(ctx.errors,
           ctx.random.write.heat(
-            [BigInt(selections.length + 1), 12n << 1n, viem.zeroAddress, selections],
+            [BigInt(selections.length + 1), 12n << 9n, viem.zeroAddress, selections],
             { value: utils.sum(selections) },
           ),
           'UnableToService',
@@ -408,7 +408,7 @@ describe("Random", () => {
       it('will not refund if chop is after a valid cast', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
         const { selections, signers, randomnessStarts, secretByPreimage } = ctx
-        const [, signer2] = signers
+        const [signer, signer2] = signers
         const [start] = randomnessStarts
         await helpers.mine(12)
         for (const selection of selections) {
@@ -425,11 +425,15 @@ describe("Random", () => {
           secretByPreimage.get(selection.preimage) as viem.Hex
         ))
         await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]), ctx.random, 'Cast')
-        const chopResult = ctx.random.write.chop([start.args.key!, selections])
+        const value = utils.sum(selections)
+        const chopResult = ctx.random.write.chop(
+          [start.args.key!, selections],
+          { value }, // just because we can
+        )
         await expectations.changeEtherBalances(ctx,
           chopResult,
-          [signers[0].account!.address, ctx.random.address],
-          [-oneEther, oneEther],
+          [signer.account!.address, ctx.random.address],
+          [-value, value],
         )
         await expectations.not.emit(ctx, chopResult, ctx.random, 'Chop')
       })
@@ -537,10 +541,11 @@ describe("Random", () => {
         const [start] = randomnessStarts
         const latest = await helpers.time.latestBlock()
         await helpers.mine(12 - (latest - Number(start.blockNumber))) // the number that was passed in the tx (in last block)
-        await expect(ctx.random.read.expired([start.args.key!]))
+        const r = await ctx.random.read.randomness([start.args.key!])
+        await expect(ctx.random.read.expired([r.timeline]))
           .eventually.to.equal(false)
         await helpers.mine(1)
-        await expect(ctx.random.read.expired([start.args.key!]))
+        await expect(ctx.random.read.expired([r.timeline]))
           .eventually.to.equal(true)
       })
       it('can handle time deltas in addition to block deltas', async () => {
@@ -549,7 +554,7 @@ describe("Random", () => {
         const required = 5n
         const heatTx = await ctx.random.write.heat([
           required,
-          (120n << 1n) | 1n,
+          (120n << 9n) | 1n,
           viem.zeroAddress,
           selections,
         ], { value: utils.sum(selections) })
@@ -565,11 +570,12 @@ describe("Random", () => {
         const lastNonExpiredSecond = Number(block.timestamp + 120n)
         await helpers.time.setNextBlockTimestamp(lastNonExpiredSecond) // the number that was passed in the tx (in last block)
         await helpers.mine(1)
-        await expect(ctx.random.read.expired([start.args.key!]))
+        const r = await ctx.random.read.randomness([start.args.key!])
+        await expect(ctx.random.read.expired([r.timeline]))
           .eventually.to.equal(false)
         await helpers.time.setNextBlockTimestamp(lastNonExpiredSecond + 1)
         await helpers.mine(1)
-        await expect(ctx.random.read.expired([start.args.key!]))
+        await expect(ctx.random.read.expired([r.timeline]))
           .eventually.to.equal(true)
       })
     })
@@ -608,8 +614,8 @@ describe("Random", () => {
         const latest = await helpers.time.latestBlock()
         await expect(ctx.random.read.randomness([start.args.key!]))
           .eventually.to.deep.equal({
-            timeline: ((BigInt(start.args.owner!) << 96n) | BigInt(latest) << 48n | 12n << 1n),
-            seed: 1n,
+            timeline: ((BigInt(start.args.owner!) << 96n) | BigInt(latest) << 48n | 12n << 9n),
+            seed: viem.zeroHash,
           })
       })
     })
@@ -626,7 +632,7 @@ describe("Random", () => {
         index: parts.index,
       }))
       await expectations.emit(ctx,
-        ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
+        ctx.random.write.heat([required, 12n << 9n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
         ctx.random, 'Heat',
         expectedEmitArgs,
       )

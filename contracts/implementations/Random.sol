@@ -19,11 +19,12 @@ abstract contract Random {
     uint256 internal constant TWO_FIVE_FIVE = 255;
     uint256 internal constant TWO_FIVE_SIX = 256;
 
-    mapping(bytes32 key => Randomness campaign) internal _randomness;
+    mapping(bytes32 key => uint256 timeline) internal _timeline;
+    mapping(bytes32 key => bytes32 seed) internal _seed;
 
     struct Randomness {
         uint256 timeline;
-        uint256 seed;
+        bytes32 seed;
     }
 
     function heat(uint256 required, uint256 expiryOffset, address token, PreimageLocation.Info[] calldata info)
@@ -35,8 +36,8 @@ abstract contract Random {
     function consumed(PreimageLocation.Info calldata info) external view virtual returns (bool);
     function randomness(bytes32 key) external view virtual returns (Randomness memory);
 
-    function expired(bytes32 key) external view virtual returns (bool) {
-        return _expired(_randomness[key].timeline);
+    function expired(uint256 timeline) external view virtual returns (bool) {
+        return _expired(timeline);
     }
 
     function _expired(uint256 timeline) internal view virtual returns (bool) {
@@ -46,7 +47,7 @@ abstract contract Random {
             // start
             - (uint256(uint48(timeline >> FOUR_EIGHT)))
             // expiration delta
-            > (uint256(uint48(timeline) >> ONE));
+            > (uint256(uint48(timeline) >> (ONE + EIGHT)));
         }
     }
 }

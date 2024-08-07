@@ -83,7 +83,7 @@ export const deployWithAndConsumeRandomness = async () => {
   const required = 5n
   const heatTx = await ctx.random.write.heat([
     required,
-    12n << 1n | 0n,
+    12n << 9n,
     viem.zeroAddress,
     selections,
   ], {
