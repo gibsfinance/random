@@ -9,7 +9,6 @@ import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {Random as RandomImplementation} from "./implementations/Random.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
 import {Errors} from "./Errors.sol";
-import {console} from "hardhat/console.sol";
 
 event Ok(address indexed provider, bytes32 section);
 

@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import {ERC20 as SolERC20} from "solady/src/tokens/ERC20.sol";
-import {console} from "hardhat/console.sol";
 
 contract ERC20 is SolERC20 {
     bool internal immutable _shouldBurn;
