@@ -402,9 +402,9 @@ contract Random is RandomImplementation {
                 }
                 ++i;
             } while (i < len);
-            if (_cast(key, preimageInfo, secrets)) {
-                _scatter(key, preimageInfo);
-            }
+            _cast(key, preimageInfo, secrets);
+            // if cast does not error, then it completed for the first time
+            _scatter(key, preimageInfo);
         }
     }
 
