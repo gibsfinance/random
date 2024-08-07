@@ -248,6 +248,19 @@ describe("Random", () => {
           'Misconfigured',
         )
       })
+      it('can run cast as a loop for revealing secrets', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { selections, randomnessStarts, secretByPreimage } = ctx
+        const [start] = randomnessStarts
+        const partialSecrets = selections.map(({ preimage }, index) => (
+          index === 2 ? viem.zeroHash : secretByPreimage.get(preimage) as viem.Hex
+        ))
+        await expectations.not.emit(ctx,
+          ctx.random.write.cast([start.args.key!, selections, partialSecrets]),
+          ctx.random,
+          'Cast',
+        )
+      })
       // it('deposit native token during flick', async () => {
       //   const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
       //   const { signers, selections, randomnessStarts, secretByPreimage } = ctx

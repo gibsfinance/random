@@ -150,6 +150,7 @@ contract Random is RandomImplementation {
             bytes32[] memory locations = new bytes32[](len);
             uint256 firstFlicks;
             bool first;
+            bool missing;
             do {
                 if (revealedSecrets[i] != bytes32(0)) {
                     (locations[i], first) = _flick(preimageInfo[i], revealedSecrets[i]);
@@ -159,12 +160,15 @@ contract Random is RandomImplementation {
                 } else {
                     revealedSecrets[i] = _secret(preimageInfo[i]);
                     if (revealedSecrets[i] == bytes32(ZERO)) {
-                        _timeline[key] += firstFlicks;
-                        return false;
+                        missing = true;
                     }
                 }
                 ++i;
             } while (i < len);
+            if (missing) {
+                _timeline[key] += firstFlicks;
+                return false;
+            }
             if (key != _toId(locations.hash(), locations.length)) {
                 revert Errors.NotInCohort();
             }
