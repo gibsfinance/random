@@ -425,7 +425,7 @@ describe("Random", () => {
           secretByPreimage.get(selection.preimage) as viem.Hex
         ))
         await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]), ctx.random, 'Cast')
-        const chopResult = ctx.random.write.chop([start.args.key!, selections], { value: oneEther })
+        const chopResult = ctx.random.write.chop([start.args.key!, selections])
         await expectations.changeEtherBalances(ctx,
           chopResult,
           [signers[0].account!.address, ctx.random.address],
