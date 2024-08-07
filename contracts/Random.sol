@@ -271,52 +271,59 @@ contract Random is RandomImplementation {
         unchecked {
             bytes32[] memory locations = new bytes32[](required);
             address account = LibMulticaller.senderOrSigner();
-            _attributePushedValue(account);
-            if (required == ZERO || required > TWO_FIVE_FIVE || required > potentialLocations.length) {
-                // only 254 len or fewer allowed
-                revert Errors.UnableToService();
-            }
-            uint256 len = potentialLocations.length;
-            uint256 i;
-            uint256 contributing;
-            uint256 amount;
-            do {
-                // non zero means that the value exists
-                if (
-                    token == potentialLocations[i].token
-                        && _ignite(potentialLocations[i], potentialLocations[i].section())
-                ) {
-                    locations[contributing] = potentialLocations[i].hash();
-                    amount += potentialLocations[i].price;
-                    ++contributing;
-                    if (required == contributing) {
-                        break;
-                    }
+            {
+                _attributePushedValue(account);
+                if (required == ZERO || required > TWO_FIVE_FIVE || required > potentialLocations.length) {
+                    // only 254 len or fewer allowed
+                    revert Errors.UnableToService();
                 }
-                ++i;
-            } while (i < len);
+                uint256 len = potentialLocations.length;
+                uint256 i;
+                uint256 contributing;
+                uint256 amount;
+                do {
+                    // non zero means that the value exists
+                    if (
+                        token == potentialLocations[i].token
+                            && _ignite(potentialLocations[i], potentialLocations[i].section())
+                    ) {
+                        locations[contributing] = potentialLocations[i].hash();
+                        amount += potentialLocations[i].price;
+                        ++contributing;
+                        if (required == contributing) {
+                            break;
+                        }
+                    }
+                    ++i;
+                } while (i < len);
 
-            if (contributing < required) {
-                // let other contracts revert if they must
-                revert Errors.UnableToService();
+                if (contributing < required) {
+                    // let other contracts revert if they must
+                    revert Errors.UnableToService();
+                }
+                if (amount > ZERO && amount > _decrementValue(account, token, amount)) {
+                    revert Errors.MissingPayment();
+                }
             }
-            if (amount > ZERO && amount > _decrementValue(account, token, amount)) {
-                revert Errors.MissingPayment();
+            {
+                bytes32 key = _toId(locations.hash(), locations.length);
+                // front load the cost of requesting randomness
+                // put it on the shoulders of the consumer
+                // this can probably be optimized
+                _timeline[key] = _timelineFromInputs({
+                    owner: account,
+                    expiryOffset: expiryOffset,
+                    start: expiryOffset << TWO_FIVE_FIVE == ZERO ? block.number : block.timestamp
+                });
+                emit RandomnessStart(account, key);
+                return key;
             }
-            bytes32 key = _toId(locations.hash(), locations.length);
-            // front load the cost of requesting randomness
-            // put it on the shoulders of the consumer
-            // this can probably be optimized
-            _timeline[key] = _timelineFromInputs(account, expiryOffset);
-            emit RandomnessStart(account, key);
-            return key;
         }
     }
 
-    function _timelineFromInputs(address owner, uint256 expiryOffset) internal view returns (uint256) {
-        return uint256(uint160(owner)) << NINE_SIX
-            | (uint256((uint48((expiryOffset << TWO_FIVE_FIVE == ZERO) ? block.number : block.timestamp))) << FOUR_EIGHT)
-            | uint256(uint40(expiryOffset)); // last 8 bits left blank for counting
+    function _timelineFromInputs(address owner, uint256 expiryOffset, uint256 start) internal pure returns (uint256) {
+        return (uint256(uint160(owner)) << NINE_SIX) | (uint256((uint48(start))) << FOUR_EIGHT)
+            | (uint256(uint40(expiryOffset)) << EIGHT); // last 8 bits left blank for counting
     }
 
     /**

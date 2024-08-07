@@ -75,7 +75,7 @@ describe("Random", () => {
         index: parts.index,
       }))
       await expectations.emit(ctx,
-        ctx.random.write.heat([required, 12n << 9n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
+        ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
         ctx.random, 'Heat',
         expectedEmitArgs,
       )
@@ -94,7 +94,7 @@ describe("Random", () => {
       }))
       await expectations.emit(ctx,
         ctx.random.write.heat(
-          [required, 12n << 9n, viem.zeroAddress, selections],
+          [required, 12n << 1n, viem.zeroAddress, selections],
           /* { value: utils.sum(selections) }, */
         ),
         ctx.random, 'Heat',
@@ -107,7 +107,7 @@ describe("Random", () => {
       const required = 5n
       await expectations.revertedWithCustomError(ctx.errors,
         ctx.random.write.heat(
-          [required, 12n << 9n, viem.zeroAddress, selections],
+          [required, 12n << 1n, viem.zeroAddress, selections],
           { value: utils.sum(selections) - 1n },
         ),
         'MissingPayment',
@@ -116,7 +116,7 @@ describe("Random", () => {
     it('does not allow secrets to be requested twice', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
       await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.heat(
-        [ctx.required, 12n << 9n, viem.zeroAddress, ctx.selections],
+        [ctx.required, 12n << 1n, viem.zeroAddress, ctx.selections],
         { value: utils.sum(ctx.selections) },
       ), 'UnableToService')
     })
@@ -124,7 +124,7 @@ describe("Random", () => {
       it('greater than 0', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
         await expectations.revertedWithCustomError(ctx.errors,
-          ctx.random.write.heat([0n, 12n << 9n, viem.zeroAddress, []]),
+          ctx.random.write.heat([0n, 12n << 1n, viem.zeroAddress, []]),
           'UnableToService',
         )
       })
@@ -133,7 +133,7 @@ describe("Random", () => {
         const { selections } = await testUtils.selectPreimages(ctx)
         await expectations.revertedWithCustomError(ctx.errors,
           ctx.random.write.heat(
-            [256n, 12n << 9n, viem.zeroAddress, selections],
+            [256n, 12n << 1n, viem.zeroAddress, selections],
             { value: utils.sum(selections) },
           ),
           'UnableToService',
@@ -144,7 +144,7 @@ describe("Random", () => {
         const { selections } = await testUtils.selectPreimages(ctx)
         await expectations.revertedWithCustomError(ctx.errors,
           ctx.random.write.heat(
-            [BigInt(selections.length + 1), 12n << 9n, viem.zeroAddress, selections],
+            [BigInt(selections.length + 1), 12n << 1n, viem.zeroAddress, selections],
             { value: utils.sum(selections) },
           ),
           'UnableToService',
@@ -427,7 +427,7 @@ describe("Random", () => {
             secretByPreimage.get(selection.preimage) as viem.Hex,
           ], {
             account: signer2.account!,
-            value: oneEther,
+            value: oneEther
           }),
             [signer2.account!.address, ctx.random.address],
             [-oneEther, oneEther],
@@ -594,7 +594,7 @@ describe("Random", () => {
         const required = 5n
         const heatTx = await ctx.random.write.heat([
           required,
-          (120n << 9n) | 1n,
+          (120n << 1n) | 1n,
           viem.zeroAddress,
           selections,
         ], { value: utils.sum(selections) })
@@ -672,7 +672,7 @@ describe("Random", () => {
         index: parts.index,
       }))
       await expectations.emit(ctx,
-        ctx.random.write.heat([required, 12n << 9n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
+        ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
         ctx.random, 'Heat',
         expectedEmitArgs,
       )
