@@ -291,7 +291,11 @@ describe("Random", () => {
         const secrets = selections.map((selection) => (
           secretByPreimage.get(selection.preimage) as viem.Hex
         ))
-        await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.cast([start.args.key!, selections, _.shuffle(secrets)]), 'SecretMismatch')
+        let shuffled = secrets
+        while (_.isEqual(shuffled, secrets)) {
+          shuffled = _.shuffle(shuffled)
+        }
+        await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.cast([start.args.key!, selections, shuffled]), 'SecretMismatch')
       })
       it('can be written and provided via calldata on chain by anyone', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
