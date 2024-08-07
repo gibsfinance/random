@@ -93,6 +93,7 @@ export const _emit = async (
       // is an object
       (filter as any).args = fltr
     } // otherwise don't set the args property so that lodash doesn't filter against it
+    // console.log(allEvents, filter)
     return _.find(allEvents, filter) as viem.Log
   }).compact().value()]
 }

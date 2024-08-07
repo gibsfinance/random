@@ -20,8 +20,15 @@ export const deploy = async () => {
   const ERC20 = await hre.viem.getContractAt(contractName.ERC20Solady, _ERC20.address)
   const _taxERC20 = await hre.viem.deployContract(contractName.ERC20, [true])
   const taxERC20 = await hre.viem.getContractAt(contractName.ERC20Solady, _taxERC20.address)
-  console.log('random=%o', random.address)
-  console.log('reader=%o', reader.address)
+  const contracts = {
+    random,
+    reader,
+    ERC20,
+    taxERC20,
+  }
+  for (const [name, contract] of Object.entries(contracts)) {
+    console.log('%s=%o', contract.address, name)
+  }
   const randomnessProviders = await getRandomnessProviders(hre)
   console.log('providers=%o', randomnessProviders.length)
   const signers = await hre.viem.getWalletClients()
@@ -37,15 +44,12 @@ export const deploy = async () => {
     )))
   }))
   return {
-    ERC20,
-    taxERC20,
+    ...contracts,
     TAXERC20: _taxERC20,
     errors,
     signers,
     randomnessProviders,
     hre,
-    random,
-    reader,
   }
 }
 
