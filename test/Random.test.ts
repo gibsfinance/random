@@ -367,7 +367,7 @@ describe("Random", () => {
           account: signer2.account,
         }), 'SignerMismatch')
       })
-      it('will not refund if chop is last', async () => {
+      it('will not refund if chop is after a valid cast', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
         const { selections, signers, randomnessStarts, secretByPreimage } = ctx
         const [, signer2] = signers
@@ -386,7 +386,7 @@ describe("Random", () => {
         const secrets = selections.map((selection) => (
           secretByPreimage.get(selection.preimage) as viem.Hex
         ))
-        await testUtils.confirmTx(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]))
+        await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]), ctx.random, 'Cast')
         const chopResult = ctx.random.write.chop([start.args.key!, selections], { value: oneEther })
         await expectations.changeEtherBalances(ctx,
           chopResult,

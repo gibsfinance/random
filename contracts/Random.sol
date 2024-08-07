@@ -250,7 +250,7 @@ contract Random is RandomImplementation {
             address owner = LibMulticaller.senderOrSigner();
             _attributePushedValue(owner);
             {
-                if (required == ZERO || required >= TWO_FIVE_FIVE || required < potentialLocations.length) {
+                if (required == ZERO || required >= TWO_FIVE_FIVE || required > potentialLocations.length) {
                     // only 254 len or fewer allowed
                     revert Errors.UnableToService();
                 }
@@ -311,7 +311,7 @@ contract Random is RandomImplementation {
     function ink(address token, uint256 price, bytes calldata data) external payable {
         unchecked {
             uint256 count = data.length / THREE_TWO;
-            if (data.length == ZERO || data.length % THREE_TWO != ZERO || count > MAX_PREIMAGES) {
+            if (data.length == ZERO || data.length % THREE_TWO != ZERO) {
                 revert Errors.Misconfigured();
             }
             address provider = LibMulticaller.senderOrSigner();
@@ -335,7 +335,7 @@ contract Random is RandomImplementation {
             if (signer != owner) {
                 revert Errors.SignerMismatch();
             }
-            if (_randomness[key].seed > TWO_FIVE_FIVE || _randomness[key].seed == ZERO) {
+            if (_randomness[key].seed > TWO_FIVE_FIVE) {
                 // don't penalize, because a provider could slip in before
                 return;
             }

@@ -32,7 +32,6 @@ contract Consumer {
     uint256 internal constant TWO_FIVE_FIVE = 255;
     uint256 internal constant TWO_FIVE_SIX = 256;
     uint256 internal constant ONE_HUNDRED_ETHER = 100 ether;
-    uint256 internal constant MAX_PREIMAGES = 65_535 - ONE;
 
     address internal immutable rand;
 
