@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import {PreimageLocation} from "../PreimageLocation.sol";
-import {console} from "hardhat/console.sol";
 
 abstract contract Random {
     uint256 internal constant ZERO = 0;
