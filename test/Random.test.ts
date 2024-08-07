@@ -35,7 +35,7 @@ describe("Random", () => {
         'Misconfigured',
       )
     })
-    it('cannot write if data is uneven', async () => {
+    it('cannot write if data is uneven must write full words (32 bytes)', async () => {
       const ctx = await helpers.loadFixture(testUtils.deploy)
       await expectations.revertedWithCustomError(ctx.errors,
         ctx.random.write.ink([viem.zeroAddress, utils.defaultPrice, '0x00']),
@@ -568,7 +568,33 @@ describe("Random", () => {
       })
     })
     describe('#randomness', () => {
-      it('returns randomness struct')
+      it('returns randomness struct', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const [start] = ctx.randomnessStarts
+        const latest = await helpers.time.latestBlock()
+        await expect(ctx.random.read.randomness([start.args.key!]))
+          .eventually.to.deep.equal({
+            timeline: ((BigInt(start.args.owner!) << 96n) | BigInt(latest) << 48n | 12n << 1n),
+            seed: 1n,
+          })
+      })
+    })
+  })
+  describe('tokens', () => {
+    it('can take tokens as payment')
+    it('can deposit and withdraw tokens', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+      const [signer] = ctx.signers
+      await expectations.changeTokenBalances(ctx, ctx.ERC20,
+        ctx.random.write.handoff([ctx.ERC20.address, signer.account!.address, -oneEther]),
+        [signer.account!.address, ctx.random.address],
+        [-oneEther, oneEther],
+      )
+      await expectations.changeTokenBalances(ctx, ctx.ERC20,
+        ctx.random.write.handoff([ctx.ERC20.address, viem.zeroAddress, oneEther]),
+        [signer.account!.address, ctx.random.address],
+        [oneEther, -oneEther],
+      )
     })
   })
 })

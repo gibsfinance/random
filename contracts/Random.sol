@@ -166,17 +166,6 @@ contract Random is RandomImplementation {
             return true;
         }
     }
-    // function _expired(uint256 timeline) internal view returns (bool) {
-    //     unchecked {
-    //         // end
-    //         return (timeline << TWO_FIVE_FIVE > ZERO ? block.number : block.timestamp)
-    //         // start
-    //         - (uint256(uint48(timeline >> FOUR_EIGHT)))
-    //         // expiration delta
-    //         > (uint256(uint48(timeline) >> ONE));
-    //     }
-    // }
-
     function _toId(bytes32 hashed, uint256 len) internal pure returns (bytes32) {
         unchecked {
             return bytes32((uint256(hashed) << EIGHT) | uint256(uint8(len)));

@@ -8,18 +8,35 @@ import * as utils from '../lib/utils'
 export const contractName = {
   Random: 'contracts/Random.sol:Random',
   Reader: 'contracts/Reader.sol:Reader',
+  ERC20: 'contracts/test/ERC20.sol:ERC20',
+  ERC20Solady: 'solady/src/tokens/ERC20.sol:ERC20',
 } as const
 
 export const deploy = async () => {
   const errors = await hre.viem.getContractAt('Errors', viem.zeroAddress)
   const random = await hre.viem.deployContract(contractName.Random)
   const reader = await hre.viem.deployContract(contractName.Reader)
+  const _ERC20 = await hre.viem.deployContract(contractName.ERC20, [false])
+  const ERC20 = await hre.viem.getContractAt(contractName.ERC20Solady, _ERC20.address)
+  const _taxERC20 = await hre.viem.deployContract(contractName.ERC20, [true])
+  const taxERC20 = await hre.viem.getContractAt(contractName.ERC20Solady, _taxERC20.address)
   console.log('random=%o', random.address)
   console.log('reader=%o', reader.address)
   const randomnessProviders = await getRandomnessProviders(hre)
   const signers = await hre.viem.getWalletClients()
-  console.log('randomness_providers=%o', randomnessProviders.length)
+  const oneThousandEther = (10n ** 18n) * 1_000n
+  await Promise.all(signers.map((signer) => (
+    _ERC20.write.mint([signer.account!.address, oneThousandEther])
+  )))
+  await Promise.all(signers.map((signer) => (
+    _ERC20.write.approve([random.address, oneThousandEther], {
+      account: signer.account!,
+    })
+  )))
+  console.log('providers=%o', randomnessProviders.length)
   return {
+    ERC20,
+    taxERC20,
     errors,
     signers,
     randomnessProviders,
@@ -68,9 +85,6 @@ export const deployWithAndConsumeRandomness = async () => {
     selections,
   ])
   const receipt = await confirmTx(ctx, heatTx)
-  // const r = await provider.getTransactionReceipt({
-  //   hash: receipt,
-  // })
   const randomnessStarts = await ctx.random.getEvents.RandomnessStart({}, {
     blockHash: receipt.blockHash,
   })

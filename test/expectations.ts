@@ -1,6 +1,8 @@
 import * as viem from 'viem'
 import _ from 'lodash'
 import { confirmTx, type Context } from './utils'
+// import { ERC20$Type } from '../artifacts/contracts/implementations/ERC20.sol/ERC20'
+import { ERC20$Type } from '../artifacts/solady/src/tokens/ERC20.sol/ERC20'
 
 export const revertedWithCustomError = async (contract: viem.GetContractReturnType, p: Promise<any>, errorName: string, args?: any[]) => {
   let threw = false
@@ -136,6 +138,25 @@ export const changeEtherBalances = async (ctx: Context, _receipt: Promise<viem.W
         a += consumed
       }
     }
+    return a - b
+  })
+}
+
+export const changeTokenBalances = async (ctx: Context, contract: viem.GetContractReturnType<ERC20$Type["abi"]>, _receipt: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType, accounts: (viem.WalletClient | viem.Hex)[], deltas: bigint[]) => {
+  const provider = await ctx.hre.viem.getPublicClient()
+  const receipt = await confirmTx(ctx, _receipt)
+  const c = viem.getContract({
+    ...contract,
+    client: provider,
+  })
+  return await changeBalances(accounts, deltas, async (address) => {
+    const before = c.read.balanceOf([address], {
+      blockNumber: receipt.blockNumber - 1n,
+    })
+    const after = c.read.balanceOf([address], {
+      blockNumber: receipt.blockNumber,
+    })
+    let [b, a] = await Promise.all([before, after])
     return a - b
   })
 }
