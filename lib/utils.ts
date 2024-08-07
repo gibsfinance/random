@@ -93,7 +93,7 @@ export const defaultPreImageInfo: PreimageInfo = {
 //   }
 // }
 
-export const section = (inputs = defaultPreImageInfo) => {
+export const section = (inputs: Omit<PreimageInfo, 'index'> = defaultPreImageInfo) => {
   return viem.keccak256(viem.concatHex([
     viem.padHex(inputs.provider, { size: 32 }),
     viem.padHex(inputs.token, { size: 32 }),

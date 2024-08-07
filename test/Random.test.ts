@@ -80,6 +80,27 @@ describe("Random", () => {
         expectedEmitArgs,
       )
     })
+    it('skips payment check if preimages are free', async function () {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const written = await testUtils.writePreimages(ctx, 0n, viem.zeroAddress, 0n)
+      const preimageLocations = _.map(written, 'preimageLocations')
+      const required = 5n
+      const selections = _(preimageLocations).flattenDeep().sampleSize(8).value()
+      const expectedUsed = selections.slice(0, Number(required))
+      const expectedEmitArgs = expectedUsed.map((parts) => ({
+        provider: viem.getAddress(parts.provider),
+        section: utils.section(parts),
+        index: parts.index,
+      }))
+      await expectations.emit(ctx,
+        ctx.random.write.heat(
+          [required, 12n << 1n, viem.zeroAddress, selections],
+          /* { value: utils.sum(selections) }, */
+        ),
+        ctx.random, 'Heat',
+        expectedEmitArgs,
+      )
+    })
     it('enforces payment requirement', async function () {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
       const { selections } = await testUtils.selectPreimages(ctx)

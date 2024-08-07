@@ -132,7 +132,7 @@ export const writePreimages = async (ctx: Context, offset = 0n, token = viem.zer
         token,
         price,
         offset,
-        index,
+        index: BigInt(index),
         preimage,
       }))
       await confirmTx(ctx, rand.write.ink(
