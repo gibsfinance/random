@@ -426,7 +426,7 @@ contract Random is RandomImplementation {
             if (amount < 0) {
                 // move take tokens from signer to recipient custodied by signer
                 _custodied[recipient][token] += _receiveTokens(account, token, uint256(-amount));
-            } else if (amount > 0) {
+            } else {
                 // move tokens from signer to recipient custodied by contract
                 _distribute(token, recipient, _decrementValue(account, token, uint256(amount)));
             }
