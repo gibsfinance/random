@@ -437,6 +437,35 @@ describe("Random", () => {
         )
         await expectations.not.emit(ctx, chopResult, ctx.random, 'Chop')
       })
+      it('will only give providers half of their winnings', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
+        const { selections, signers, randomnessStarts, secretByPreimage } = ctx
+        const [, signer2] = signers
+        const [start] = randomnessStarts
+        await helpers.mine(13)
+        for (const selection of selections) {
+          // duplicated flicks should not make a difference
+          await testUtils.confirmTx(ctx, ctx.random.write.flick([
+            start.args.key!,
+            selection,
+            secretByPreimage.get(selection.preimage) as viem.Hex,
+          ], {
+            account: signer2.account!,
+          }))
+        }
+        const secrets = selections.map((selection) => (
+          secretByPreimage.get(selection.preimage) as viem.Hex
+        ))
+        const castTx = ctx.random.write.cast(
+          [start.args.key!, selections, secrets],
+          { account: signer2.account! },
+        )
+        await expectations.emit(ctx, castTx, ctx.random, 'Cast')
+        await expectations.emit(ctx, castTx, ctx.random, 'CampaignExpired', {
+          ender: viem.getAddress(signer2.account!.address),
+          key: start.args.key!,
+        })
+      })
     })
   })
   describe('public signals to indicate the efficacy/health of preimages', () => {
