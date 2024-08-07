@@ -341,9 +341,7 @@ contract Random is RandomImplementation {
             if (signer != address(uint160(_randomness[key].timeline >> NINE_SIX))) {
                 revert Errors.SignerMismatch();
             }
-            if (msg.value > ZERO) {
-                _attributePushedValue(signer);
-            }
+            _attributePushedValue(signer);
             if (_randomness[key].seed > TWO_FIVE_FIVE) {
                 // don't penalize, because a provider could slip in before
                 return;
