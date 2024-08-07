@@ -9,6 +9,7 @@ import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {Random as RandomImplementation} from "./implementations/Random.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
 import {Errors} from "./Errors.sol";
+import {console} from "hardhat/console.sol";
 
 event Ok(address indexed provider, bytes32 section);
 
@@ -107,16 +108,12 @@ contract Random is RandomImplementation {
         }
     }
 
-    function _flick(bytes32 randomnessKey, PreimageLocation.Info calldata nfo, bytes32 formerSecret)
+    function _flick(bytes32 key, PreimageLocation.Info calldata nfo, bytes32 formerSecret)
         internal
         returns (bytes32 location)
     {
         unchecked {
             address pntr = _pointers[nfo.provider][nfo.token][nfo.price][nfo.offset];
-            // secret cannot be zero
-            if (formerSecret == bytes32(ZERO)) {
-                revert Errors.ZeroSecret();
-            }
             if (pntr == address(0)) {
                 revert Errors.Misconfigured();
             }
@@ -133,7 +130,7 @@ contract Random is RandomImplementation {
             location = nfo.hash();
             if (_formerSecret[nfo.provider][nfo.token][nfo.price][nfo.offset + nfo.index] == bytes32(ZERO)) {
                 _formerSecret[nfo.provider][nfo.token][nfo.price][nfo.offset + nfo.index] = formerSecret;
-                ++_timeline[randomnessKey];
+                ++_timeline[key];
                 emit SecretRevealed(nfo.provider, location, formerSecret);
             }
         }
@@ -151,10 +148,18 @@ contract Random is RandomImplementation {
                 return false;
             }
             bytes32[] memory locations = new bytes32[](len);
+            bool missing;
             do {
-                locations[i] = _flick(key, preimageInfo[i], revealedSecrets[i]);
+                if (revealedSecrets[i] != bytes32(0)) {
+                    locations[i] = _flick(key, preimageInfo[i], revealedSecrets[i]);
+                } else {
+                    missing = true;
+                }
                 ++i;
             } while (i < len);
+            if (missing) {
+                return false;
+            }
             if (key != _toId(locations.hash(), locations.length)) {
                 revert Errors.NotInCohort();
             }
@@ -162,6 +167,7 @@ contract Random is RandomImplementation {
             seed = revealedSecrets.hash();
             _seed[key] = seed;
             emit Cast(key, seed);
+            _scatter(key, preimageInfo);
             return true;
         }
     }
@@ -193,7 +199,7 @@ contract Random is RandomImplementation {
             } while (i < len);
             if (_expired(_timeline[key])) {
                 address ender = LibMulticaller.senderOrSigner();
-                uint256 expiredCallerPayout = total / 2; // take half if expiry happens late
+                uint256 expiredCallerPayout = total / 2; // take half if cast happens late
                 _custodied[ender][item.token] += expiredCallerPayout;
                 total -= expiredCallerPayout;
                 // can be used as reputation
@@ -357,29 +363,16 @@ contract Random is RandomImplementation {
         }
     }
 
-    function flick(bytes32 key, PreimageLocation.Info calldata preimageInfo, bytes32 revealed)
-        external
-        payable
-        returns (bytes32)
-    {
-        if (msg.value > ZERO) {
-            _attributePushedValue(LibMulticaller.senderOrSigner());
-        }
-        return _flick(key, preimageInfo, revealed);
-    }
-
     function cast(bytes32 key, PreimageLocation.Info[] calldata preimageInfo, bytes32[] calldata revealed)
         external
         payable
+        returns (bool)
     {
         unchecked {
             if (msg.value > ZERO) {
                 _attributePushedValue(LibMulticaller.senderOrSigner());
             }
-            if (_cast(key, preimageInfo, revealed)) {
-                // providers are paid
-                _scatter(key, preimageInfo);
-            }
+            return _cast(key, preimageInfo, revealed);
         }
     }
 
@@ -387,14 +380,14 @@ contract Random is RandomImplementation {
      * if the data is on chain (in storage), one can pull the data from on chain and validate it
      * @param key the key for the randomness campaign
      */
-    function dig(bytes32 key, PreimageLocation.Info[] calldata preimageInfo) external payable {
+    function dig(bytes32 key, PreimageLocation.Info[] calldata preimageInfo) external payable returns (bool) {
         unchecked {
             if (msg.value > ZERO) {
                 _attributePushedValue(LibMulticaller.senderOrSigner());
             }
             uint256 len = uint256(uint8(uint256(key)));
             if (uint256(uint8(_timeline[key])) != len) {
-                return;
+                return false;
             }
             // all secrets have been written on chain and yet, the die has not been cast
             // do a lookup on all preimages and cast
@@ -404,13 +397,11 @@ contract Random is RandomImplementation {
                 secrets[i] = _formerSecret[preimageInfo[i].provider][preimageInfo[i].token][preimageInfo[i].price][preimageInfo[i]
                     .offset + preimageInfo[i].index];
                 if (secrets[i] == bytes32(0x00)) {
-                    return;
+                    return false;
                 }
                 ++i;
             } while (i < len);
-            _cast(key, preimageInfo, secrets);
-            // if cast does not error, then it completed for the first time
-            _scatter(key, preimageInfo);
+            return _cast(key, preimageInfo, secrets);
         }
     }
 

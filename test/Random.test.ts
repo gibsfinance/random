@@ -128,7 +128,7 @@ describe("Random", () => {
           'UnableToService',
         )
       })
-      it('no more than 254', async () => {
+      it('no more than 255', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
         const { selections } = await testUtils.selectPreimages(ctx)
         await expectations.revertedWithCustomError(ctx.errors,
@@ -193,17 +193,12 @@ describe("Random", () => {
         const { signers, selections, randomnessStarts, secretByPreimage } = ctx
         const [start] = randomnessStarts
         const [, signer2] = signers
-        const duplicatedAndShuffled = _.shuffle(selections.concat(selections))
-        for (const selection of duplicatedAndShuffled) {
-          // duplicated flicks should not make a difference
-          await testUtils.confirmTx(ctx, ctx.random.write.flick([
-            start.args.key!,
-            selection,
-            secretByPreimage.get(selection.preimage) as viem.Hex,
-          ], {
-            account: signer2.account!,
-          }))
-        }
+        const secrets = selections.map(({ preimage }) => (
+          secretByPreimage.get(preimage) as viem.Hex
+        ))
+        await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets], {
+          account: signer2.account!,
+        }), ctx.random, 'Cast')
         await testUtils.confirmTx(ctx, ctx.random.write.dig([start.args.key!, selections]))
       })
       it('deposit native token at the same time', async () => {
@@ -211,76 +206,58 @@ describe("Random", () => {
         const { signers, selections, randomnessStarts, secretByPreimage } = ctx
         const [start] = randomnessStarts
         const [, signer2] = signers
-        const duplicatedAndShuffled = _.shuffle(selections.concat(selections))
-        for (const selection of duplicatedAndShuffled) {
-          // duplicated flicks should not make a difference
-          await testUtils.confirmTx(ctx, ctx.random.write.flick([
-            start.args.key!,
-            selection,
-            secretByPreimage.get(selection.preimage) as viem.Hex,
-          ], {
-            account: signer2.account!,
-          }))
-        }
+        const secrets = selections.map(({ preimage }) => (
+          secretByPreimage.get(preimage) as viem.Hex
+        ))
+        await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets], {
+          account: signer2.account!,
+        }), ctx.random, 'Cast')
         await testUtils.confirmTx(ctx, ctx.random.write.dig([start.args.key!, selections], {
           value: oneEther, // the important line
         }))
       })
       it('reverts if a non existant pointer is encountered', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
-        const { signers, selections, randomnessStarts, secretByPreimage } = ctx
+        const { selections, randomnessStarts } = ctx
         const [start] = randomnessStarts
-        const [, signer2] = signers
         const [selection] = selections
+        const s = {
+          ...selection,
+          offset: 1n,
+        }
         await expectations.revertedWithCustomError(ctx.errors,
-          ctx.random.write.flick([
+          ctx.random.write.cast([
             start.args.key!,
-            selection,
-            viem.zeroHash,
+            [s],
+            [viem.toHex(1n, { size: 32 })],
           ]),
-          'ZeroSecret',
+          'Misconfigured',
         )
       })
-      it('deposit native token during flick', async () => {
+      it('returns if a zero secret is provided', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
-        const { signers, selections, randomnessStarts, secretByPreimage } = ctx
+        const { selections, randomnessStarts } = ctx
         const [start] = randomnessStarts
-        const [, signer2] = signers
-        const duplicatedAndShuffled = _.shuffle(selections.concat(selections))
-        for (const selection of duplicatedAndShuffled) {
-          // duplicated flicks should not make a difference
-          await expectations.changeEtherBalances(ctx,
-            ctx.random.write.flick([
-              start.args.key!,
-              selection,
-              secretByPreimage.get(selection.preimage) as viem.Hex,
-            ], {
-              account: signer2.account!,
-              value: oneEther,
-            }),
-            [signer2.account!.address, ctx.random.address],
-            [-oneEther, oneEther],
-          )
-        }
-        await testUtils.confirmTx(ctx, ctx.random.write.dig([start.args.key!, selections]))
+        const [selection] = selections
+        await testUtils.confirmTx(ctx, ctx.random.write.cast([
+          start.args.key!,
+          [selection],
+          [viem.zeroHash],
+        ]))
       })
       it('will return if not all secrets have been written', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithAndConsumeRandomness)
         const { signers, selections, randomnessStarts, secretByPreimage } = ctx
         const [start] = randomnessStarts
         const [, signer2] = signers
-        const subset = selections.slice(1)
-        for (const selection of subset) {
-          // duplicated flicks should not make a difference
-          await testUtils.confirmTx(ctx, ctx.random.write.flick([
-            start.args.key!,
-            selection,
-            secretByPreimage.get(selection.preimage) as viem.Hex,
-          ], {
-            account: signer2.account!,
-          }))
-        }
-        // even if you have all of them, if you have not written them with .flick(
+        const secrets = selections.map(({ preimage }) => (
+          secretByPreimage.get(preimage) as viem.Hex
+        ))
+        secrets[secrets.length - 1] = viem.zeroHash
+        await expectations.not.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets], {
+          account: signer2.account!,
+        }), ctx.random, 'Cast')
+        // even if you have all of them, if you have not written them with .cast(
         // then it will simply not call cast
         await expectations.not.emit(ctx, ctx.random.write.dig([start.args.key!, selections]), ctx.random, 'Cast')
       })
@@ -415,20 +392,12 @@ describe("Random", () => {
         const [signer, signer2] = signers
         const [start] = randomnessStarts
         await helpers.mine(12)
-        for (const selection of selections) {
-          // duplicated flicks should not make a difference
-          await testUtils.confirmTx(ctx, ctx.random.write.flick([
-            start.args.key!,
-            selection,
-            secretByPreimage.get(selection.preimage) as viem.Hex,
-          ], {
-            account: signer2.account!,
-          }))
-        }
-        const secrets = selections.map((selection) => (
-          secretByPreimage.get(selection.preimage) as viem.Hex
+        const secrets = selections.map(({ preimage }) => (
+          secretByPreimage.get(preimage) as viem.Hex
         ))
-        await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]), ctx.random, 'Cast')
+        await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets], {
+          account: signer2.account!,
+        }), ctx.random, 'Cast')
         const value = utils.sum(selections)
         const chopResult = ctx.random.write.chop(
           [start.args.key!, selections],
@@ -446,17 +415,7 @@ describe("Random", () => {
         const { selections, signers, randomnessStarts, secretByPreimage } = ctx
         const [, signer2] = signers
         const [start] = randomnessStarts
-        await helpers.mine(13)
-        for (const selection of selections) {
-          // duplicated flicks should not make a difference
-          await testUtils.confirmTx(ctx, ctx.random.write.flick([
-            start.args.key!,
-            selection,
-            secretByPreimage.get(selection.preimage) as viem.Hex,
-          ], {
-            account: signer2.account!,
-          }))
-        }
+        await helpers.mine(12)
         const secrets = selections.map((selection) => (
           secretByPreimage.get(selection.preimage) as viem.Hex
         ))
