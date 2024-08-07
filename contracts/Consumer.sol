@@ -50,6 +50,10 @@ contract Consumer {
         bytes32 key;
     }
 
+    constructor() {
+        _preimageToKey.push();
+    }
+
     function tell(bytes32 key, uint256 id, bytes32 revealedOrderSecret) external {
         unchecked {
             RandomImplementation.Randomness memory r = RandomImplementation(rand).randomness(key);
@@ -111,11 +115,12 @@ contract Consumer {
         latest[LibMulticaller.senderOrSigner()] = key;
     }
 
-    function chain(address owner, bytes32 preimage) external {
-        if (_preimageToKey[_preimageToId[preimage]].preimage == preimage) {
-            return;
+    function chain(address owner, bytes32 preimage) external returns (uint256 id) {
+        id = _preimageToId[preimage];
+        if (_preimageToKey[id].preimage == preimage) {
+            return id;
         }
-        uint256 id = _preimageToKey.length;
+        id = _preimageToKey.length;
         _preimageToKey.push(Link({owner: owner, preimage: preimage, key: latest[owner]}));
         _preimageToId[preimage] = id;
         emit Chain(owner, latest[owner], id);

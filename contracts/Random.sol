@@ -232,7 +232,6 @@ contract Random is RandomImplementation {
 
     function _decrementValue(address account, address token, uint256 desired) internal returns (uint256 delta) {
         unchecked {
-            if (desired == ZERO) return delta;
             uint256 limit = _custodied[account][token];
             delta = desired > limit ? limit : desired;
             if (delta > ZERO) {
@@ -429,7 +428,7 @@ contract Random is RandomImplementation {
             if (amount < 0) {
                 // move take tokens from signer to recipient custodied by signer
                 _custodied[recipient][token] += _receiveTokens(account, token, uint256(-amount));
-            } else {
+            } else if (amount > 0) {
                 // move tokens from signer to recipient custodied by contract
                 _distribute(token, recipient, _decrementValue(account, token, uint256(amount)));
             }
