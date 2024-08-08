@@ -27,7 +27,7 @@ export const deploy = async () => {
     taxERC20,
   }
   for (const [name, contract] of Object.entries(contracts)) {
-    console.log('%s=%o', contract.address, name)
+    console.log('%s:%o', contract.address, name)
   }
   const randomnessProviders = await getRandomnessProviders(hre)
   console.log('providers=%o', randomnessProviders.length)
