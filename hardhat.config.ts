@@ -40,7 +40,7 @@ const config: HardhatUserConfig = {
     timeout: 120_000,
   },
   fourByteUploader: {
-    // runOnCompile: true,
+    runOnCompile: process.env.BYTE4 === 'true',
   },
   dependencyCompiler: {
     paths: [
