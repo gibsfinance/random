@@ -11,7 +11,6 @@ import {PreimageLocation} from "./PreimageLocation.sol";
 import {Errors, Cast, Reveal, Ink, Heat, Start, Expired, Chop, Bleach} from "./Constants.sol";
 import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 import {SlotDerivation} from "./SlotDerivation.sol";
-import {console} from "hardhat/console.sol";
 
 contract Random is RandomImplementation {
     // this error is used inside of sstore to so we surface it here so that it sticks in the abi
@@ -266,7 +265,6 @@ contract Random is RandomImplementation {
         unchecked {
             bytes32[] memory locations = new bytes32[](required);
             address account = LibMulticaller.senderOrSigner();
-            console.log(account);
             {
                 _attributePushedValue(account);
                 if (required == ZERO || required > TWO_FIVE_FIVE || required > potentialLocations.length) {

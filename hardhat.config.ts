@@ -4,11 +4,12 @@ import { HARDHAT_NETWORK_MNEMONIC, defaultHdAccountsConfigParams } from 'hardhat
 import "@nomicfoundation/hardhat-toolbox-viem";
 import '@nomicfoundation/hardhat-viem'
 import '@nomicfoundation/hardhat-chai-matchers'
-// import 'hardhat-tracer'
-// import 'solidity-coverage'
+import 'hardhat-tracer'
+import 'solidity-coverage'
 import 'hardhat-dependency-compiler'
-// import '@nomicfoundation/hardhat-verify'
-// Error.stackTraceLimit = Infinity
+// import '@nomicfoundation/hardhat-verify'`
+
+Error.stackTraceLimit = Infinity
 
 const { env } = process
 
@@ -34,6 +35,9 @@ const config: HardhatUserConfig = {
       //   blockNumber: 21_074_800,
       // },
     },
+  },
+  mocha: {
+    timeout: 120_000,
   },
   fourByteUploader: {
     // runOnCompile: true,

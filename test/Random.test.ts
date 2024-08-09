@@ -652,14 +652,12 @@ describe("Random", () => {
     })
   })
   describe('multicalling', () => {
-    it.only('can understand multicaller with sender calls', async () => {
-      console.log('loading fixture')
+    it('can understand multicaller with sender calls', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
       const {
         signers,
         required,
       } = ctx
-      console.log('selecting preimages')
       const { selections } = await testUtils.selectPreimages(ctx)
       const [signer] = signers
       const [[s]] = await utils.createPreimages(signer.account!.address)
@@ -672,7 +670,7 @@ describe("Random", () => {
       const targets = [
         ctx.random.address,
         ctx.random.address,
-        ctx.reader.address,
+        ctx.consumer.address,
       ]
       const existingBalance = 0n
       const values = new Array(targets.length).fill(0n) as bigint[]
@@ -683,7 +681,7 @@ describe("Random", () => {
         viem.encodeFunctionData({
           abi: ctx.random.abi,
           functionName: 'handoff',
-          args: [viem.zeroAddress, viem.zeroAddress, viem.maxInt256 - values[0]],
+          args: [viem.zeroAddress, viem.zeroAddress, -values[0]],
         }),
         viem.encodeFunctionData({
           abi: ctx.random.abi,
@@ -696,31 +694,29 @@ describe("Random", () => {
           args: [signer.account!.address, false, s.preimage],
         }),
       ]
-      console.log(targets)
-      console.log(values)
       const multicallTx = ctx.multicallerWithSender.write.aggregateWithSender([
         targets,
         data,
         values,
-      ])
+      ], {
+        value: values.reduce((total, v) => total + v),
+      })
       await expectations.changeEtherBalances(ctx, multicallTx,
         [signer.account!.address, ctx.multicallerWithSender.address, ctx.random.address],
-        [-handoffValue, 0n, 0n],
+        [-handoffValue, 0n, handoffValue],
       )
-      // ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections], { value: utils.sum(selections) })
-      // await expectations.emit(ctx,
-      //   multicallTx,
-      //   ctx.random, 'Heat',
-      //   expectedEmitArgs,
-      // )
-      // await expectations.emit(ctx,
-      //   multicallTx,
-      //   ctx.consumer, 'Chain',
-      //   {
-      //     owner: signer.account!.address,
-      //   },
-      // )
-      // ctx.hre.tracer.enabled = false
+      await expectations.emit(ctx,
+        multicallTx,
+        ctx.random, 'Heat',
+        expectedEmitArgs,
+      )
+      await expectations.emit(ctx,
+        multicallTx,
+        ctx.consumer, 'Chain',
+        {
+          owner: viem.padHex(signer.account!.address, { size: 32 }),
+        },
+      )
     })
   })
 })
