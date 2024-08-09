@@ -6,27 +6,69 @@ import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
 import * as utils from '../lib/utils'
 
 export const contractName = {
+  Consumer: 'contracts/Consumer.sol:Consumer',
   Random: 'contracts/Random.sol:Random',
   Reader: 'contracts/Reader.sol:Reader',
   ERC20: 'contracts/test/ERC20.sol:ERC20',
   ERC20Solady: 'solady/src/tokens/ERC20.sol:ERC20',
+  Constants: 'contracts/Constants.sol:Errors',
+  MulticallerWithSender: 'multicaller/src/MulticallerWithSender.sol:MulticallerWithSender',
+  MulticallerWithSigner: 'multicaller/src/MulticallerWithSigner.sol:MulticallerWithSigner',
 } as const
 
+type Names = typeof contractName
+
+const deployMulticaller = async (name: Names[keyof Names], address: viem.Hex) => {
+  const provider = await hre.viem.getPublicClient()
+  const code = await provider.getCode({
+    address,
+  })
+  if (!code || code == '0x') {
+    const tmpMulticaller = await hre.viem.deployContract(name as any)
+    const code = await provider.getCode({ address: tmpMulticaller.address }) as any
+    await provider.request({
+      method: 'hardhat_setCode' as any,
+      params: [
+        address,
+        code,
+      ],
+    })
+  }
+  return await hre.viem.getContractAt(name as any, address)
+}
+
 export const deploy = async () => {
-  const errors = await hre.viem.getContractAt('Errors', viem.zeroAddress)
+  const errors = await hre.viem.getContractAt(contractName.Constants, viem.zeroAddress)
   const random = await hre.viem.deployContract(contractName.Random)
   const reader = await hre.viem.deployContract(contractName.Reader)
+  const consumer = await hre.viem.deployContract(contractName.Consumer, [random.address])
   const _ERC20 = await hre.viem.deployContract(contractName.ERC20, [false])
   const ERC20 = await hre.viem.getContractAt(contractName.ERC20Solady, _ERC20.address)
   const _taxERC20 = await hre.viem.deployContract(contractName.ERC20, [true])
   const taxERC20 = await hre.viem.getContractAt(contractName.ERC20Solady, _taxERC20.address)
-  const contracts = {
+  const multicallerWithSender = await deployMulticaller(
+    contractName.MulticallerWithSender,
+    '0x00000000002Fd5Aeb385D324B580FCa7c83823A0',
+  )
+  await hre.network.provider.send('hardhat_setStorageAt', [
+    multicallerWithSender.address,
+    viem.zeroHash,
+    viem.numberToHex(1n << 160n, { size: 32 }),
+  ])
+  // const multicallerWithSigner =
+  // await deployMulticaller(
+  //   contractName.MulticallerWithSigner,
+  //   '0x000000000000D9ECebf3C23529de49815Dac1c4c',
+  // )
+  const deployedContracts = {
     random,
     reader,
+    consumer,
     ERC20,
     taxERC20,
+    multicallerWithSender,
   }
-  for (const [name, contract] of Object.entries(contracts)) {
+  for (const [name, contract] of Object.entries(deployedContracts)) {
     console.log('%s:%o', contract.address, name)
   }
   const randomnessProviders = await getRandomnessProviders(hre)
@@ -43,13 +85,17 @@ export const deploy = async () => {
       })
     )))
   }))
+  const required = 5n
+  const defaultExpiryOffsetInput = 12n << 1n
   return {
-    ...contracts,
+    ...deployedContracts,
     TAXERC20: _taxERC20,
     errors,
     signers,
     randomnessProviders,
     hre,
+    required,
+    defaultExpiryOffsetInput,
   }
 }
 
@@ -84,28 +130,25 @@ export const deployWithAndConsumeRandomness = async () => {
     blockTag: 'latest',
   })
   const { all, selections } = await selectPreimages(ctx)
-  const required = 5n
   const heatTx = await ctx.random.write.heat([
-    required,
-    12n << 1n,
+    ctx.required,
+    ctx.defaultExpiryOffsetInput,
     viem.zeroAddress,
     selections,
   ], {
     value: utils.sum(selections),
   })
   const receipt = await confirmTx(ctx, heatTx)
-  const randomnessStarts = await ctx.random.getEvents.RandomnessStart({}, {
+  const starts = await ctx.random.getEvents.Start({}, {
     blockHash: receipt.blockHash,
   })
   return {
     ...ctx,
     all,
-    required,
     selections,
-    consumer,
     heat,
     blockBeforeHeat,
-    randomnessStarts,
+    starts,
   }
 }
 

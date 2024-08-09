@@ -4,15 +4,21 @@ import { HARDHAT_NETWORK_MNEMONIC, defaultHdAccountsConfigParams } from 'hardhat
 import "@nomicfoundation/hardhat-toolbox-viem";
 import '@nomicfoundation/hardhat-viem'
 import '@nomicfoundation/hardhat-chai-matchers'
-import 'hardhat-tracer'
-import 'solidity-coverage'
+// import 'hardhat-tracer'
+// import 'solidity-coverage'
+import 'hardhat-dependency-compiler'
 // import '@nomicfoundation/hardhat-verify'
-Error.stackTraceLimit = Infinity
+// Error.stackTraceLimit = Infinity
 
 const { env } = process
 
 const config: HardhatUserConfig = {
-  solidity: "0.8.24",
+  solidity: {
+    version: "0.8.25",
+    settings: {
+      viaIR: true,
+    },
+  },
   networks: {
     hardhat: {
       accounts: {
@@ -31,6 +37,13 @@ const config: HardhatUserConfig = {
   },
   fourByteUploader: {
     // runOnCompile: true,
+  },
+  dependencyCompiler: {
+    paths: [
+      'multicaller/src/MulticallerEtcher.sol',
+      'multicaller/src/MulticallerWithSender.sol',
+      'multicaller/src/MulticallerWithSigner.sol',
+    ],
   },
 };
 

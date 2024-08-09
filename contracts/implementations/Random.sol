@@ -35,6 +35,7 @@ abstract contract Random {
     function pointer(PreimageLocation.Info calldata info) external view virtual returns (address);
     function consumed(PreimageLocation.Info calldata info) external view virtual returns (bool);
     function randomness(bytes32 key) external view virtual returns (Randomness memory);
+    function latest(address account) external view virtual returns (bytes32);
 
     function expired(uint256 timeline) external view virtual returns (bool) {
         return _expired(timeline);

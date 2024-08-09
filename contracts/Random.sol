@@ -8,29 +8,10 @@ import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {Random as RandomImplementation} from "./implementations/Random.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
-import {Errors} from "./Errors.sol";
-
-event Ok(address indexed provider, bytes32 section);
-
-event Bleach(address indexed provider, bytes32 section);
-
-event Reprice(address indexed provider, uint256 pricePer);
-
-event Ink(address indexed provider, uint256 offset, address pointer);
-
-event Heat(address indexed provider, bytes32 section, uint256 index);
-
-event RandomnessStart(address indexed owner, bytes32 key); // no need to index because all keys should be unique
-
-event Reveal(address indexed provider, bytes32 location, bytes32 formerSecret);
-
-event CampaignExpired(address indexed recipient, address indexed ender, bytes32 key);
-
-event FundingScattered(address indexed recipient, uint256 amount, bytes32 key);
-
-event Cast(bytes32 key, bytes32 seed);
-
-event Chop(bytes32 key);
+import {Errors, Cast, Reveal, Ink, Heat, Start, Expired, Chop, Bleach} from "./Constants.sol";
+import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
+import {SlotDerivation} from "./SlotDerivation.sol";
+import {console} from "hardhat/console.sol";
 
 contract Random is RandomImplementation {
     // this error is used inside of sstore to so we surface it here so that it sticks in the abi
@@ -39,6 +20,9 @@ contract Random is RandomImplementation {
 
     using SafeTransferLib for address;
 
+    using StorageSlot for *;
+    using SlotDerivation for *;
+
     using LibPRNG for LibPRNG.PRNG;
 
     using EfficientHashLib for bytes32;
@@ -46,6 +30,9 @@ contract Random is RandomImplementation {
 
     using PreimageLocation for PreimageLocation.Info;
 
+    string private constant _NAMESPACE = "random";
+
+    mapping(address account => bytes32 latest) internal _latest;
     mapping(address account => mapping(address token => uint256 amount)) internal _custodied;
     mapping(address provider => mapping(address token => mapping(uint256 price => uint256 max))) internal _preimageCount;
     mapping(
@@ -82,6 +69,10 @@ contract Random is RandomImplementation {
 
     function randomness(bytes32 key) external view override returns (Randomness memory) {
         return Randomness({timeline: _timeline[key], seed: _seed[key]});
+    }
+
+    function latest(address owner) external view override returns (bytes32) {
+        return _NAMESPACE.erc7201Slot().deriveMapping(owner).getBytes32Slot().value;
     }
 
     function _consumed(PreimageLocation.Info memory nfo) internal view returns (bool) {
@@ -217,7 +208,7 @@ contract Random is RandomImplementation {
                 _custodied[ender][item.token] += expiredCallerPayout;
                 total -= expiredCallerPayout;
                 // can be used as reputation
-                emit CampaignExpired(item.provider, ender, key);
+                emit Expired(item.provider, ender, key);
             }
             _custodied[item.provider][item.token] += total;
         }
@@ -275,6 +266,7 @@ contract Random is RandomImplementation {
         unchecked {
             bytes32[] memory locations = new bytes32[](required);
             address account = LibMulticaller.senderOrSigner();
+            console.log(account);
             {
                 _attributePushedValue(account);
                 if (required == ZERO || required > TWO_FIVE_FIVE || required > potentialLocations.length) {
@@ -319,7 +311,8 @@ contract Random is RandomImplementation {
                     expiryOffset: expiryOffset,
                     start: expiryOffset << TWO_FIVE_FIVE == ZERO ? block.number : block.timestamp
                 });
-                emit RandomnessStart(account, key);
+                _NAMESPACE.erc7201Slot().deriveMapping(account).getBytes32Slot().value = key;
+                emit Start(account, key);
                 return key;
             }
         }
@@ -440,22 +433,6 @@ contract Random is RandomImplementation {
                 _ignite(info, section);
                 ++i;
             } while (i < size);
-        }
-    }
-
-    function ok(PreimageLocation.Info[] calldata infos) external payable {
-        unchecked {
-            address provider = LibMulticaller.senderOrSigner();
-            _attributePushedValue(provider);
-            uint256 len = infos.length;
-            uint256 i;
-            do {
-                if (infos[i].provider != provider) {
-                    revert Errors.SignerMismatch();
-                }
-                emit Ok(provider, infos[i].section());
-                ++i;
-            } while (i < len);
         }
     }
 }

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
+import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {Random} from "./implementations/Random.sol";
+import {Errors, Ok} from "./Constants.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
 
 error Misconfigured();
@@ -10,6 +12,7 @@ error IndexOutOfBounds();
 
 contract Reader {
     using SSTORE2 for address;
+    using PreimageLocation for PreimageLocation.Info;
 
     uint256 internal constant ZERO = 0;
     uint256 internal constant ONE = 1;
@@ -64,18 +67,18 @@ contract Reader {
         return bytes32(_pointer(rand, info).read(info.index * THREE_TWO, info.index * THREE_TWO + THREE_TWO));
     }
 
-    // function expired(address rand, bytes32 key) external view returns (bool) {
-    //     return _expired(Random(rand).randomness(key).timeline);
-    // }
-
-    // function _expired(uint256 timeline) internal view virtual returns (bool) {
-    //     unchecked {
-    //         // end
-    //         return (timeline << TWO_FIVE_FIVE == ZERO ? block.number : block.timestamp)
-    //         // start
-    //         - (uint256(uint48(timeline >> FOUR_EIGHT)))
-    //         // expiration delta
-    //         > (uint256(uint48(timeline) >> (ONE + EIGHT)));
-    //     }
-    // }
+    function ok(PreimageLocation.Info[] calldata infos) external payable {
+        unchecked {
+            address provider = LibMulticaller.senderOrSigner();
+            uint256 len = infos.length;
+            uint256 i;
+            do {
+                if (infos[i].provider != provider) {
+                    revert Errors.SignerMismatch();
+                }
+                emit Ok(provider, infos[i].section());
+                ++i;
+            } while (i < len);
+        }
+    }
 }
