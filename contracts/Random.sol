@@ -9,7 +9,7 @@ import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {Random as RandomImplementation} from "./implementations/Random.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
 import {Errors, Cast, Reveal, Ink, Heat, Start, Expired, Chop, Bleach} from "./Constants.sol";
-import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
+import {StorageSlot} from "./StorageSlot.sol";
 import {SlotDerivation} from "./SlotDerivation.sol";
 
 contract Random is RandomImplementation {
@@ -19,7 +19,8 @@ contract Random is RandomImplementation {
 
     using SafeTransferLib for address;
 
-    using StorageSlot for *;
+    using StorageSlot for bytes32;
+    using StorageSlot for StorageSlot.Bytes32SlotType;
     using SlotDerivation for *;
 
     using LibPRNG for LibPRNG.PRNG;
@@ -70,8 +71,14 @@ contract Random is RandomImplementation {
         return Randomness({timeline: _timeline[key], seed: _seed[key]});
     }
 
-    function latest(address owner) external view override returns (bytes32) {
-        return _NAMESPACE.erc7201Slot().deriveMapping(owner).getBytes32Slot().value;
+    function latest(address owner, bool onlySameTx) external view override returns (bytes32 key) {
+        key = _NAMESPACE.erc7201Slot().deriveMapping(owner).asBytes32().tload();
+        if (key == bytes32(ZERO)) {
+            if (onlySameTx) {
+                revert Errors.UnableToService();
+            }
+            key = _latest[owner];
+        }
     }
 
     function _consumed(PreimageLocation.Info memory nfo) internal view returns (bool) {
@@ -309,7 +316,8 @@ contract Random is RandomImplementation {
                     expiryOffset: expiryOffset,
                     start: expiryOffset << TWO_FIVE_FIVE == ZERO ? block.number : block.timestamp
                 });
-                _NAMESPACE.erc7201Slot().deriveMapping(account).getBytes32Slot().value = key;
+                _NAMESPACE.erc7201Slot().deriveMapping(account).asBytes32().tstore(key);
+                _latest[account] = key;
                 emit Start(account, key);
                 return key;
             }

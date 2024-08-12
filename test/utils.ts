@@ -121,7 +121,7 @@ export const deployWithRandomness = async () => {
   }
 }
 
-export const deployWithAndConsumeRandomness = async () => {
+export const deployWithRandomnessAndStart = async () => {
   const ctx = await helpers.loadFixture(deployWithRandomness)
   const [consumer] = await ctx.hre.viem.getWalletClients()
   const [[heat]] = await utils.createPreimages(consumer.account!.address)
@@ -149,6 +149,69 @@ export const deployWithAndConsumeRandomness = async () => {
     heat,
     blockBeforeHeat,
     starts,
+  }
+}
+
+export const deployWithRandomnessAndConsume = async () => {
+  const ctx = await helpers.loadFixture(deployWithRandomness)
+  const {
+    signers,
+    required,
+  } = ctx
+  const { selections } = await selectPreimages(ctx)
+  const [signer] = signers
+  const [[s]] = await utils.createPreimages(signer.account!.address)
+  const expectedUsed = selections.slice(0, Number(required))
+  const expectedEmitArgs = expectedUsed.map((parts) => ({
+    provider: viem.getAddress(parts.provider),
+    section: utils.section(parts),
+    index: parts.index,
+  }))
+  const targets = [
+    ctx.random.address,
+    ctx.random.address,
+    ctx.consumer.address,
+  ]
+  const existingBalance = 0n
+  const values = new Array(targets.length).fill(0n) as bigint[]
+  const selectionsSum = utils.sum(selections)
+  const handoffValue = selectionsSum < existingBalance ? 0n : selectionsSum - existingBalance
+  values[0] = handoffValue
+  const data = [
+    viem.encodeFunctionData({
+      abi: ctx.random.abi,
+      functionName: 'handoff',
+      args: [viem.zeroAddress, viem.zeroAddress, -values[0]],
+    }),
+    viem.encodeFunctionData({
+      abi: ctx.random.abi,
+      functionName: 'heat',
+      args: [5n, ctx.defaultExpiryOffsetInput, viem.zeroAddress, selections],
+    }),
+    viem.encodeFunctionData({
+      abi: ctx.consumer.abi,
+      functionName: 'chain',
+      args: [signer.account!.address, true, false, s.preimage],
+    }),
+  ]
+  const multicallTx = ctx.multicallerWithSender.write.aggregateWithSender([
+    targets,
+    data,
+    values,
+  ], {
+    value: values.reduce((total, v) => total + v),
+  })
+  await confirmTx(ctx, multicallTx)
+  const heatEvents = await ctx.random.getEvents.Heat()
+  return {
+    ...ctx,
+    heatEvents,
+    selections,
+    multicallSecret: s,
+    handoffValue,
+    multicallTx,
+    signer,
+    expectedEmitArgs,
   }
 }
 

@@ -15,10 +15,13 @@ const { env } = process
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: "0.8.25",
-    settings: {
-      viaIR: true,
-    },
+    compilers: [{
+      version: "0.8.25",
+      settings: {
+        viaIR: true,
+        evmVersion: 'cancun',
+      },
+    }],
   },
   networks: {
     hardhat: {
@@ -29,11 +32,14 @@ const config: HardhatUserConfig = {
         count: 20, // 512
         // path:
       },
+      enableTransientStorage: true,
       allowUnlimitedContractSize: false,
       // forking: {
       //   url: 'https://rpc-pulsechain.g4mm4.io',
       //   blockNumber: 21_074_800,
       // },
+      hardfork: 'cancun',
+      chainId: 1,
     },
   },
   mocha: {
