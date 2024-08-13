@@ -16,14 +16,16 @@ I got to thinking about randomness over the weekend. I think it is a perfect fir
 
 ```
 cost to cover a day's worth of preimages from the producer side
-blocks = 86400/10
-preimages = 24576/32
-gas_cost = 4244998
+blocks = 86_400/10
+preimages = (24_576/32)-1
+gas_cost = 4_244_998
 100k_gwei = 100_000*1e9
 pls_price = 0.0000452
 ((blocks/preimages)*gas_cost*100k_gwei/1e18)*0.0000452 = $0.2158581483 per 100k gwei in base fee
-4775.62275 PLS - probably closer to 6_000 PLS with other gas costs
-6_000/(86400/10) - 0.695 PLS per preimage per 100k gwei in base fee
+424.4998 PLS - probably closer to 500 PLS with other gas costs
+500/767 - ~0.652 PLS per preimage per 100k gwei in base fee when writing 767 at a time
+meaning that a 100PLS price would pay for itself after being accessed 5 times, after that, the rest are profit
+currently, these prices
 ```
 
 1) providers write many preimages on chain
@@ -34,8 +36,8 @@ pls_price = 0.0000452
   - or B
     1) an entity that is acting as the mob / rule enforcer captures the secrets
     1) the consumer fails to / desires not to publish the secrets
-    1) the rule enforcer puts the secrets on chain and names its own order (probably to something that the consumer will loose money on)
-    1) this only makes sense if the rule enforcer knows how to make the consumer loose. random order means that the consumer gets another chance
+    1) the rule enforcer puts the secrets on chain and names its own preimage + secret (probably to something that the consumer will loose money on)
+    1) this only makes sense if the rule enforcer knows how to make the consumer lose. random order means that the consumer gets another chance
   - or C
     1) producers publish secrets on chain to get paid immediately
     1) the final state of the consumer's roll is left up to the consumer / rule enforcer to work out via A/B
