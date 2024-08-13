@@ -8,7 +8,7 @@ contract ERC20 is SolERC20 {
     uint256 internal constant ONE_ETHER = 1 ether;
     uint256 internal constant TAX_NUMERATOR = ONE_ETHER - (ONE_ETHER / 100);
 
-    constructor(bool shouldBurn) {
+    constructor(bool shouldBurn) payable {
         _shouldBurn = shouldBurn;
     }
 

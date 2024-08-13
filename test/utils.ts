@@ -4,19 +4,10 @@ import * as viem from 'viem'
 import hre from 'hardhat'
 import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
 import * as utils from '../lib/utils'
-
-export const contractName = {
-  Consumer: 'contracts/Consumer.sol:Consumer',
-  Random: 'contracts/Random.sol:Random',
-  Reader: 'contracts/Reader.sol:Reader',
-  ERC20: 'contracts/test/ERC20.sol:ERC20',
-  ERC20Solady: 'solady/src/tokens/ERC20.sol:ERC20',
-  Constants: 'contracts/Constants.sol:Errors',
-  MulticallerWithSender: 'multicaller/src/MulticallerWithSender.sol:MulticallerWithSender',
-  MulticallerWithSigner: 'multicaller/src/MulticallerWithSigner.sol:MulticallerWithSigner',
-} as const
-
-type Names = typeof contractName
+import RandomModule from '../ignition/modules/Random'
+import ReaderModule from '../ignition/modules/Reader'
+import ConsumerModule from '../ignition/modules/Consumer'
+import { type Names, contractName } from '../lib/utils'
 
 const deployMulticaller = async (name: Names[keyof Names], address: viem.Hex) => {
   const provider = await hre.viem.getPublicClient()
@@ -39,9 +30,12 @@ const deployMulticaller = async (name: Names[keyof Names], address: viem.Hex) =>
 
 export const deploy = async () => {
   const errors = await hre.viem.getContractAt(contractName.Constants, viem.zeroAddress)
-  const random = await hre.viem.deployContract(contractName.Random)
-  const reader = await hre.viem.deployContract(contractName.Reader)
-  const consumer = await hre.viem.deployContract(contractName.Consumer, [random.address])
+  // const random = await hre.viem.deployContract(contractName.Random)
+  // const reader = await hre.viem.deployContract(contractName.Reader, [random.address])
+  // const consumer = await hre.viem.deployContract(contractName.Consumer, [random.address])
+  const { random } = await hre.ignition.deploy(RandomModule)
+  const { reader } = await hre.ignition.deploy(ReaderModule)
+  const { consumer } = await hre.ignition.deploy(ConsumerModule)
   const _ERC20 = await hre.viem.deployContract(contractName.ERC20, [false])
   const ERC20 = await hre.viem.getContractAt(contractName.ERC20Solady, _ERC20.address)
   const _taxERC20 = await hre.viem.deployContract(contractName.ERC20, [true])
@@ -262,7 +256,6 @@ export const readPreimages = async (ctx: Context, options: utils.PreimageInfoOpt
   const signers = await getRandomnessProviders(ctx.hre)
   return await utils.limiters.signers.map(signers, async (signer) => {
     const data = await ctx.reader.read.pointer([
-      ctx.random.address,
       {
         ...utils.defaultPreImageInfo,
         ...options,
@@ -283,7 +276,6 @@ export const selectPreimages = async (ctx: Context, count = 5, offsets: utils.Pr
     }))
     const dataSets = await Promise.all(iterations.map((options) => (
       ctx.reader.read.pointer([
-        ctx.random.address,
         options,
       ])
     )))

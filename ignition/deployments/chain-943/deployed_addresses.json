@@ -1,0 +1,7 @@
+{
+  "RandomModule#Random": "0xc00d0c5bb41977BE773c0bfdA2a2dB61309e1f79",
+  "ReaderModule#Random": "0xc00d0c5bb41977BE773c0bfdA2a2dB61309e1f79",
+  "ReaderModule#Reader": "0x47525293647C3725D911Cc0f6E000D2E831c4219",
+  "ConsumerModule#Random": "0xc00d0c5bb41977BE773c0bfdA2a2dB61309e1f79",
+  "ConsumerModule#Consumer": "0x34aC1Ba44dCfEad3E279DBe929eb7Be223757EBF"
+}

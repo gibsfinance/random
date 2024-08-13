@@ -23,6 +23,10 @@ const config: HardhatUserConfig = {
       },
     }],
   },
+  paths: {
+    sources: './contracts',
+    artifacts: './artifacts',
+  },
   networks: {
     hardhat: {
       accounts: {
@@ -41,6 +45,18 @@ const config: HardhatUserConfig = {
       hardfork: 'cancun',
       chainId: 1,
     },
+    pulsechainV4: {
+      url: 'https://rpc.v4.testnet.pulsechain.com',
+      accounts: {
+        mnemonic: env.MNEMONIC || HARDHAT_NETWORK_MNEMONIC,
+      },
+    },
+    pulsechain: {
+      url: 'https://rpc.v4.testnet.pulsechain.com',
+      accounts: {
+        mnemonic: env.MNEMONIC || HARDHAT_NETWORK_MNEMONIC,
+      },
+    },
   },
   mocha: {
     timeout: 120_000,
@@ -54,6 +70,31 @@ const config: HardhatUserConfig = {
       'multicaller/src/MulticallerWithSender.sol',
       'multicaller/src/MulticallerWithSigner.sol',
     ],
+  },
+  etherscan: {
+    enabled: true,
+    customChains: [{
+      network: 'pulsechain',
+      chainId: 369,
+      urls: {
+        apiURL: 'https://api.scan.pulsechain.com/api',
+        browserURL: 'https://scan.pulsechain.com/#/',
+      },
+    }, {
+      network: 'pulsechainV4',
+      chainId: 943,
+      urls: {
+        apiURL: 'https://api.scan.v4.testnet.pulsechain.com/api',
+        browserURL: 'https://scan.v4.testnet.pulsechain.com/#/',
+      },
+    }],
+    apiKey: {
+      pulsechainV4: 'abc',
+      pulsechain: 'abc',
+    },
+  },
+  sourcify: {
+    enabled: true,
   },
 };
 

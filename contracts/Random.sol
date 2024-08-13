@@ -6,13 +6,13 @@ import {LibPRNG} from "solady/src/utils/LibPRNG.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
-import {Random as RandomImplementation} from "./implementations/Random.sol";
+import {IRandom} from "./implementations/IRandom.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
 import {Errors, Cast, Reveal, Ink, Heat, Start, Expired, Chop, Bleach} from "./Constants.sol";
 import {StorageSlot} from "./StorageSlot.sol";
 import {SlotDerivation} from "./SlotDerivation.sol";
 
-contract Random is RandomImplementation {
+contract Random is IRandom {
     // this error is used inside of sstore to so we surface it here so that it sticks in the abi
     using SSTORE2 for address;
     using SSTORE2 for bytes;

@@ -160,7 +160,6 @@ describe("Random", () => {
         const [selection] = ctx.selections
         const provider = selection.signer
         const unused = await ctx.reader.read.unused([
-          ctx.random.address!,
           {
             ...utils.defaultPreImageInfo,
             provider: provider.account!.address,

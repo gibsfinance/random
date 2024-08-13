@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
-import {Random} from "./implementations/Random.sol";
+import {IRandom} from "./implementations/IRandom.sol";
 import {Errors, Ok} from "./Constants.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
 
@@ -23,8 +23,14 @@ contract Reader {
     uint256 internal constant NINE_SIX = 96;
     uint256 internal constant TWO_FIVE_FIVE = 255;
 
-    function _pointer(address rand, PreimageLocation.Info calldata info) internal view returns (address) {
-        address pntr = Random(rand).pointer(info);
+    address internal rand;
+
+    constructor(address _rand) payable {
+        rand = _rand;
+    }
+
+    function _pointer(PreimageLocation.Info calldata info) internal view returns (address) {
+        address pntr = IRandom(rand).pointer(info);
         if (pntr == address(0)) {
             revert Misconfigured();
         }
@@ -38,24 +44,24 @@ contract Reader {
         return pntr;
     }
 
-    function pointer(address rand, PreimageLocation.Info calldata info) external view returns (bytes memory) {
-        return _pointer(rand, info).read();
+    function pointer(PreimageLocation.Info calldata info) external view returns (bytes memory) {
+        return _pointer(info).read();
     }
 
-    function unused(address rand, PreimageLocation.Info calldata info)
+    function unused(PreimageLocation.Info calldata info)
         external
         view
         returns (PreimageLocation.Info[] memory providerKeyWithIndices)
     {
         unchecked {
-            bytes memory data = _pointer(rand, info).read();
+            bytes memory data = _pointer(info).read();
             uint256 len = data.length / THREE_TWO;
             providerKeyWithIndices = new PreimageLocation.Info[](len);
             uint256 i;
             do {
                 PreimageLocation.Info memory nfo = info;
                 nfo.index = i;
-                if (!Random(rand).consumed(nfo)) {
+                if (!IRandom(rand).consumed(nfo)) {
                     providerKeyWithIndices[i] = nfo;
                 }
                 ++i;
@@ -63,8 +69,8 @@ contract Reader {
         }
     }
 
-    function at(address rand, PreimageLocation.Info calldata info) external view returns (bytes32) {
-        return bytes32(_pointer(rand, info).read(info.index * THREE_TWO, info.index * THREE_TWO + THREE_TWO));
+    function at(PreimageLocation.Info calldata info) external view returns (bytes32) {
+        return bytes32(_pointer(info).read(info.index * THREE_TWO, info.index * THREE_TWO + THREE_TWO));
     }
 
     function ok(PreimageLocation.Info[] calldata infos) external payable {

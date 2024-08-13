@@ -6,7 +6,7 @@ import {LibPRNG} from "solady/src/utils/LibPRNG.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
-import {Random as RandomImplementation} from "./implementations/Random.sol";
+import {IRandom} from "./implementations/IRandom.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
 import {ERC20} from "solady/src/tokens/ERC20.sol";
 import {Errors} from "./Constants.sol";
@@ -43,7 +43,7 @@ contract Consumer {
         bytes32 revealed;
     }
 
-    constructor(address _rand) {
+    constructor(address _rand) payable {
         rand = _rand;
         PREIMAGE_ZERO = bytes32(ZERO).hash();
     }
@@ -54,7 +54,7 @@ contract Consumer {
     mapping(uint256 id => bytes32 preimage) internal _preimage;
     mapping(uint256 id => bytes32 key) internal _key;
 
-    function _undermineExpired(uint256 id, bytes32 hashed, RandomImplementation.Randomness memory r) internal {
+    function _undermineExpired(uint256 id, bytes32 hashed, IRandom.Randomness memory r) internal {
         // order preimage cannot be overriden until after all secrets have been revealed
         // this creates a high incentive for both player 1, and rule enforcer to get secrets on chain
         // before the expired line is crossed. either:
@@ -100,9 +100,9 @@ contract Consumer {
                 return;
             }
             bytes32 key = _key[id];
-            RandomImplementation.Randomness memory r = RandomImplementation(rand).randomness(key);
+            IRandom.Randomness memory r = IRandom(rand).randomness(key);
             bytes32 hashed = revealedSecret.hash();
-            if (RandomImplementation(rand).expired(r.timeline)) {
+            if (IRandom(rand).expired(r.timeline)) {
                 _undermineExpired(id, hashed, r);
             }
             if (hashed != _preimage[id]) {
@@ -120,7 +120,7 @@ contract Consumer {
         payable
         returns (uint256 id)
     {
-        bytes32 key = RandomImplementation(rand).latest(owner, onlySameTx);
+        bytes32 key = IRandom(rand).latest(owner, onlySameTx);
         if (key == bytes32(ZERO)) {
             revert Errors.Misconfigured();
         }

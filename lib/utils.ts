@@ -103,3 +103,16 @@ export const section = (inputs: Omit<PreimageInfo, 'index'> = defaultPreImageInf
 }
 
 export const sum = (s: PreimageInfo[]) => s.reduce<bigint>((total, { price }) => total + price, 0n)
+
+export const contractName = {
+  Consumer: 'contracts/Consumer.sol:Consumer',
+  Random: 'contracts/Random.sol:Random',
+  Reader: 'contracts/Reader.sol:Reader',
+  ERC20: 'contracts/test/ERC20.sol:ERC20',
+  ERC20Solady: 'solady/src/tokens/ERC20.sol:ERC20',
+  Constants: 'contracts/Constants.sol:Errors',
+  MulticallerWithSender: 'multicaller/src/MulticallerWithSender.sol:MulticallerWithSender',
+  MulticallerWithSigner: 'multicaller/src/MulticallerWithSigner.sol:MulticallerWithSigner',
+} as const
+
+export type Names = typeof contractName

@@ -13,7 +13,7 @@ describe('Reader', () => {
     const [s] = secrets
     const [provider] = ctx.randomnessProviders
 
-    await expect(ctx.reader.read.at([ctx.random.address, {
+    await expect(ctx.reader.read.at([{
       provider: provider.account!.address,
       token: viem.zeroAddress,
       price: utils.defaultPrice,
@@ -25,7 +25,7 @@ describe('Reader', () => {
     const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
     const [secrets] = ctx.secretBatches
     const [provider] = ctx.randomnessProviders
-    await expectations.revertedWithCustomError(ctx.reader, ctx.reader.read.at([ctx.random.address, {
+    await expectations.revertedWithCustomError(ctx.reader, ctx.reader.read.at([{
       provider: provider.account!.address,
       token: viem.zeroAddress,
       price: utils.defaultPrice,
