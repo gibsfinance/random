@@ -188,19 +188,6 @@ describe("Random", () => {
       })
     })
     describe('how to use secrets once received', async () => {
-      it('reverts if a non existant pointer is encountered', async () => {
-        const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
-        const { selections } = ctx
-        const [selection] = selections
-        const s = {
-          ...selection,
-          offset: 1n,
-        }
-        await expectations.revertedWithCustomError(ctx.errors,
-          ctx.random.write.flick([s, viem.zeroHash]),
-          'Misconfigured',
-        )
-      })
       it('can run cast as a loop for revealing secrets', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
         const { selections, starts, secretByPreimage } = ctx
@@ -245,6 +232,18 @@ describe("Random", () => {
         ))
         await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]), ctx.random, 'Cast')
         await expectations.not.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]), ctx.random, 'Cast')
+      })
+      it('does allow cast to be submitted with partial secret set', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
+        const { selections, starts, secretByPreimage } = ctx
+        const [start] = starts
+        const secrets = selections.map((selection) => (
+          secretByPreimage.get(selection.preimage) as viem.Hex
+        ))
+        const partialSecrets = secrets.slice(0, secrets.length - 2)
+        partialSecrets.push(viem.zeroHash, viem.zeroHash)
+        await expectations.not.emit(ctx, ctx.random.write.cast([start.args.key!, selections, partialSecrets]), ctx.random, 'Cast')
+        await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]), ctx.random, 'Cast')
       })
       it('fails if the data pointer is set to a zero address', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
@@ -345,19 +344,6 @@ describe("Random", () => {
         const [signer, signer2] = signers
         const [start] = starts
         await helpers.mine(12)
-        for (const selection of selections) {
-          // duplicated flicks should not make a difference
-          await expectations.changeEtherBalances(ctx, ctx.random.write.flick([
-            selection,
-            secretByPreimage.get(selection.preimage) as viem.Hex,
-          ], {
-            account: signer2.account!,
-            value: oneEther
-          }),
-            [signer2.account!.address, ctx.random.address],
-            [-oneEther, oneEther],
-          )
-        }
         const secrets = selections.map((selection) => (
           secretByPreimage.get(selection.preimage) as viem.Hex
         ))
@@ -380,15 +366,6 @@ describe("Random", () => {
         const [, signer2] = signers
         const [start] = starts
         await helpers.mine(13)
-        for (const selection of selections) {
-          // duplicated flicks should not make a difference
-          await testUtils.confirmTx(ctx, ctx.random.write.flick([
-            selection,
-            secretByPreimage.get(selection.preimage) as viem.Hex,
-          ], {
-            account: signer2.account!,
-          }))
-        }
         const secrets = selections.map((selection) => (
           secretByPreimage.get(selection.preimage) as viem.Hex
         ))

@@ -256,13 +256,6 @@ contract Random is RandomImplementation {
         }
     }
 
-    function flick(PreimageLocation.Info calldata nfo, bytes32 formerSecret) external payable returns (bytes32, bool) {
-        if (msg.value > ZERO) {
-            _attributePushedValue(LibMulticaller.senderOrSigner());
-        }
-        return _flick(nfo, formerSecret);
-    }
-
     function heat(
         uint256 required,
         uint256 expiryOffset,
