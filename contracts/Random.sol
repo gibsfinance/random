@@ -67,20 +67,6 @@ contract Random is RandomImplementation {
         }
     }
 
-    function randomness(bytes32 key) external view override returns (Randomness memory) {
-        return Randomness({timeline: _timeline[key], seed: _seed[key]});
-    }
-
-    function latest(address owner, bool onlySameTx) external view override returns (bytes32 key) {
-        key = _NAMESPACE.erc7201Slot().deriveMapping(owner).asBytes32().tload();
-        if (key == bytes32(ZERO)) {
-            if (onlySameTx) {
-                revert Errors.UnableToService();
-            }
-            key = _latest[owner];
-        }
-    }
-
     function _consumed(PreimageLocation.Info memory nfo) internal view returns (bool) {
         if (_pointerSize(nfo) / THREE_TWO <= nfo.index) {
             revert Errors.Misconfigured();
@@ -88,10 +74,6 @@ contract Random is RandomImplementation {
         // returning zero means that the secret has not been requested yet on chain
         uint256 section = _accessFlags[nfo.provider][nfo.token][nfo.price][(nfo.index + nfo.offset) / TWO_FIVE_SIX];
         return (section << (TWO_FIVE_FIVE - ((nfo.index + nfo.offset) % TWO_FIVE_SIX)) >> TWO_FIVE_FIVE) == ONE;
-    }
-
-    function consumed(PreimageLocation.Info calldata nfo) external view override returns (bool) {
-        return _consumed(nfo);
     }
 
     function _pointerSize(PreimageLocation.Info memory nfo) internal view returns (uint256 size) {
@@ -254,6 +236,28 @@ contract Random is RandomImplementation {
                 _custodied[account][token] = limit - delta;
             }
         }
+    }
+
+    function balanceOf(address account, address token) external view returns (uint256) {
+        return _custodied[account][token];
+    }
+
+    function randomness(bytes32 key) external view override returns (Randomness memory) {
+        return Randomness({timeline: _timeline[key], seed: _seed[key]});
+    }
+
+    function latest(address owner, bool onlySameTx) external view override returns (bytes32 key) {
+        key = _NAMESPACE.erc7201Slot().deriveMapping(owner).asBytes32().tload();
+        if (key == bytes32(ZERO)) {
+            if (onlySameTx) {
+                revert Errors.UnableToService();
+            }
+            key = _latest[owner];
+        }
+    }
+
+    function consumed(PreimageLocation.Info calldata nfo) external view override returns (bool) {
+        return _consumed(nfo);
     }
 
     function heat(

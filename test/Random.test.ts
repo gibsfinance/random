@@ -476,6 +476,11 @@ describe("Random", () => {
     })
   })
   describe('view functions', () => {
+    describe('#balanceOf', () => {
+      it('checks the balance of an account and the tokens held in that account', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deploy)
+      })
+    })
     describe('#expired', () => {
       it('checks if the randomness is past the expired threshold set at the start', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
