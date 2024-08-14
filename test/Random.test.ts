@@ -477,7 +477,14 @@ describe("Random", () => {
   describe('view functions', () => {
     describe('#balanceOf', () => {
       it('checks the balance of an account and the tokens held in that account', async () => {
-        const ctx = await helpers.loadFixture(testUtils.deploy)
+        const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+        const { selections } = await testUtils.selectPreimages(ctx)
+        const [signer] = ctx.signers
+        await expectations.emit(ctx, ctx.random.write.heat([5n, ctx.defaultExpiryOffsetInput, viem.zeroAddress, selections], {
+          value: utils.sum(selections) + oneEther,
+        }), ctx.random, 'Heat')
+        await expect(ctx.random.read.balanceOf([signer.account!.address, viem.zeroAddress]))
+          .eventually.to.equal(oneEther)
       })
     })
     describe('#expired', () => {
@@ -587,12 +594,12 @@ describe("Random", () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
       const [signer] = ctx.signers
       await expectations.changeTokenBalances(ctx, ctx.ERC20,
-        ctx.random.write.handoff([ctx.ERC20.address, signer.account!.address, -oneEther]),
+        ctx.random.write.handoff([signer.account!.address, ctx.ERC20.address, -oneEther]),
         [signer.account!.address, ctx.random.address],
         [-oneEther, oneEther],
       )
       await expectations.changeTokenBalances(ctx, ctx.ERC20,
-        ctx.random.write.handoff([ctx.ERC20.address, viem.zeroAddress, oneEther]),
+        ctx.random.write.handoff([viem.zeroAddress, ctx.ERC20.address, oneEther]),
         [signer.account!.address, ctx.random.address],
         [oneEther, -oneEther],
       )
@@ -601,12 +608,12 @@ describe("Random", () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
       const [signer] = ctx.signers
       await expectations.changeTokenBalances(ctx, ctx.ERC20,
-        ctx.random.write.handoff([ctx.ERC20.address, signer.account!.address, -oneEther]),
+        ctx.random.write.handoff([signer.account!.address, ctx.ERC20.address, -oneEther]),
         [signer.account!.address, ctx.random.address],
         [-oneEther, oneEther],
       )
       await expectations.changeTokenBalances(ctx, ctx.ERC20,
-        ctx.random.write.handoff([ctx.ERC20.address, viem.zeroAddress, oneEther]),
+        ctx.random.write.handoff([viem.zeroAddress, ctx.ERC20.address, oneEther]),
         [signer.account!.address, ctx.random.address],
         [oneEther, -oneEther],
       )
@@ -619,14 +626,14 @@ describe("Random", () => {
       let amountIn = oneEther
       let afterTax = tax(amountIn)
       await expectations.changeTokenBalances(ctx, ctx.taxERC20,
-        ctx.random.write.handoff([ctx.taxERC20.address, signer.account!.address, -amountIn]),
+        ctx.random.write.handoff([signer.account!.address, ctx.taxERC20.address, -amountIn]),
         [signer.account!.address, ctx.random.address],
         [-amountIn, afterTax],
       )
       amountIn = afterTax
       afterTax = tax(amountIn)
       await expectations.changeTokenBalances(ctx, ctx.taxERC20,
-        ctx.random.write.handoff([ctx.taxERC20.address, viem.zeroAddress, amountIn]),
+        ctx.random.write.handoff([viem.zeroAddress, ctx.taxERC20.address, amountIn]),
         [signer.account!.address, ctx.random.address],
         [afterTax, -amountIn],
       )

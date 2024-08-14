@@ -78,14 +78,14 @@ const config: HardhatUserConfig = {
       chainId: 369,
       urls: {
         apiURL: 'https://api.scan.pulsechain.com/api',
-        browserURL: 'https://scan.pulsechain.com/#/',
+        browserURL: 'https://scan.pulsechain.com/#',
       },
     }, {
       network: 'pulsechainV4',
       chainId: 943,
       urls: {
         apiURL: 'https://api.scan.v4.testnet.pulsechain.com/api',
-        browserURL: 'https://scan.v4.testnet.pulsechain.com/#/',
+        browserURL: 'https://scan.v4.testnet.pulsechain.com/#',
       },
     }],
     apiKey: {

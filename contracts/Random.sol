@@ -171,7 +171,7 @@ contract Random is IRandom {
         }
     }
 
-    function _distribute(address token, address recipient, uint256 amount) internal {
+    function _distribute(address recipient, address token, uint256 amount) internal {
         if (amount == ZERO) return;
         if (token == address(0)) {
             recipient.safeTransferETH(amount);
@@ -202,7 +202,7 @@ contract Random is IRandom {
         }
     }
 
-    function _receiveTokens(address owner, address token, uint256 amount) internal returns (uint256) {
+    function _receiveTokens(address account, address token, uint256 amount) internal returns (uint256) {
         unchecked {
             if (token == address(0)) {
                 if (amount > msg.value) {
@@ -213,7 +213,7 @@ contract Random is IRandom {
                 // because we do not check balanceof delta, we will
                 // not correctly attribute tax/reflection tokens
                 uint256 before = token.balanceOf(address(this));
-                token.safeTransferFrom2(owner, address(this), amount);
+                token.safeTransferFrom2(account, address(this), amount);
                 amount = token.balanceOf(address(this)) - before;
             }
             return amount;
@@ -400,7 +400,7 @@ contract Random is IRandom {
         return LibPRNG.PRNG({state: uint256(_seed[key])}).uniform(upper);
     }
 
-    function handoff(address token, address recipient, int256 amount) external payable {
+    function handoff(address recipient, address token, int256 amount) external payable {
         unchecked {
             address account = LibMulticaller.senderOrSigner();
             recipient = recipient == address(0) ? account : recipient;
@@ -409,7 +409,7 @@ contract Random is IRandom {
                 _custodied[recipient][token] += _receiveTokens(account, token, uint256(-amount));
             } else {
                 // move tokens from signer to recipient custodied by contract
-                _distribute(token, recipient, _decrementValue(account, token, uint256(amount)));
+                _distribute(recipient, token, _decrementValue(account, token, uint256(amount)));
             }
         }
     }
