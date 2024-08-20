@@ -1,0 +1,15 @@
+{
+  "network": "evm943",
+  "random": {
+    "address": "0x80493D07ddfcE7a8b507C407459935a88C62Ad8E",
+    "startBlock": 19836777
+  },
+  "reader": {
+    "address": "0x07B7DDc8a1ee0806ce45c3f019c7626d67F27659",
+    "startBlock": 19836782
+  },
+  "consumer": {
+    "address": "0xC1fbe75Ad4cb8Ed4cA122bA2146d57B9eAe07dcf",
+    "startBlock": 19836849
+  }
+}

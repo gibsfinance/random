@@ -1,0 +1,118 @@
+specVersion: 0.0.4
+description: Randomness
+repository: https://github.com/gibsfinance/random
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum/contract
+    name: Random
+    network: {{network}}
+    source:
+      address: "{{random.address}}"
+      startBlock: {{random.startBlock}}
+      abi: Random
+    context:
+      reader:
+        type: Bytes
+        data: "{{reader.address}}"
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities:
+        - Block
+        - Transaction
+        - Ink
+        - Pointer
+        - Preimage
+        - Heat
+        - Start
+        - Reveal
+        - Cast
+      abis:
+        - name: Random
+          file: ./artifacts/contracts/Random.sol/Random.json
+      eventHandlers:
+        - event: Bleach(indexed address,bytes32)
+          handler: handleBleachEvent
+        - event: Ink(indexed address,address,uint256,uint256,address)
+          handler: handleInkEvent
+        - event: Heat(indexed address,bytes32)
+          handler: handleHeatEvent
+        - event: Start(indexed address,bytes32)
+          handler: handleStartEvent
+        - event: Reveal(indexed address,bytes32,bytes32)
+          handler: handleRevealEvent
+        - event: Expired(indexed address,indexed address,bytes32)
+          handler: handleExpiredEvent
+        - event: Cast(bytes32,bytes32)
+          handler: handleCastEvent
+        - event: Chop(bytes32)
+          handler: handleChopEvent
+      callHandlers:
+        # - function: ink(address,uint256,bytes)
+        #   handler: handleInkCall
+        - function: cast(bytes32,(address,address,uint256,uint256,uint256)[],bytes32[])
+          handler: handleCastCall
+        - function: heat(uint256,uint256,address,(address,address,uint256,uint256,uint256)[])
+          handler: handleHeatCall
+        - function: chop(bytes32,(address,address,uint256,uint256,uint256)[])
+          handler: handleChopCall
+      file: ./src/mapping/random.ts
+  - kind: ethereum/contract
+    name: Reader
+    network: {{network}}
+    source:
+      address: "{{reader.address}}"
+      startBlock: {{reader.startBlock}}
+      abi: Reader
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities:
+        - Block
+        - Transaction
+        - Pointer
+      abis:
+        - name: Reader
+          file: ./artifacts/contracts/Reader.sol/Reader.json
+      eventHandlers:
+        - event: Ok(indexed address,bytes32)
+          handler: handleOkEvent
+      file: ./src/mapping/reader.ts
+  - kind: ethereum/contract
+    name: Consumer
+    network: {{network}}
+    source:
+      address: "{{consumer.address}}"
+      startBlock: {{consumer.startBlock}}
+      abi: Consumer
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities:
+        - Block
+        - Transaction
+        - Ink
+        - Pointer
+        - Preimage
+        - Heat
+        - Start
+        - Reveal
+        - Cast
+        - Chain
+        - ConsumerPreimage
+        - Undermine
+      abis:
+        - name: Consumer
+          file: ./artifacts/contracts/Consumer.sol/Consumer.json
+      eventHandlers:
+        - event: Undermine(uint256,bytes32)
+          handler: handleUndermineEvent
+        - event: Chain(indexed bytes32,uint256,bytes32)
+          handler: handleChainEvent
+        - event: Unveil(uint256,bytes32)
+          handler: handleUnveilEvent
+      file: ./src/mapping/consumer.ts

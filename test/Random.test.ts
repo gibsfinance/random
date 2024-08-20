@@ -1,10 +1,11 @@
-import * as utils from '../lib/utils'
+import * as utils from '../src/utils'
 import * as viem from 'viem'
 import _ from "lodash"
 import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
 import { expect } from 'chai'
 import * as expectations from './expectations'
 import * as testUtils from './utils'
+import { createPreimages } from '../src/generate'
 
 declare module "hardhat/types/runtime" {
   interface HardhatRuntimeEnvironment {
@@ -71,8 +72,7 @@ describe("Random", () => {
       const expectedUsed = selections.slice(0, Number(required))
       const expectedEmitArgs = expectedUsed.map((parts) => ({
         provider: viem.getAddress(parts.provider),
-        section: utils.section(parts),
-        index: parts.index,
+        location: utils.location(utils.section(parts), parts.index),
       }))
       await expectations.emit(ctx,
         ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
@@ -89,8 +89,7 @@ describe("Random", () => {
       const expectedUsed = selections.slice(0, Number(required))
       const expectedEmitArgs = expectedUsed.map((parts) => ({
         provider: viem.getAddress(parts.provider),
-        section: utils.section(parts),
-        index: parts.index,
+        location: utils.location(utils.section(parts), parts.index),
       }))
       await expectations.emit(ctx,
         ctx.random.write.heat(
@@ -581,8 +580,7 @@ describe("Random", () => {
       const expectedUsed = selections.slice(0, Number(required))
       const expectedEmitArgs = expectedUsed.map((parts) => ({
         provider: viem.getAddress(parts.provider),
-        section: utils.section(parts),
-        index: parts.index,
+        location: utils.location(utils.section(parts), parts.index),
       }))
       await expectations.emit(ctx,
         ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
@@ -642,7 +640,7 @@ describe("Random", () => {
   describe('multicalling', () => {
     it('starts with id of zero', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
-      await expect(ctx.consumer.read.latestId())
+      await expect(ctx.consumer.read.latestIdentifier())
         .eventually.to.equal(0n)
     })
     it('can understand multicaller with sender calls', async () => {
@@ -670,7 +668,7 @@ describe("Random", () => {
       const { multicallTx, signers } = ctx
       const [, signer2] = signers
       await testUtils.confirmTx(ctx, multicallTx)
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await createPreimages(signer2.account!.address)
       await expectations.revertedWithCustomError(ctx.random,
         ctx.consumer.write.chain([signer2.account!.address, true, false, s.preimage]),
         'UnableToService',
@@ -683,7 +681,7 @@ describe("Random", () => {
       await testUtils.confirmTx(ctx, multicallTx)
       const starts = await ctx.random.getEvents.Start()
       const [start] = starts
-      const latestId = await ctx.consumer.read.latestId()
+      const latestId = await ctx.consumer.read.latestIdentifier()
       await expectations.emit(ctx,
         ctx.consumer.write.chain([signer.account!.address, false, false, multicallSecret.preimage], {
           account: signer2.account!,
@@ -691,7 +689,7 @@ describe("Random", () => {
         ctx.consumer, 'Chain',
         {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
-          id: latestId + 1n,
+          identifier: latestId + 1n,
           key: start.args.key!,
         },
       )
@@ -701,8 +699,8 @@ describe("Random", () => {
       const { multicallTx, signers } = ctx
       const [signer, signer2] = signers
       await testUtils.confirmTx(ctx, multicallTx)
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
-      const latestId = await ctx.consumer.read.latestId()
+      const [[s]] = await createPreimages(signer2.account!.address)
+      const latestId = await ctx.consumer.read.latestIdentifier()
       await expectations.emit(ctx,
         ctx.consumer.write.chain([signer.account!.address, false, false, s.preimage], {
           account: signer2.account!,
@@ -710,7 +708,7 @@ describe("Random", () => {
         ctx.consumer, 'Chain',
         {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
-          id: latestId + 1n,
+          identifier: latestId + 1n,
         },
       )
     })
@@ -718,16 +716,16 @@ describe("Random", () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { multicallTx, signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await createPreimages(signer2.account!.address)
       const [start] = await ctx.random.getEvents.Start()
-      const latestId = await ctx.consumer.read.latestId()
+      const latestId = await ctx.consumer.read.latestIdentifier()
       await testUtils.confirmTx(ctx, multicallTx)
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
         ctx.consumer, 'Chain',
         {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
-          id: latestId + 1n,
+          identifier: latestId + 1n,
         },
       )
     })
@@ -763,17 +761,17 @@ describe("Random", () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { multicallTx, signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await createPreimages(signer2.account!.address)
       const [start] = await ctx.random.getEvents.Start()
       await testUtils.confirmTx(ctx, multicallTx)
-      const latestId = await ctx.consumer.read.latestId() + 1n
+      const latestId = await ctx.consumer.read.latestIdentifier() + 1n
       await expect(ctx.consumer.read.link([latestId]))
         .eventually.to.deep.equal({
-          id: 0n,
+          identifier: 0n,
           key: viem.zeroHash,
           owner: viem.zeroAddress,
           preimage: viem.zeroHash,
-          revealed: viem.zeroHash,
+          unveiled: viem.zeroHash,
           underminable: false,
         })
       await expectations.emit(ctx,
@@ -781,16 +779,16 @@ describe("Random", () => {
         ctx.consumer, 'Chain',
         {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
-          id: latestId,
+          identifier: latestId,
         },
       )
       await expect(ctx.consumer.read.link([latestId]))
         .eventually.to.deep.equal({
-          id: latestId,
+          identifier: latestId,
           key: start.args.key!,
           owner: signer2.account!.address,
           preimage: s.preimage,
-          revealed: viem.zeroHash,
+          unveiled: viem.zeroHash,
           underminable: false,
         })
     })
@@ -798,15 +796,15 @@ describe("Random", () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await createPreimages(signer2.account!.address)
       const [start] = await ctx.random.getEvents.Start()
-      const latestId = await ctx.consumer.read.latestId()
+      const latestId = await ctx.consumer.read.latestIdentifier()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
         ctx.consumer, 'Chain',
         {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
-          id: latestId + 1n,
+          identifier: latestId + 1n,
         },
       )
       await expectations.not.emit(ctx,

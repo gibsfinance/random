@@ -1,0 +1,124 @@
+
+type Pointer @entity {
+  id: Bytes!
+  count: BigInt!
+  remaining: BigInt!
+  # foreign keys
+  storage: Bytes!
+  ink: Ink!
+  lastOk: Transaction!
+}
+
+type Ink @entity {
+  id: Bytes! # section + network + address
+  pointer: Pointer!
+  # end of hashing
+  transaction: Transaction!
+  index: BigInt!
+  section: Bytes!
+  provider: Bytes!
+  token: Bytes!
+  price: BigInt!
+  offset: BigInt!
+  pointer: Pointer!
+}
+
+type Preimage @entity {
+  id: Bytes!
+  index: BigInt!
+  pointer: Pointer!
+  accessed: Boolean!
+  data: Bytes!
+  secret: Bytes
+  reveal: Reveal @derivedFrom(field: "preimage")
+}
+
+type ConsumerPreimage @entity {
+  id: Bytes!
+  data: Bytes!
+  secret: Bytes
+  chain: Chain @derivedFrom(field: "consumerPreimage")
+  unveil: Unveil @derivedFrom(field: "consumerPreimage")
+  undermine: Undermine @derivedFrom(field: "consumerPreimage")
+}
+
+type Heat @entity {
+  id: Bytes! # hash of all below data
+  # end of hashing
+  transaction: Transaction!
+  index: BigInt! # log index
+  preimage: Preimage!
+  start: Start
+}
+
+type Start @entity {
+  id: Bytes! # hash of all below data
+  owner: Bytes!
+  key: Bytes!
+  transaction: Transaction!
+  index: BigInt! # log index
+  heat: [Heat!]! @derivedFrom(field: "start")
+  chopped: Boolean!
+}
+
+type Reveal @entity {
+  id: Bytes!
+  transaction: Transaction!
+  index: BigInt! # log index
+  preimage: Preimage!
+}
+
+type Unveil @entity {
+  id: Bytes!
+  transaction: Transaction!
+  index: BigInt! # log index
+  consumerPreimage: ConsumerPreimage!
+}
+
+type Expired @entity {
+  id: Bytes!
+  recipient: Bytes!
+  ender: Bytes!
+}
+
+type Cast @entity {
+  id: Bytes!
+  transaction: Transaction!
+  index: BigInt! # log index
+  start: Start! # key can be found here
+  seed: Bytes!
+  reveal: [Reveal!]!
+  expired: Expired
+}
+
+type Chain @entity {
+  id: Bytes!
+  owner: Bytes!
+  identifier: BigInt!
+  start: Start!
+  consumerPreimage: ConsumerPreimage!
+  undermine: Undermine
+  transaction: Transaction!
+}
+
+type Undermine @entity {
+  id: Bytes!
+  transaction: Transaction!
+  owner: Bytes!
+  chain: Chain!
+  consumerPreimage: ConsumerPreimage!
+}
+
+type Transaction @entity {
+  id: Bytes! # hash of chain id + hash
+  hash: Bytes!
+  block: Block!
+  index: BigInt! # transaction index
+}
+
+type Block @entity {
+  id: Bytes! # hash of chain id + hash
+  hash: Bytes!
+  timestamp: BigInt!
+  number: BigInt!
+}

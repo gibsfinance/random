@@ -3,11 +3,9 @@ import _ from 'lodash'
 import * as viem from 'viem'
 import hre from 'hardhat'
 import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
-import * as utils from '../lib/utils'
-import { type Names, contractName } from '../lib/utils'
-// import RandomModule from '../ignition/modules/Random'
-// import ReaderModule from '../ignition/modules/Reader'
-// import ConsumerModule from '../ignition/modules/Consumer'
+import * as utils from '../src/utils'
+import { type Names, contractName } from '../src/utils'
+import { createPreimages } from '../src/generate'
 
 const deployMulticaller = async (name: Names[keyof Names], address: viem.Hex) => {
   const provider = await hre.viem.getPublicClient()
@@ -118,7 +116,7 @@ export const deployWithRandomness = async () => {
 export const deployWithRandomnessAndStart = async () => {
   const ctx = await helpers.loadFixture(deployWithRandomness)
   const [consumer] = await ctx.hre.viem.getWalletClients()
-  const [[heat]] = await utils.createPreimages(consumer.account!.address)
+  const [[heat]] = await createPreimages(consumer.account!.address)
   const provider = await ctx.hre.viem.getPublicClient()
   const blockBeforeHeat = await provider.getBlock({
     blockTag: 'latest',
@@ -154,12 +152,11 @@ export const deployWithRandomnessAndConsume = async () => {
   } = ctx
   const { selections } = await selectPreimages(ctx)
   const [signer] = signers
-  const [[s]] = await utils.createPreimages(signer.account!.address)
+  const [[s]] = await createPreimages(signer.account!.address)
   const expectedUsed = selections.slice(0, Number(required))
   const expectedEmitArgs = expectedUsed.map((parts) => ({
     provider: viem.getAddress(parts.provider),
-    section: utils.section(parts),
-    index: parts.index,
+    location: utils.location(utils.section(parts), parts.index),
   }))
   const targets = [
     ctx.random.address,
@@ -228,7 +225,7 @@ export const writePreimages = async (ctx: Context, offset = 0n, token = viem.zer
   const rand = await ctx.hre.viem.getContractAt(contractName.Random, ctx.random.address)
   const signers = await getRandomnessProviders(ctx.hre)
   return await utils.limiters.signers.map(signers, async (signer: viem.WalletClient) => {
-    const secretBatches = await utils.createPreimages(signer.account!.address, offset)
+    const secretBatches = await createPreimages(signer.account!.address, offset)
     const preimageLocations = await Promise.all(secretBatches.map(async (secrets) => {
       const preimages = _.map(secrets, 'preimage')
       const preimageLocations = preimages.map((preimage, index) => ({

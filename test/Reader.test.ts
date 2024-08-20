@@ -1,4 +1,4 @@
-import * as utils from '../lib/utils'
+import * as utils from '../src/utils'
 import * as viem from 'viem'
 import _ from "lodash"
 import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'

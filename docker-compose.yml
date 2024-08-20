@@ -1,0 +1,60 @@
+services:
+  postgres-rw:
+    container_name: postgres-rw
+    image: postgres:13
+    shm_size: 16g
+    command: postgres -c 'max_connections=500' -c work_mem=256MB -c maintenance_work_mem=256MB -c max_wal_size=1GB
+    ports:
+      - 5678:5432
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    networks:
+      - bridgevalidator
+    environment:
+      - POSTGRES_DB=bridgevalidator
+      - POSTGRES_USER=bridgevalidator
+      - POSTGRES_PASSWORD=password
+  postgres-migrate:
+    container_name: postgres-migrate
+    image: registry.gitlab.com/pulsechaincom/bridgevalidator:latest
+    command: sh -cx "npm run db:migrate-latest && npm run db:seed"
+    networks:
+      - bridgevalidator
+    environment:
+      DEBUG: "${DEBUG:-🌉*}"
+      DATABASE_URL: "${DATABASE_URL:-postgres://bridgevalidator:password@postgres-rw:5432/bridgevalidator}"
+
+  collect:
+    container_name: collect
+    restart: always
+    image: registry.gitlab.com/pulsechaincom/random:latest
+    command: ["npm", "run", "collect"]
+    networks:
+      - random
+    depends_on:
+      - postgres-rw
+    volumes:
+      - ./src:/usr/src/app/src
+      - ./tasks:/usr/src/app/tasks
+      - ./contracts:/usr/src/app/contracts
+      - ./artifacts:/usr/src/app/artifacts
+      - ./bin:/usr/src/app/bin
+      - ./config.ts:/usr/src/app/config.ts
+      - ./example.config.ts:/usr/src/app/example.config.ts
+      - ./knexfile.ts:/usr/src/app/knexfile.ts
+    environment:
+      NETWORK: "${NETWORK:-}"
+      DEBUG: "${DEBUG:-🌉*}"
+      DATABASE_URL: "${DATABASE_URL:-postgres://random:password@postgres-rw:5432/random}"
+      DATABASE_NAME: "${DATABASE_NAME:-random}"
+      DATABASE_SSL: "${DATABASE_SSL:-false}"
+      RPC_369: "${RPC_369:-}"
+      RPC_943: "${RPC_943:-}"
+
+networks:
+  random:
+    driver: bridge
+
+volumes:
+  random:
+    external: true

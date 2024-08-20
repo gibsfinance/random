@@ -1,9 +1,10 @@
-import * as utils from '../lib/utils'
+import * as utils from '../src/utils'
 import * as viem from 'viem'
 import _ from "lodash"
 import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
 import * as expectations from './expectations'
 import * as testUtils from './utils'
+import { createPreimages } from '../src/generate'
 
 describe('Consumer', () => {
   describe('telling of secrets', () => {
@@ -11,7 +12,7 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await createPreimages(signer2.account!.address)
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
@@ -20,7 +21,7 @@ describe('Consumer', () => {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
         },
       )
-      const latestId = await ctx.consumer.read.latestId()
+      const latestId = await ctx.consumer.read.latestIdentifier()
       const targets = [
         ctx.random.address,
         ctx.consumer.address,
@@ -29,7 +30,7 @@ describe('Consumer', () => {
         !!ctx.heatEvents.find((evnt) => {
           return (
             evnt.args.provider === viem.getAddress(possible.provider)
-            && evnt.args.index === possible.index
+            && evnt.args.location === utils.location(utils.section(possible), possible.index)
           )
         })
       ))
@@ -48,7 +49,7 @@ describe('Consumer', () => {
         }),
         viem.encodeFunctionData({
           abi: ctx.consumer.abi,
-          functionName: 'tell',
+          functionName: 'unveil',
           args: [
             latestId,
             s.secret,
@@ -73,7 +74,7 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await createPreimages(signer2.account!.address)
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
@@ -82,7 +83,7 @@ describe('Consumer', () => {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
         },
       )
-      const latestId = await ctx.consumer.read.latestId()
+      const latestId = await ctx.consumer.read.latestIdentifier()
       const targets = [
         ctx.random.address,
         ctx.consumer.address,
@@ -91,7 +92,7 @@ describe('Consumer', () => {
         !!ctx.heatEvents.find((evnt) => {
           return (
             evnt.args.provider === viem.getAddress(possible.provider)
-            && evnt.args.index === possible.index
+            && evnt.args.location === utils.location(utils.section(possible), possible.index)
           )
         })
       ))
@@ -110,7 +111,7 @@ describe('Consumer', () => {
         }),
         viem.encodeFunctionData({
           abi: ctx.consumer.abi,
-          functionName: 'tell',
+          functionName: 'unveil',
           args: [
             latestId,
             viem.numberToHex(BigInt(s.secret) + 1n, { size: 32 }),
@@ -132,7 +133,7 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await createPreimages(signer2.account!.address)
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
@@ -141,7 +142,7 @@ describe('Consumer', () => {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
         },
       )
-      const latestId = await ctx.consumer.read.latestId()
+      const latestId = await ctx.consumer.read.latestIdentifier()
       const targets = [
         ctx.random.address,
         ctx.consumer.address,
@@ -150,7 +151,7 @@ describe('Consumer', () => {
         !!ctx.heatEvents.find((evnt) => {
           return (
             evnt.args.provider === viem.getAddress(possible.provider)
-            && evnt.args.index === possible.index
+            && evnt.args.location === utils.location(utils.section(possible), possible.index)
           )
         })
       ))
@@ -169,7 +170,7 @@ describe('Consumer', () => {
         }),
         viem.encodeFunctionData({
           abi: ctx.consumer.abi,
-          functionName: 'tell',
+          functionName: 'unveil',
           args: [
             latestId,
             s.secret,
@@ -184,10 +185,10 @@ describe('Consumer', () => {
       ])
       await expectations.emit(ctx,
         multicallTx, ctx.consumer,
-        'Reveal',
+        'Unveil',
         {
-          id: latestId,
-          formerSecret: s.secret,
+          identifier: latestId,
+          unveiledSecret: s.secret,
         },
       )
       const duplicateMulticallTx = ctx.multicallerWithSender.write.aggregateWithSender([
@@ -197,14 +198,14 @@ describe('Consumer', () => {
       ])
       await expectations.not.emit(ctx,
         duplicateMulticallTx, ctx.consumer,
-        'Reveal',
+        'Unveil',
       )
     })
     it('can reveal after expiry', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await createPreimages(signer2.account!.address)
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
@@ -213,7 +214,7 @@ describe('Consumer', () => {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
         },
       )
-      const latestId = await ctx.consumer.read.latestId()
+      const latestId = await ctx.consumer.read.latestIdentifier()
       const targets = [
         ctx.random.address,
         ctx.consumer.address,
@@ -222,7 +223,7 @@ describe('Consumer', () => {
         !!ctx.heatEvents.find((evnt) => {
           return (
             evnt.args.provider === viem.getAddress(possible.provider)
-            && evnt.args.index === possible.index
+            && evnt.args.location === utils.location(utils.section(possible), possible.index)
           )
         })
       ))
@@ -241,7 +242,7 @@ describe('Consumer', () => {
         }),
         viem.encodeFunctionData({
           abi: ctx.consumer.abi,
-          functionName: 'tell',
+          functionName: 'unveil',
           args: [
             latestId,
             s.secret,
@@ -257,10 +258,10 @@ describe('Consumer', () => {
       await helpers.mine(12)
       await expectations.emit(ctx,
         multicallTx, ctx.consumer,
-        'Reveal',
+        'Unveil',
         {
-          id: latestId,
-          formerSecret: s.secret,
+          identifier: latestId,
+          unveiledSecret: s.secret,
         },
       )
     })
@@ -268,7 +269,7 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await createPreimages(signer2.account!.address)
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
@@ -277,15 +278,15 @@ describe('Consumer', () => {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
         },
       )
-      const latestId = await ctx.consumer.read.latestId()
+      const latestId = await ctx.consumer.read.latestIdentifier()
       await helpers.mine(12)
       await expectations.emit(ctx,
-        ctx.consumer.write.tell([latestId, s.secret]),
+        ctx.consumer.write.unveil([latestId, s.secret]),
         ctx.consumer,
-        'Reveal',
+        'Unveil',
         {
-          id: latestId,
-          formerSecret: s.secret,
+          identifier: latestId,
+          unveiledSecret: s.secret,
         },
       )
     })
@@ -293,7 +294,7 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s, altS]] = await utils.createPreimages(signer2.account!.address)
+      const [[s, altS]] = await createPreimages(signer2.account!.address)
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
@@ -302,7 +303,7 @@ describe('Consumer', () => {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
         },
       )
-      const latestId = await ctx.consumer.read.latestId()
+      const latestId = await ctx.consumer.read.latestIdentifier()
       const targets = [
         ctx.random.address,
         ctx.consumer.address,
@@ -311,7 +312,7 @@ describe('Consumer', () => {
         !!ctx.heatEvents.find((evnt) => {
           return (
             evnt.args.provider === viem.getAddress(possible.provider)
-            && evnt.args.index === possible.index
+            && evnt.args.location === utils.location(utils.section(possible), possible.index)
           )
         })
       ))
@@ -330,7 +331,7 @@ describe('Consumer', () => {
         }),
         viem.encodeFunctionData({
           abi: ctx.consumer.abi,
-          functionName: 'tell',
+          functionName: 'unveil',
           args: [
             latestId,
             altS.secret,
@@ -352,7 +353,7 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s, altS]] = await utils.createPreimages(signer2.account!.address)
+      const [[s, altS]] = await createPreimages(signer2.account!.address)
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, true, s.preimage, start.args.key!]),
@@ -361,7 +362,7 @@ describe('Consumer', () => {
           owner: viem.numberToHex(BigInt(signer2.account!.address) | (1n << 160n), { size: 32 }),
         },
       )
-      const latestId = await ctx.consumer.read.latestId()
+      const latestId = await ctx.consumer.read.latestIdentifier()
       const targets = [
         ctx.random.address,
         ctx.consumer.address,
@@ -370,7 +371,7 @@ describe('Consumer', () => {
         !!ctx.heatEvents.find((evnt) => {
           return (
             evnt.args.provider === viem.getAddress(possible.provider)
-            && evnt.args.index === possible.index
+            && evnt.args.location === utils.location(utils.section(possible), possible.index)
           )
         })
       ))
@@ -389,7 +390,7 @@ describe('Consumer', () => {
         }),
         viem.encodeFunctionData({
           abi: ctx.consumer.abi,
-          functionName: 'tell',
+          functionName: 'unveil',
           args: [
             latestId,
             altS.secret,
@@ -407,7 +408,7 @@ describe('Consumer', () => {
         multicallTx, ctx.consumer,
         'Undermine',
         {
-          id: latestId,
+          identifier: latestId,
           preimage: altS.preimage,
         },
       )

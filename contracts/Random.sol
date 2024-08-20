@@ -45,8 +45,8 @@ contract Random is IRandom {
     ) internal _accessFlags;
     mapping(
         address provider
-            => mapping(address token => mapping(uint256 price => mapping(uint256 index => bytes32 formerSecret)))
-    ) internal _formerSecret;
+            => mapping(address token => mapping(uint256 price => mapping(uint256 index => bytes32 revealedSecret)))
+    ) internal _revealedSecret;
 
     /**
      * start the process to reveal the ink that was written (using invisible ink as a visual analogy)
@@ -62,7 +62,7 @@ contract Random is IRandom {
             }
             _accessFlags[nfo.provider][nfo.token][nfo.price][(nfo.offset + nfo.index) / TWO_FIVE_SIX] |=
                 (ONE << ((nfo.offset + nfo.index) % TWO_FIVE_SIX));
-            emit Heat(nfo.provider, section, nfo.offset + nfo.index);
+            emit Heat(nfo.provider, section.hash(bytes32(nfo.index)));
             return true;
         }
     }
@@ -86,7 +86,7 @@ contract Random is IRandom {
         }
     }
 
-    function _flick(PreimageLocation.Info calldata nfo, bytes32 formerSecret)
+    function _flick(PreimageLocation.Info calldata nfo, bytes32 revealedSecret)
         internal
         returns (bytes32 location, bool first)
     {
@@ -99,76 +99,24 @@ contract Random is IRandom {
             // or you end up with zero bytes, which would be quite the feat to find the hash for
             // always read 32 bytes
             if (
-                formerSecret.hash()
+                revealedSecret.hash()
                     != bytes32(pntr.read((nfo.index * THREE_TWO), ((nfo.index * THREE_TWO) + THREE_TWO)))
             ) {
                 revert Errors.SecretMismatch();
             }
             // only ever set once but do not penalize for lack of coordination
-            location = nfo.hash();
+            location = nfo.location();
             if (_secret(nfo) == bytes32(ZERO)) {
-                _formerSecret[nfo.provider][nfo.token][nfo.price][nfo.offset + nfo.index] = formerSecret;
-                emit Reveal(nfo.provider, location, formerSecret);
+                _revealedSecret[nfo.provider][nfo.token][nfo.price][nfo.offset + nfo.index] = revealedSecret;
+                emit Reveal(nfo.provider, location, revealedSecret);
                 return (location, true);
             }
             return (location, false);
         }
     }
 
-    function _cast(bytes32 key, PreimageLocation.Info[] calldata preimageInfo, bytes32[] memory revealedSecrets)
-        internal
-        returns (bool)
-    {
-        unchecked {
-            uint256 i;
-            uint256 len = preimageInfo.length;
-            bytes32 seed = _seed[key];
-            if (seed != bytes32(ZERO)) {
-                return false;
-            }
-            bytes32[] memory locations = new bytes32[](len);
-            uint256 firstFlicks;
-            bool first;
-            bool missing;
-            do {
-                if (revealedSecrets[i] != bytes32(0)) {
-                    (locations[i], first) = _flick(preimageInfo[i], revealedSecrets[i]);
-                    if (first) {
-                        ++firstFlicks;
-                    }
-                } else {
-                    revealedSecrets[i] = _secret(preimageInfo[i]);
-                    if (revealedSecrets[i] == bytes32(ZERO)) {
-                        missing = true;
-                    }
-                }
-                ++i;
-            } while (i < len);
-            if (missing) {
-                _timeline[key] += firstFlicks;
-                return false;
-            }
-            if (key != _toId(locations.hash(), locations.length)) {
-                revert Errors.NotInCohort();
-            }
-            _timeline[key] += firstFlicks;
-            // mark as generated
-            seed = revealedSecrets.hash();
-            _seed[key] = seed;
-            emit Cast(key, seed);
-            _scatter(key, preimageInfo);
-            return true;
-        }
-    }
-
     function _secret(PreimageLocation.Info calldata info) internal view returns (bytes32) {
-        return _formerSecret[info.provider][info.token][info.price][info.offset + info.index];
-    }
-
-    function _toId(bytes32 hashed, uint256 len) internal pure returns (bytes32) {
-        unchecked {
-            return bytes32((uint256(hashed) << EIGHT) | uint256(uint8(len)));
-        }
+        return _revealedSecret[info.provider][info.token][info.price][info.offset + info.index];
     }
 
     function _distribute(address recipient, address token, uint256 amount) internal {
@@ -279,17 +227,18 @@ contract Random is IRandom {
                 uint256 i;
                 uint256 contributing;
                 uint256 amount;
+                bytes32 section;
                 do {
                     // non zero means that the value exists
-                    if (
-                        token == potentialLocations[i].token
-                            && _ignite(potentialLocations[i], potentialLocations[i].section())
-                    ) {
-                        locations[contributing] = potentialLocations[i].hash();
-                        amount += potentialLocations[i].price;
-                        ++contributing;
-                        if (required == contributing) {
-                            break;
+                    if (token == potentialLocations[i].token) {
+                        section = potentialLocations[i].section();
+                        if (_ignite(potentialLocations[i], section)) {
+                            locations[contributing] = section.hash(bytes32(potentialLocations[i].index));
+                            amount += potentialLocations[i].price;
+                            ++contributing;
+                            if (required == contributing) {
+                                break;
+                            }
                         }
                     }
                     ++i;
@@ -304,7 +253,7 @@ contract Random is IRandom {
                 }
             }
             {
-                bytes32 key = _toId(locations.hash(), locations.length);
+                bytes32 key = locations.hash();
                 // front load the cost of requesting randomness
                 // put it on the shoulders of the consumer
                 // this can probably be optimized
@@ -383,7 +332,7 @@ contract Random is IRandom {
         }
     }
 
-    function cast(bytes32 key, PreimageLocation.Info[] calldata preimageInfo, bytes32[] calldata revealed)
+    function cast(bytes32 key, PreimageLocation.Info[] calldata info, bytes32[] memory revealed)
         external
         payable
         returns (bool)
@@ -392,7 +341,45 @@ contract Random is IRandom {
             if (msg.value > ZERO) {
                 _attributePushedValue(LibMulticaller.senderOrSigner());
             }
-            return _cast(key, preimageInfo, revealed);
+
+            uint256 i;
+            uint256 len = info.length;
+            bytes32 seed = _seed[key];
+            if (seed != bytes32(ZERO)) {
+                return false;
+            }
+            bytes32[] memory locations = new bytes32[](len);
+            uint256 firstFlicks;
+            bool first;
+            bool missing;
+            do {
+                if (revealed[i] != bytes32(0)) {
+                    (locations[i], first) = _flick(info[i], revealed[i]);
+                    if (first) {
+                        ++firstFlicks;
+                    }
+                } else {
+                    revealed[i] = _secret(info[i]);
+                    if (revealed[i] == bytes32(ZERO)) {
+                        missing = true;
+                    }
+                }
+                ++i;
+            } while (i < len);
+            if (missing) {
+                _timeline[key] += firstFlicks;
+                return false;
+            }
+            if (key != locations.hash()) {
+                revert Errors.NotInCohort();
+            }
+            _timeline[key] += firstFlicks;
+            // mark as generated
+            seed = revealed.hash();
+            _seed[key] = seed;
+            emit Cast(key, seed);
+            _scatter(key, info);
+            return true;
         }
     }
 

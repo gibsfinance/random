@@ -13,11 +13,11 @@ import {Errors} from "./Constants.sol";
 
 error SecretMismatch();
 
-event Undermine(uint256 id, bytes32 preimage);
+event Undermine(uint256 identifier, bytes32 preimage);
 
-event Chain(bytes32 indexed owner, uint256 id, bytes32 key);
+event Chain(bytes32 indexed owner, uint256 identifier, bytes32 key);
 
-event Reveal(uint256 id, bytes32 formerSecret);
+event Unveil(uint256 identifier, bytes32 unveiledSecret);
 
 contract Consumer {
     using EfficientHashLib for bytes32;
@@ -28,19 +28,21 @@ contract Consumer {
     uint256 internal constant NINE_SIX = 96;
     uint256 internal constant ONE_SIX_ZERO = 160;
 
+    bytes32 internal constant UNDERMINABLE = bytes32(ONE << ONE_SIX_ZERO);
+
     bytes32 internal immutable PREIMAGE_ZERO;
 
     address internal immutable rand;
 
-    uint256 internal _id;
+    uint256 internal _identifier;
 
     struct Link {
-        uint256 id;
+        uint256 identifier;
         address owner;
         bool underminable;
         bytes32 key;
         bytes32 preimage;
-        bytes32 revealed;
+        bytes32 unveiled;
     }
 
     constructor(address _rand) payable {
@@ -48,13 +50,13 @@ contract Consumer {
         PREIMAGE_ZERO = bytes32(ZERO).hash();
     }
 
-    mapping(bytes32 preimage => bytes32 formerSecret) internal _preimageToSecret;
-    mapping(bytes32 preimage => uint256 id) internal _preimageToId;
-    mapping(uint256 id => bytes32 owner) internal _owner;
-    mapping(uint256 id => bytes32 preimage) internal _preimage;
-    mapping(uint256 id => bytes32 key) internal _key;
+    mapping(bytes32 preimage => bytes32 unveiledSecret) internal _preimageToSecret;
+    mapping(bytes32 preimage => uint256 identifier) internal _preimageToIdentifier;
+    mapping(uint256 identifier => bytes32 owner) internal _owner;
+    mapping(uint256 identifier => bytes32 preimage) internal _preimage;
+    mapping(uint256 identifier => bytes32 key) internal _key;
 
-    function _undermineExpired(uint256 id, bytes32 hashed, IRandom.Randomness memory r) internal {
+    function _undermineExpired(uint256 identifier, bytes32 hashed, IRandom.Randomness memory r) internal {
         // order preimage cannot be overriden until after all secrets have been revealed
         // this creates a high incentive for both player 1, and rule enforcer to get secrets on chain
         // before the expired line is crossed. either:
@@ -66,10 +68,10 @@ contract Consumer {
             if (r.seed == bytes32(ZERO)) {
                 return;
             }
-            if (hashed == _preimage[id]) {
+            if (hashed == _preimage[identifier]) {
                 return;
             }
-            if (uint256(_owner[id] >> ONE_SIX_ZERO) == ZERO) {
+            if (uint256(_owner[identifier] >> ONE_SIX_ZERO) == ZERO) {
                 revert Errors.Misconfigured();
             }
             // originator of the chained secret+preimage can reject updates
@@ -80,36 +82,36 @@ contract Consumer {
             // but the desk might also refuse to honor them if the expiry time is too far from the defined values
             // in that case, they are worthless
             // if a casino wants to have an intermediate period they can enforce that in their own contract
-            emit Undermine({id: id, preimage: hashed});
-            _preimage[id] = hashed;
+            emit Undermine({identifier: identifier, preimage: hashed});
+            _preimage[identifier] = hashed;
             // note that the preimage may not be what was originally intended - we do not track in the contract
         }
     }
 
     /**
-     * @param id the id of the chained randomness to reveal
-     * @dev calling tell should be considered risky in that it will revert if you are
+     * @param identifier the id of the chained randomness to reveal
+     * @dev calling unveil should be considered risky in that it will revert if you are
      * a) do not have the original secret
      * b) unable to set the preimage to the hash of your revealed secret because you were too late
      * either way, at the end of this function call, you should have a preimageToSecret
      * that is set so that you can use it (it will not be bytes32(0))
      */
-    function tell(uint256 id, bytes32 revealedSecret) external {
+    function unveil(uint256 identifier, bytes32 unveiledSecret) external {
         unchecked {
-            if (_preimageToSecret[_preimage[id]] != bytes32(ZERO)) {
+            if (_preimageToSecret[_preimage[identifier]] != bytes32(ZERO)) {
                 return;
             }
-            bytes32 key = _key[id];
+            bytes32 key = _key[identifier];
             IRandom.Randomness memory r = IRandom(rand).randomness(key);
-            bytes32 hashed = revealedSecret.hash();
+            bytes32 hashed = unveiledSecret.hash();
             if (IRandom(rand).expired(r.timeline)) {
-                _undermineExpired(id, hashed, r);
+                _undermineExpired(identifier, hashed, r);
             }
-            if (hashed != _preimage[id]) {
+            if (hashed != _preimage[identifier]) {
                 revert SecretMismatch();
             }
-            _preimageToSecret[hashed] = revealedSecret;
-            emit Reveal({id: id, formerSecret: revealedSecret});
+            _preimageToSecret[hashed] = unveiledSecret;
+            emit Unveil({identifier: identifier, unveiledSecret: unveiledSecret});
             // we do not emit an event here because it is more likely that users will simply
             // do it themselves via a contract or only care about the latest
         }
@@ -135,8 +137,8 @@ contract Consumer {
         return _chainTo(owner, underminable, preimage, key);
     }
 
-    function latestId() external view returns (uint256) {
-        return _id;
+    function latestIdentifier() external view returns (uint256) {
+        return _identifier;
     }
 
     function link(uint256 idParam) external view returns (Link memory l) {
@@ -147,34 +149,37 @@ contract Consumer {
         bytes32 preimage = _preimage[idParam];
         bytes32 o = _owner[idParam];
         l = Link({
-            id: idParam,
+            identifier: idParam,
             key: key,
             owner: address(bytes20(o << NINE_SIX)),
-            underminable: o >> ONE_SIX_ZERO == 0x00 ? false : true,
+            underminable: (o & UNDERMINABLE) == UNDERMINABLE,
             preimage: preimage,
-            revealed: _preimageToSecret[preimage]
+            unveiled: _preimageToSecret[preimage]
         });
     }
 
-    function _chainTo(address owner, bool underminable, bytes32 preimage, bytes32 key) internal returns (uint256 id) {
+    function _chainTo(address owner, bool underminable, bytes32 preimage, bytes32 key)
+        internal
+        returns (uint256 identifier)
+    {
         unchecked {
             if (preimage == bytes32(ZERO) || preimage == PREIMAGE_ZERO) {
                 revert Errors.Misconfigured();
             }
-            id = _preimageToId[preimage];
-            bytes32 o = bytes32((underminable ? (ONE << ONE_SIX_ZERO) : ZERO) | uint256(uint160(owner)));
-            if (_preimage[id] == preimage) {
-                if (_owner[id] == o) {
-                    return id;
+            identifier = _preimageToIdentifier[preimage];
+            bytes32 o = bytes32((underminable ? uint256(UNDERMINABLE) : ZERO) | uint256(uint160(owner)));
+            if (_preimage[identifier] == preimage) {
+                if (_owner[identifier] == o) {
+                    return identifier;
                 }
             }
-            id = ++_id;
-            _owner[id] = o;
-            _preimage[id] = preimage;
-            _key[id] = key;
+            identifier = ++_identifier;
+            _owner[identifier] = o;
+            _preimage[identifier] = preimage;
+            _key[identifier] = key;
             // allow for reverse lookup
-            _preimageToId[preimage] = id;
-            emit Chain({owner: o, id: id, key: key});
+            _preimageToIdentifier[preimage] = identifier;
+            emit Chain({owner: o, identifier: identifier, key: key});
         }
     }
 }
