@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
-import {console} from "hardhat/console.sol";
-
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {LibPRNG} from "solady/src/utils/LibPRNG.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
@@ -142,12 +140,6 @@ contract Random is IRandom {
             address pntr = _pointers[info.provider][tkn][info.price][
                 info.offset
             ];
-            // console.log(info.provider);
-            // console.log(info.durationIsTimestamp);
-            // console.log(info.duration);
-            // console.log(info.token);
-            // console.log(info.price);
-            // console.log(info.offset);
             if (pntr == address(0)) {
                 revert Errors.Misconfigured();
             }
@@ -503,12 +495,6 @@ contract Random is IRandom {
             address pntr = data.write(); // deploy a contract with immutable preimages written into it
             _pointers[owner][tkn][info.price][start] = pntr;
             _preimageCount[owner][tkn][info.price] = start + count;
-            // console.log(info.provider);
-            // console.log(info.durationIsTimestamp);
-            // console.log(info.duration);
-            // console.log(info.token);
-            // console.log(info.price);
-            // console.log(info.offset);
             emit Ink({
                 provider: owner,
                 offset: (start << ONE_TWO_EIGHT) | (start + count),
@@ -720,9 +706,9 @@ contract Random is IRandom {
                 }
                 ++i;
             } while (i < size);
-            if (amount > ZERO) {
-                _custodied[provider][info.token] += amount;
-            }
+            // assume that amount is > 0 otherwise there is not economic reason to run this fn
+            // therefore writing the sstore is always going to have a non zero delta
+            _custodied[provider][info.token] += amount;
         }
     }
 }

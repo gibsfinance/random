@@ -533,6 +533,19 @@ describe("Random", () => {
         account: ctx.randomnessProviders.find((provider) => provider.account!.address == selection.provider)!.account,
       }), ctx.reader, 'Ok')
     })
+    it('can only call ok for its own sections', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
+      const [selection] = ctx.selections
+      const [[signer], [notsigner]] = _.partition(ctx.randomnessProviders, (provider) => (
+        provider.account!.address == selection.provider
+      ))
+      await expectations.revertedWithCustomError(ctx.reader, ctx.reader.write.ok([[selection, {
+        ...selection,
+        provider: notsigner.account!.address,
+      }]], {
+        account: signer!.account,
+      }), 'SignerMismatch')
+    })
     it('can call bleach to shut down a whole section of preimages', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
       const [provider] = ctx.randomnessProviders
