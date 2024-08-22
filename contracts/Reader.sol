@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
-import {console} from "hardhat/console.sol";
-
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {IRandom} from "./implementations/IRandom.sol";

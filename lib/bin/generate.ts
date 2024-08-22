@@ -1,3 +1,3 @@
-import { main } from '../generate'
+// import { main } from '../generate'
 
-main().catch(console.error)
+// main().catch(console.error)
