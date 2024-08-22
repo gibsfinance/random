@@ -15,9 +15,7 @@ event Start(address indexed owner, bytes32 key); // no need to index because all
 
 event Reveal(address indexed provider, bytes32 location, bytes32 formerSecret);
 
-event Expired(address indexed recipient, address indexed ender, bytes32 key);
-
-event FundingScattered(address indexed recipient, uint256 amount, bytes32 key);
+event Expired(bytes32 key);
 
 event Cast(bytes32 key, bytes32 seed);
 

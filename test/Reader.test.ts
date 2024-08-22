@@ -14,10 +14,8 @@ describe('Reader', () => {
     const [provider] = ctx.randomnessProviders
 
     await expect(ctx.reader.read.at([{
+      ...utils.defaultSection,
       provider: provider.account!.address,
-      token: viem.zeroAddress,
-      price: utils.defaultPrice,
-      offset: 0n,
       index: 0n,
     }])).eventually.to.equal(s.preimage)
   })
@@ -26,10 +24,8 @@ describe('Reader', () => {
     const [secrets] = ctx.secretBatches
     const [provider] = ctx.randomnessProviders
     await expectations.revertedWithCustomError(ctx.reader, ctx.reader.read.at([{
+      ...utils.defaultSection,
       provider: provider.account!.address,
-      token: viem.zeroAddress,
-      price: utils.defaultPrice,
-      offset: 0n,
       index: BigInt(secrets.length), // an off by 1 error
     }]), 'IndexOutOfBounds')
   })

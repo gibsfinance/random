@@ -23,19 +23,38 @@ abstract contract IRandom {
     mapping(bytes32 key => bytes32 seed) internal _seed;
 
     struct Randomness {
+        address owner;
+        bool usesTimestamp;
+        uint256 duration;
+        uint256 start;
         uint256 timeline;
+        uint256 contributed;
         bytes32 seed;
     }
 
-    function heat(uint256 required, uint256 expiryOffset, address token, PreimageLocation.Info[] calldata info)
-        external
-        payable
-        virtual
-        returns (bytes32);
-    function pointer(PreimageLocation.Info calldata info) external view virtual returns (address);
-    function consumed(PreimageLocation.Info calldata info) external view virtual returns (bool);
-    function randomness(bytes32 key) external view virtual returns (Randomness memory);
-    function latest(address account, bool onlySameTx) external view virtual returns (bytes32);
+    function heat(
+        uint256 required,
+        bool timelineIsTimestamp,
+        uint256 durationMaximum,
+        PreimageLocation.Info[] calldata info
+    ) external payable virtual returns (bytes32);
+
+    function pointer(
+        PreimageLocation.Info calldata info
+    ) external view virtual returns (address);
+
+    function consumed(
+        PreimageLocation.Info calldata info
+    ) external view virtual returns (bool);
+
+    function randomness(
+        bytes32 key
+    ) external view virtual returns (Randomness memory);
+
+    function latest(
+        address account,
+        bool onlySameTx
+    ) external view virtual returns (bytes32);
 
     function expired(uint256 timeline) external view virtual returns (bool) {
         return _expired(timeline);
@@ -44,11 +63,17 @@ abstract contract IRandom {
     function _expired(uint256 timeline) internal view virtual returns (bool) {
         unchecked {
             // end
-            return (timeline << (TWO_FIVE_FIVE - EIGHT) >> TWO_FIVE_FIVE == ZERO ? block.number : block.timestamp)
-            // start
-            - (uint256(uint48(timeline >> FOUR_EIGHT)))
-            // expiration delta
-            > (uint256(uint40(timeline) >> (EIGHT + ONE)));
+            return
+                (
+                    (timeline << (TWO_FIVE_FIVE - EIGHT)) >> TWO_FIVE_FIVE ==
+                        ZERO
+                        ? block.number
+                        : block.timestamp
+                ) -
+                    // start
+                    (uint256(uint48(timeline >> FOUR_EIGHT))) >
+                // expiration delta
+                (uint256(uint40(timeline) >> (EIGHT + ONE)));
         }
     }
 }

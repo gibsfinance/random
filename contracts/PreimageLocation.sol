@@ -6,28 +6,45 @@ import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 library PreimageLocation {
     struct Info {
         address provider;
+        bool durationIsTimestamp;
+        uint256 duration;
         address token;
         uint256 price;
         uint256 offset;
         uint256 index;
     }
 
-    function hash(Info memory info) internal pure returns (bytes32) {
-        return EfficientHashLib.hash(
-            bytes32(uint256(uint160(info.provider))),
-            bytes32(uint256(uint160(info.token))),
-            bytes32(info.price),
-            bytes32(info.offset),
-            bytes32(info.index)
-        );
+    using PreimageLocation for Info;
+    using PreimageLocation for bytes32;
+    using EfficientHashLib for bytes32;
+
+    function location(Info memory info) internal pure returns (bytes32) {
+        return info.section().location(info.index);
+    }
+
+    function location(
+        bytes32 sec,
+        uint256 index
+    ) internal pure returns (bytes32) {
+        return sec.hash(bytes32(index));
     }
 
     function section(Info memory info) internal pure returns (bytes32) {
-        return EfficientHashLib.hash(
-            bytes32(uint256(uint160(info.provider))),
-            bytes32(uint256(uint160(info.token))),
-            bytes32(info.price),
-            bytes32(info.offset)
-        );
+        unchecked {
+            return
+                EfficientHashLib.hash(
+                    bytes32(uint256(uint160(info.provider))),
+                    bytes32(info.encodeToken()),
+                    bytes32(info.price),
+                    bytes32(info.offset)
+                );
+        }
+    }
+
+    function encodeToken(Info memory info) internal pure returns (uint256) {
+        return
+            ((info.durationIsTimestamp ? 1 : 0) << 255) |
+            (uint256(uint40(info.duration)) << 160) |
+            uint256(uint160(info.token));
     }
 }

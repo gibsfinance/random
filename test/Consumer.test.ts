@@ -11,7 +11,10 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
@@ -73,7 +76,10 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
@@ -132,7 +138,10 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
@@ -204,7 +213,10 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
@@ -268,7 +280,10 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
@@ -293,7 +308,10 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s, altS]] = await utils.createPreimages(signer2.account!.address)
+      const [[s, altS]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, false, s.preimage, start.args.key!]),
@@ -352,7 +370,10 @@ describe('Consumer', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s, altS]] = await utils.createPreimages(signer2.account!.address)
+      const [[s, altS]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
       const [start] = await ctx.random.getEvents.Start()
       await expectations.emit(ctx,
         ctx.consumer.write.chainTo([signer2.account!.address, true, s.preimage, start.args.key!]),

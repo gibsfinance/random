@@ -158,6 +158,27 @@ export const changeEtherBalances = async (ctx: Context, _receipt: Promise<viem.W
   })
 }
 
+export type CheckResultOpts = {
+  provider: viem.PublicClient;
+  address: viem.Hex;
+  blockNumber: bigint;
+}
+
+export const changeResults = async (
+  ctx: Context, _receipt: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType,
+  accounts: (viem.WalletClient | viem.Hex)[], deltas: bigint[],
+  checker: (opts: CheckResultOpts) => Promise<bigint>,
+) => {
+  const provider = await ctx.hre.viem.getPublicClient()
+  const receipt = await confirmTx(ctx, _receipt)
+  return await changeBalances(accounts, deltas, async (address) => {
+    const before = checker({ provider, address, blockNumber: receipt.blockNumber - 1n })
+    const after = checker({ provider, address, blockNumber: receipt.blockNumber })
+    let [b, a] = await Promise.all([before, after])
+    return a - b
+  })
+}
+
 export const changeTokenBalances = async (ctx: Context, contract: viem.GetContractReturnType<ERC20$Type["abi"]>, _receipt: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType, accounts: (viem.WalletClient | viem.Hex)[], deltas: bigint[]) => {
   const provider = await ctx.hre.viem.getPublicClient()
   const receipt = await confirmTx(ctx, _receipt)

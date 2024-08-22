@@ -25,20 +25,53 @@ describe("Random", () => {
     })
     it('will not err if an index that is presented is out of bounds on random contract', async () => {
       const ctx = await helpers.loadFixture(testUtils.deploy)
-      await expect(ctx.random.read.pointer([utils.defaultPreImageInfo]))
+      await expect(ctx.random.read.pointer([utils.defaultSection]))
         .eventually.to.equal(viem.zeroAddress)
+    })
+    it('if not enough funds are presented, failure occurs', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const [signer] = ctx.signers
+      const section = {
+        ...utils.defaultSection,
+        provider: signer.account!.address,
+      }
+      const [secrets] = await utils.createTestPreimages(section)
+      const preimages = _.map(secrets, 'preimage')
+      const data = viem.concatHex(preimages)
+      await expectations.revertedWithCustomError(ctx.errors,
+        ctx.random.write.ink([section, data], {
+          value: (section.price * BigInt(secrets.length)) - 1n,
+        }),
+        'MissingPayment',
+      )
+      await testUtils.confirmTx(ctx, ctx.random.write.ink([section, data], {
+        value: (section.price * BigInt(secrets.length)),
+      }))
     })
     it('cannot write if data is missing', async () => {
       const ctx = await helpers.loadFixture(testUtils.deploy)
       await expectations.revertedWithCustomError(ctx.errors,
-        ctx.random.write.ink([viem.zeroAddress, utils.defaultPrice, '0x']),
+        ctx.random.write.ink([utils.defaultSection, '0x']),
         'Misconfigured',
+      )
+    })
+    it('cannot make owner zero address', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const section = utils.defaultSection
+      const [secrets] = await utils.createTestPreimages(section)
+      const preimages = _.map(secrets, 'preimage')
+      const data = viem.concatHex(preimages)
+      await expectations.revertedWithCustomError(ctx.errors,
+        ctx.random.write.ink([section, data], {
+          value: (section.price * BigInt(secrets.length)),
+        }),
+        'UnableToService',
       )
     })
     it('cannot write if data is uneven must write full words (32 bytes)', async () => {
       const ctx = await helpers.loadFixture(testUtils.deploy)
       await expectations.revertedWithCustomError(ctx.errors,
-        ctx.random.write.ink([viem.zeroAddress, utils.defaultPrice, '0x00']),
+        ctx.random.write.ink([utils.defaultSection, '0x00']),
         'Misconfigured',
       )
     })
@@ -50,8 +83,13 @@ describe("Random", () => {
         // 2) that length is not enforced by hardhat while coverage is on because of the extra opcodes needed for coverage
         return this.skip()
       }
+      const [signer] = ctx.signers
       await expectations.revertedWithCustomError(ctx.errors,
-        ctx.random.write.ink([viem.zeroAddress, utils.defaultPrice, `0x${'00'.repeat(Number(utils.maxContractSize))}`]),
+        ctx.random.write.ink([{
+          ...utils.defaultSection,
+          provider: signer.account!.address,
+          price: 0n,
+        }, `0x${'00'.repeat(Number(utils.maxContractSize))}`]),
         'DeploymentFailed',
       )
     })
@@ -75,14 +113,17 @@ describe("Random", () => {
         index: parts.index,
       }))
       await expectations.emit(ctx,
-        ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
+        ctx.random.write.heat([required, false, 12n, selections], { value: utils.sum(selections) }),
         ctx.random, 'Heat',
         expectedEmitArgs,
       )
     })
     it('skips payment check if preimages are free', async function () {
       const ctx = await helpers.loadFixture(testUtils.deploy)
-      const written = await testUtils.writePreimages(ctx, 0n, viem.zeroAddress, 0n)
+      const written = await testUtils.writePreimages(ctx, {
+        ...utils.defaultSection,
+        price: 0n,
+      })
       const preimageLocations = _.map(written, 'preimageLocations')
       const required = 5n
       const selections = _(preimageLocations).flattenDeep().sampleSize(8).value()
@@ -94,7 +135,7 @@ describe("Random", () => {
       }))
       await expectations.emit(ctx,
         ctx.random.write.heat(
-          [required, 12n << 1n, viem.zeroAddress, selections],
+          [required, false, 12n, selections],
           /* { value: utils.sum(selections) }, */
         ),
         ctx.random, 'Heat',
@@ -107,7 +148,7 @@ describe("Random", () => {
       const required = 5n
       await expectations.revertedWithCustomError(ctx.errors,
         ctx.random.write.heat(
-          [required, 12n << 1n, viem.zeroAddress, selections],
+          [required, false, 12n, selections],
           { value: utils.sum(selections) - 1n },
         ),
         'MissingPayment',
@@ -116,7 +157,7 @@ describe("Random", () => {
     it('does not allow secrets to be requested twice', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
       await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.heat(
-        [ctx.required, 12n << 1n, viem.zeroAddress, ctx.selections],
+        [ctx.required, false, 12n, ctx.selections],
         { value: utils.sum(ctx.selections) },
       ), 'UnableToService')
     })
@@ -124,7 +165,7 @@ describe("Random", () => {
       it('greater than 0', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
         await expectations.revertedWithCustomError(ctx.errors,
-          ctx.random.write.heat([0n, 12n << 1n, viem.zeroAddress, []]),
+          ctx.random.write.heat([0n, false, 12n, []]),
           'UnableToService',
         )
       })
@@ -133,7 +174,7 @@ describe("Random", () => {
         const { selections } = await testUtils.selectPreimages(ctx)
         await expectations.revertedWithCustomError(ctx.errors,
           ctx.random.write.heat(
-            [256n, 12n << 1n, viem.zeroAddress, selections],
+            [256n, false, 12n, selections],
             { value: utils.sum(selections) },
           ),
           'UnableToService',
@@ -144,10 +185,34 @@ describe("Random", () => {
         const { selections } = await testUtils.selectPreimages(ctx)
         await expectations.revertedWithCustomError(ctx.errors,
           ctx.random.write.heat(
-            [BigInt(selections.length + 1), 12n << 1n, viem.zeroAddress, selections],
+            [BigInt(selections.length + 1), false, 12n, selections],
             { value: utils.sum(selections) },
           ),
           'UnableToService',
+        )
+      })
+    })
+    describe('the duration parameters', () => {
+      it('must equal the preimages being requested', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+        const { selections } = await testUtils.selectPreimages(ctx)
+        await expectations.revertedWithCustomError(ctx.errors,
+          ctx.random.write.heat(
+            [BigInt(selections.length), false, 1n << 39n, selections],
+            { value: utils.sum(selections) },
+          ),
+          'Misconfigured',
+        )
+      })
+      it('must equal the preimages being requested', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+        const { selections } = await testUtils.selectPreimages(ctx)
+        await expectations.revertedWithCustomError(ctx.errors,
+          ctx.random.write.heat(
+            [BigInt(selections.length), true, 120n, selections],
+            { value: utils.sum(selections) },
+          ),
+          'Misconfigured',
         )
       })
     })
@@ -155,20 +220,48 @@ describe("Random", () => {
   describe('submitting secrets', () => {
     describe('when to send', async () => {
       it('can detect by checking a section via the reader', async () => {
-        const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
-
-        const [selection] = ctx.selections
-        const provider = selection.signer
-        const unused = await ctx.reader.read.unused([
-          {
-            ...utils.defaultPreImageInfo,
-            provider: provider.account!.address,
-          },
-        ])
-        const unusedCompact = _.reject(unused, {
-          provider: viem.zeroAddress,
-        })
-        expect(unusedCompact.length).to.be.lessThan(unused.length)
+        const ctx = await helpers.loadFixture(testUtils.deploy)
+        const [signer] = ctx.signers
+        const section = {
+          ...utils.defaultSection,
+          provider: signer.account!.address,
+        }
+        const [secrets] = await utils.createTestPreimages(section)
+        const subset = secrets.slice(0, 100)
+        const preimages = _.map(subset, 'preimage')
+        const data = viem.concatHex(preimages)
+        await testUtils.confirmTx(ctx, ctx.random.write.ink([section, data], {
+          value: section.price * 100n,
+        }))
+        await testUtils.confirmTx(ctx, ctx.random.write.heat([
+          2n,
+          section.durationIsTimestamp,
+          section.duration,
+          [{ ...section }, { ...section, index: 9n }], // 0th location
+        ], {
+          value: section.price * 2n,
+        }))
+        // const [selection] = ctx.selections
+        // const provider = selection.signer
+        // const section = {
+        //   ...utils.defaultSection,
+        //   provider: provider.account!.address,
+        // }
+        const [len, bitmask] = await ctx.reader.read.consumed([section])
+        const offset = len % 8n
+        // globally shift so that our target ends up at the right most bit
+        const adjusted = len - 1n + offset
+        const bitList = _.range(0, Number(len)).map((idx) => (
+          BigInt.asUintN(1, BigInt(bitmask) >> (adjusted - BigInt(idx))) === 1n
+        ))
+        const unusedCompact = _(bitList).map((consumed, index) => ({
+          ...section,
+          index,
+          consumed,
+        })).reject({
+          consumed: true,
+        }).value()
+        expect(unusedCompact.length + 2).to.equal(bitList.length)
       })
       it('can detect by checking the event', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
@@ -252,7 +345,9 @@ describe("Random", () => {
           secretByPreimage.get(selection.preimage) as viem.Hex
         ))
         const preimages = _.map(selections, 'preimage')
-        const inkTx = ctx.random.write.ink([viem.zeroAddress, utils.defaultPrice, viem.concatHex(preimages)])
+        const inkTx = ctx.random.write.ink([selections[0], viem.concatHex(preimages)], {
+          value: utils.sum(selections),
+        })
         const inkReceipt = await testUtils.confirmTx(ctx, inkTx)
         const [ink] = await ctx.random.getEvents.Ink({}, {
           blockHash: inkReceipt.blockHash,
@@ -275,19 +370,25 @@ describe("Random", () => {
           secretByPreimage.get(selection.preimage) as viem.Hex
         ))
         const preimages = _.map(selections, 'preimage')
-        const inkTx = ctx.random.write.ink([viem.zeroAddress, utils.defaultPrice, viem.concatHex(preimages)], {
-          account: randomnessProviders[0].account!,
+        const [firstProvider] = randomnessProviders
+        const inkTx = ctx.random.write.ink([{
+          ...selections[0],
+          // override here to maintain preimages under single provider
+          provider: firstProvider.account!.address,
+        }, viem.concatHex(preimages)], {
+          account: firstProvider.account!,
+          value: utils.sum(selections),
         })
         const inkReceipt = await testUtils.confirmTx(ctx, inkTx)
         const inkEvents = await ctx.random.getEvents.Ink({}, {
           blockHash: inkReceipt.blockHash,
         })
         const [ink] = inkEvents
-        const startOffset = ink.args.offset! >> 128n
+        const startOffset = (ink.args.offset! >> 128n)
         const wrongLocationSelections = selections.map((selection, index) => {
           return {
             ...selection,
-            provider: randomnessProviders[0].account!.address,
+            provider: firstProvider.account!.address,
             offset: startOffset,
             index: BigInt(index),
           }
@@ -327,20 +428,65 @@ describe("Random", () => {
           key: start.args.key!,
         })
       })
-      it('cannot collect refund if signer does not match', async () => {
+      it('refunded tokens go back to randomness owner', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
         const { selections, signers, starts } = ctx
         const [start] = starts
-        const [, signer2] = signers
+        const [signer1, signer2] = signers
         await helpers.mine(12)
-        await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.chop([start.args.key!, selections], {
+        await expectations.changeResults(ctx, ctx.random.write.chop([start.args.key!, selections], {
           account: signer2.account,
-        }), 'SignerMismatch')
+        }),
+          [signer1, signer2],
+          [utils.sum(selections) * 2n, 0n],
+          (opts: expectations.CheckResultOpts) => (
+            ctx.random.read.balanceOf([opts.address, viem.zeroAddress], {
+              blockNumber: opts.blockNumber,
+            })
+          )
+        )
+      })
+      it('will fail if key cannot be reconstructed', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
+        const { selections, starts } = ctx
+        const [start] = starts
+        await helpers.mine(12)
+        let reorderedSelections = selections
+        while (_.isEqual(reorderedSelections, selections)) {
+          reorderedSelections = _.shuffle(reorderedSelections)
+        }
+        await expectations.revertedWithCustomError(ctx.random, ctx.random.write.chop(
+          [start.args.key!, reorderedSelections],
+        ), 'NotInCohort')
+      })
+      it('will not refund is called before randomness has expired', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
+        const { selections, signers, starts } = ctx
+        const [signer] = signers
+        const [start] = starts
+        await helpers.mine(11)
+        const value = utils.sum(selections)
+        await expectations.revertedWithCustomError(ctx.random, ctx.random.write.chop(
+          [start.args.key!, selections],
+        ), 'UnableToService')
+        // the revert above moved the block count forward by 1
+        const chopResult = ctx.random.write.chop(
+          [start.args.key!, selections],
+        )
+        await expectations.changeResults(ctx,
+          chopResult,
+          [signer.account!.address],
+          [value * 2n], // value of randomness * 2 attributed to owner
+          (opts) => ctx.random.read.balanceOf([opts.address, viem.zeroAddress], {
+            blockNumber: opts.blockNumber,
+          })
+        )
+        await expectations.emit(ctx, chopResult, ctx.random, 'Chop')
       })
       it('will not refund if chop is after a valid cast', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
         const { selections, signers, starts, secretByPreimage } = ctx
-        const [signer, signer2] = signers
+        const [signer] = signers
         const [start] = starts
         await helpers.mine(12)
         const secrets = selections.map((selection) => (
@@ -374,7 +520,6 @@ describe("Random", () => {
         )
         await expectations.emit(ctx, castTx, ctx.random, 'Cast')
         await expectations.emit(ctx, castTx, ctx.random, 'Expired', {
-          ender: viem.getAddress(signer2.account!.address),
           key: start.args.key!,
         })
       })
@@ -392,7 +537,7 @@ describe("Random", () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
       const [provider] = ctx.randomnessProviders
       await expectations.emit(ctx, ctx.random.write.bleach([{
-        ...utils.defaultPreImageInfo,
+        ...utils.defaultSection,
         provider: provider.account!.address,
       }], {
         account: provider.account!,
@@ -406,12 +551,12 @@ describe("Random", () => {
         return highest > globalIndex ? highest : globalIndex
       }, 0n)
       await expect(ctx.random.read.pointer([{
-        ...utils.defaultPreImageInfo,
+        ...utils.defaultSection,
         provider: randomnessProvider.account!.address,
         offset: existing,
       }])).eventually.to.equal(viem.zeroAddress)
       await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.bleach([{
-        ...utils.defaultPreImageInfo,
+        ...utils.defaultSection,
         provider: randomnessProvider.account!.address,
         offset: existing,
       }], {
@@ -426,11 +571,11 @@ describe("Random", () => {
         return highest > globalIndex ? highest : globalIndex
       }, 0n)
       await expect(ctx.random.read.pointer([{
-        ...utils.defaultPreImageInfo,
+        ...utils.defaultSection,
         provider: randomnessProvider.account!.address,
       }])).eventually.not.to.equal(viem.zeroAddress)
       await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.bleach([{
-        ...utils.defaultPreImageInfo,
+        ...utils.defaultSection,
         provider: randomnessProvider.account!.address,
         offset: existing,
       }], {
@@ -480,7 +625,7 @@ describe("Random", () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
         const { selections } = await testUtils.selectPreimages(ctx)
         const [signer] = ctx.signers
-        await expectations.emit(ctx, ctx.random.write.heat([5n, ctx.defaultExpiryOffsetInput, viem.zeroAddress, selections], {
+        await expectations.emit(ctx, ctx.random.write.heat([5n, false, 12n, selections], {
           value: utils.sum(selections) + oneEther,
         }), ctx.random, 'Heat')
         await expect(ctx.random.read.balanceOf([signer.account!.address, viem.zeroAddress]))
@@ -502,14 +647,22 @@ describe("Random", () => {
           .eventually.to.equal(true)
       })
       it('can handle time deltas in addition to block deltas', async () => {
-        const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
-        const { selections } = await testUtils.selectPreimages(ctx)
+        const ctx = await helpers.loadFixture(async function deployWithRandomnessAndStartOneOff() {
+          // one-off to modify the randomness values
+          return await testUtils.deployWithRandomnessAndStart({
+            ...utils.defaultSection,
+            durationIsTimestamp: true,
+            duration: 120n,
+          })
+        })
+        const { selections } = await testUtils.selectPreimages(ctx, 5, [{
+          ...utils.defaultSection,
+          durationIsTimestamp: true,
+          duration: 120n,
+        }])
         const required = 5n
         const heatTx = await ctx.random.write.heat([
-          required,
-          (120n << 1n) | 1n,
-          viem.zeroAddress,
-          selections,
+          required, true, 120n, selections,
         ], { value: utils.sum(selections) })
         const receipt = await testUtils.confirmTx(ctx, heatTx)
         const starts = await ctx.random.getEvents.Start({}, {
@@ -548,7 +701,7 @@ describe("Random", () => {
         const [selection] = selections
         await expect(ctx.random.read.consumed([{
           ...selection,
-          index: 766n,
+          index: 766n, // uses index, so length - 1
         }]))
           .eventually.to.equal(false)
         await expectations.revertedWithCustomError(ctx.errors,
@@ -565,9 +718,11 @@ describe("Random", () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
         const [start] = ctx.starts
         const latest = await helpers.time.latestBlock()
+        const timeline = ((BigInt(start.args.owner!) << 96n) | BigInt(latest) << 48n | 12n << 9n)
         await expect(ctx.random.read.randomness([start.args.key!]))
           .eventually.to.deep.equal({
-            timeline: ((BigInt(start.args.owner!) << 96n) | BigInt(latest) << 48n | 12n << 9n),
+            ...utils.parseTimeline(timeline),
+            timeline,
             seed: viem.zeroHash,
           })
       })
@@ -585,7 +740,7 @@ describe("Random", () => {
         index: parts.index,
       }))
       await expectations.emit(ctx,
-        ctx.random.write.heat([required, 12n << 1n, viem.zeroAddress, selections], { value: utils.sum(selections) }),
+        ctx.random.write.heat([required, false, 12n, selections], { value: utils.sum(selections) }),
         ctx.random, 'Heat',
         expectedEmitArgs,
       )
@@ -670,7 +825,10 @@ describe("Random", () => {
       const { multicallTx, signers } = ctx
       const [, signer2] = signers
       await testUtils.confirmTx(ctx, multicallTx)
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
       await expectations.revertedWithCustomError(ctx.random,
         ctx.consumer.write.chain([signer2.account!.address, true, false, s.preimage]),
         'UnableToService',
@@ -701,7 +859,10 @@ describe("Random", () => {
       const { multicallTx, signers } = ctx
       const [signer, signer2] = signers
       await testUtils.confirmTx(ctx, multicallTx)
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
       const latestId = await ctx.consumer.read.latestId()
       await expectations.emit(ctx,
         ctx.consumer.write.chain([signer.account!.address, false, false, s.preimage], {
@@ -718,7 +879,10 @@ describe("Random", () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { multicallTx, signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
       const [start] = await ctx.random.getEvents.Start()
       const latestId = await ctx.consumer.read.latestId()
       await testUtils.confirmTx(ctx, multicallTx)
@@ -763,7 +927,10 @@ describe("Random", () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { multicallTx, signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
       const [start] = await ctx.random.getEvents.Start()
       await testUtils.confirmTx(ctx, multicallTx)
       const latestId = await ctx.consumer.read.latestId() + 1n
@@ -798,7 +965,10 @@ describe("Random", () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndConsume)
       const { signers } = ctx
       const [, signer2] = signers
-      const [[s]] = await utils.createPreimages(signer2.account!.address)
+      const [[s]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
       const [start] = await ctx.random.getEvents.Start()
       const latestId = await ctx.consumer.read.latestId()
       await expectations.emit(ctx,

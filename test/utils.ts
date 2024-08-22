@@ -93,9 +93,9 @@ export const deploy = async () => {
   }
 }
 
-export const deployWithRandomness = async () => {
+export const deployWithRandomness = async (section = utils.defaultSection) => {
   const ctx = await helpers.loadFixture(deploy)
-  const generatedPreimages = await writePreimages(ctx)
+  const generatedPreimages = await writePreimages(ctx, section)
   const [{ preimageLocations, secretBatches }] = generatedPreimages
   const [secretGroups] = secretBatches
   const secretByPreimage = new Map(
@@ -115,19 +115,24 @@ export const deployWithRandomness = async () => {
   }
 }
 
-export const deployWithRandomnessAndStart = async () => {
-  const ctx = await helpers.loadFixture(deployWithRandomness)
+export const deployWithRandomnessAndStart = async (section = utils.defaultSection) => {
+  const ctx = await helpers.loadFixture(async function deployWithRandomnessOneOff() {
+    return await deployWithRandomness(section)
+  })
   const [consumer] = await ctx.hre.viem.getWalletClients()
-  const [[heat]] = await utils.createPreimages(consumer.account!.address)
+  const [[heat]] = await utils.createTestPreimages({
+    ...section,
+    provider: consumer.account!.address,
+  })
   const provider = await ctx.hre.viem.getPublicClient()
   const blockBeforeHeat = await provider.getBlock({
     blockTag: 'latest',
   })
-  const { all, selections } = await selectPreimages(ctx)
+  const { all, selections } = await selectPreimages(ctx, Number(ctx.required), [section])
   const heatTx = await ctx.random.write.heat([
     ctx.required,
-    ctx.defaultExpiryOffsetInput,
-    viem.zeroAddress,
+    section.durationIsTimestamp,
+    section.duration,
     selections,
   ], {
     value: utils.sum(selections),
@@ -146,7 +151,7 @@ export const deployWithRandomnessAndStart = async () => {
   }
 }
 
-export const deployWithRandomnessAndConsume = async () => {
+export const deployWithRandomnessAndConsume = async (section = utils.defaultSection) => {
   const ctx = await helpers.loadFixture(deployWithRandomness)
   const {
     signers,
@@ -154,7 +159,10 @@ export const deployWithRandomnessAndConsume = async () => {
   } = ctx
   const { selections } = await selectPreimages(ctx)
   const [signer] = signers
-  const [[s]] = await utils.createPreimages(signer.account!.address)
+  const [[s]] = await utils.createTestPreimages({
+    ...section,
+    provider: signer.account!.address,
+  })
   const expectedUsed = selections.slice(0, Number(required))
   const expectedEmitArgs = expectedUsed.map((parts) => ({
     provider: viem.getAddress(parts.provider),
@@ -180,7 +188,7 @@ export const deployWithRandomnessAndConsume = async () => {
     viem.encodeFunctionData({
       abi: ctx.random.abi,
       functionName: 'heat',
-      args: [5n, ctx.defaultExpiryOffsetInput, viem.zeroAddress, selections],
+      args: [5n, false, 12n, selections],
     }),
     viem.encodeFunctionData({
       abi: ctx.consumer.abi,
@@ -224,24 +232,25 @@ export const getRandomnessProviders = async (hre: HardhatRuntimeEnvironment) => 
   return signers.slice(12) as viem.WalletClient[]
 }
 
-export const writePreimages = async (ctx: Context, offset = 0n, token = viem.zeroAddress, price = utils.defaultPrice) => {
+export const writePreimages = async (ctx: Context, section = utils.defaultSection, value?: bigint) => {
   const rand = await ctx.hre.viem.getContractAt(contractName.Random, ctx.random.address)
   const signers = await getRandomnessProviders(ctx.hre)
   return await utils.limiters.signers.map(signers, async (signer: viem.WalletClient) => {
-    const secretBatches = await utils.createPreimages(signer.account!.address, offset)
+    const secretBatches = await utils.createTestPreimages({
+      ...section,
+      provider: signer.account!.address,
+    })
     const preimageLocations = await Promise.all(secretBatches.map(async (secrets) => {
       const preimages = _.map(secrets, 'preimage')
       const preimageLocations = preimages.map((preimage, index) => ({
+        ...section,
         provider: signer.account!.address,
-        token,
-        price,
-        offset,
         index: BigInt(index),
         preimage,
       }))
-      await confirmTx(ctx, rand.write.ink(
-        [token, price, viem.concatHex(preimages)], {
+      await confirmTx(ctx, rand.write.ink([preimageLocations[0], viem.concatHex(preimages)], {
         account: signer.account,
+        value: _.isNil(value) ? utils.sum(preimageLocations) : value,
       }))
       return preimageLocations
     }))
@@ -252,12 +261,12 @@ export const writePreimages = async (ctx: Context, offset = 0n, token = viem.zer
   })
 }
 
-export const readPreimages = async (ctx: Context, options: utils.PreimageInfoOptions = utils.defaultPreImageInfo) => {
+export const readPreimages = async (ctx: Context, options = utils.defaultSection) => {
   const signers = await getRandomnessProviders(ctx.hre)
   return await utils.limiters.signers.map(signers, async (signer) => {
     const data = await ctx.reader.read.pointer([
       {
-        ...utils.defaultPreImageInfo,
+        ...utils.defaultSection,
         ...options,
         provider: signer.account!.address,
       },
@@ -266,11 +275,11 @@ export const readPreimages = async (ctx: Context, options: utils.PreimageInfoOpt
   })
 }
 
-export const selectPreimages = async (ctx: Context, count = 5, offsets: utils.PreimageInfoOptions[] = [utils.defaultPreImageInfo]) => {
+export const selectPreimages = async (ctx: Context, count = 5, offsets: utils.PreimageInfoOptions[] = [utils.defaultSection]) => {
   const producers = await getRandomnessProviders(ctx.hre)
   const preimageGroups = await utils.limiters.signers.map(producers, async (producer) => {
     const iterations = offsets.map((options) => ({
-      ...utils.defaultPreImageInfo,
+      ...utils.defaultSection,
       ...options,
       provider: producer.account!.address,
     }))
@@ -280,7 +289,7 @@ export const selectPreimages = async (ctx: Context, count = 5, offsets: utils.Pr
     return _(dataSets).map(utils.dataToPreimages).map((set, i) => {
       const offset = iterations[i]
       return _.map(set, (preimage, index) => ({
-        ...utils.defaultPreImageInfo,
+        ...utils.defaultSection,
         ...offset,
         signer: producer,
         preimage,

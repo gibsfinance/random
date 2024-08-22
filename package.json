@@ -13,13 +13,18 @@
     "@openzeppelin/contracts": "^5.0.2",
     "@solidstate/hardhat-4byte-uploader": "^1.2.2",
     "@types/chai": "^4.3.17",
+    "@types/knex": "^0.16.1",
     "@types/lodash": "^4.17.7",
     "@types/mocha": "^10.0.7",
+    "@types/pg": "^8.11.6",
     "chai-as-promised": "^8.0.0",
     "hardhat": "^2.22.8",
     "hardhat-dependency-compiler": "^1.2.1",
+    "hardhat-gas-reporter": "^2.2.1",
+    "knex": "^3.1.0",
     "lodash": "^4.17.21",
     "multicaller": "^1.3.2",
+    "pg": "^8.12.0",
     "promise-limit": "^2.7.0",
     "solady": "^0.0.228",
     "solidity-coverage": "^0.8.12",
@@ -27,7 +32,7 @@
   },
   "scripts": {
     "test": "NODE_OPTIONS=--max-old-space-size=8192 hardhat --max-memory 8192 test",
-    "coverage": "NODE_OPTIONS=--max-old-space-size=8192 SOLIDITY_COVERAGE=true hardhat --max-memory 8192 coverage",
+    "coverage": "REPORT_GAS=true NODE_OPTIONS=--max-old-space-size=8192 SOLIDITY_COVERAGE=true hardhat --max-memory 8192 coverage",
     "build": "hardhat compile",
     "generate-randomness": "tsx ./lib/bin/generate.ts"
   }
