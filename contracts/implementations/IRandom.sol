@@ -34,8 +34,7 @@ abstract contract IRandom {
 
     function heat(
         uint256 required,
-        bool timelineIsTimestamp,
-        uint256 durationMaximum,
+        PreimageLocation.Info calldata settings,
         PreimageLocation.Info[] calldata info
     ) external payable virtual returns (bytes32);
 

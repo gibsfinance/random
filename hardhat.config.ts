@@ -123,7 +123,7 @@ const config: HardhatUserConfig = {
     tokenPrice: '0.00004',
     currencyDisplayPrecision: 8,
     reportFormat: 'terminal',
-    showMethodSig: true,
+    // showMethodSig: true,
     trackGasDeltas: true,
   },
 };

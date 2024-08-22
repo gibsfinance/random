@@ -119,20 +119,20 @@ export const deployWithRandomnessAndStart = async (section = utils.defaultSectio
   const ctx = await helpers.loadFixture(async function deployWithRandomnessOneOff() {
     return await deployWithRandomness(section)
   })
-  const [consumer] = await ctx.hre.viem.getWalletClients()
+  const [provider] = ctx.randomnessProviders
+  const [consumer] = ctx.signers
   const [[heat]] = await utils.createTestPreimages({
     ...section,
-    provider: consumer.account!.address,
+    provider: provider.account!.address,
   })
-  const provider = await ctx.hre.viem.getPublicClient()
-  const blockBeforeHeat = await provider.getBlock({
+  const publicClient = await ctx.hre.viem.getPublicClient()
+  const blockBeforeHeat = await publicClient.getBlock({
     blockTag: 'latest',
   })
   const { all, selections } = await selectPreimages(ctx, Number(ctx.required), [section])
   const heatTx = await ctx.random.write.heat([
     ctx.required,
-    section.durationIsTimestamp,
-    section.duration,
+    { ...section, provider: consumer.account!.address },
     selections,
   ], {
     value: utils.sum(selections),
@@ -156,13 +156,19 @@ export const deployWithRandomnessAndConsume = async (section = utils.defaultSect
   const {
     signers,
     required,
+    randomnessProviders,
   } = ctx
   const { selections } = await selectPreimages(ctx)
   const [signer] = signers
+  const [provider] = randomnessProviders
   const [[s]] = await utils.createTestPreimages({
     ...section,
-    provider: signer.account!.address,
+    provider: provider.account!.address,
   })
+  const sec = {
+    ...section,
+    provider: signer.account!.address,
+  }
   const expectedUsed = selections.slice(0, Number(required))
   const expectedEmitArgs = expectedUsed.map((parts) => ({
     provider: viem.getAddress(parts.provider),
@@ -188,7 +194,7 @@ export const deployWithRandomnessAndConsume = async (section = utils.defaultSect
     viem.encodeFunctionData({
       abi: ctx.random.abi,
       functionName: 'heat',
-      args: [5n, false, 12n, selections],
+      args: [5n, sec, selections],
     }),
     viem.encodeFunctionData({
       abi: ctx.consumer.abi,

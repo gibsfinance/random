@@ -365,10 +365,9 @@ contract Random is IRandom {
      * check for a minimum number of unconsumed preimages. provide a duration in
      * seconds or blocks to consider the randomness set to be valid
      * @param required the minimum number of locations required to be a valid (desired) set
-     * @param durationIsTimestamp whether or not to use timestamp (true) or block number (false)
-     * @param duration the duration from start time or start block that the
-     * contract should consider the randomness to be valid
-     * @notice if this param is lower than any location, then the contract will err
+     * @param settings the settings required to setup the randomness campaign
+     * @notice if the duration in the settings is lower than any location or the
+     * duration is timestamp does not match, then the contract will err
      * @param potentialLocations the locations to check for unconsumed preimages
      * @dev note that the contract stores the latest key for each owner in transient storage
      * this allows for many other chained games to use the same randomness seeds and have guarantees
@@ -376,8 +375,7 @@ contract Random is IRandom {
      */
     function heat(
         uint256 required,
-        bool durationIsTimestamp,
-        uint256 duration,
+        PreimageLocation.Info calldata settings,
         PreimageLocation.Info[] calldata potentialLocations
     ) external payable override returns (bytes32) {
         unchecked {
@@ -387,6 +385,9 @@ contract Random is IRandom {
                 if (msg.value > ZERO) {
                     _custodied[account][address(0)] += msg.value;
                 }
+                if (settings.provider == address(0)) {
+                    revert Errors.UnableToService();
+                }
                 if (
                     required == ZERO ||
                     required > TWO_FIVE_FIVE ||
@@ -395,7 +396,10 @@ contract Random is IRandom {
                     // only 255 len or fewer allowed
                     revert Errors.UnableToService();
                 }
-                if ((uint256(uint40(duration << ONE)) >> ONE) != duration) {
+                if (
+                    (uint256(uint40(settings.duration << ONE)) >> ONE) !=
+                    settings.duration
+                ) {
                     revert Errors.Misconfigured();
                 }
                 uint256 len = potentialLocations.length;
@@ -411,11 +415,14 @@ contract Random is IRandom {
                     if (token != target.token) {
                         revert Errors.Misconfigured();
                     }
-                    if (target.durationIsTimestamp != durationIsTimestamp) {
+                    if (
+                        target.durationIsTimestamp !=
+                        settings.durationIsTimestamp
+                    ) {
                         revert Errors.Misconfigured();
                     }
                     // target.minDuration > duration
-                    if (target.duration > duration) {
+                    if (target.duration > settings.duration) {
                         revert Errors.Misconfigured();
                     }
                     section = target.section();
@@ -454,19 +461,21 @@ contract Random is IRandom {
                 // put it on the shoulders of the consumer
                 // this can probably be optimized
                 _timeline[key] = _timelineFromInputs({
-                    owner: account,
+                    owner: settings.provider,
                     // we already checked expiry offset above is constrained to 39 bits
-                    expiryOffset: (duration << ONE) |
-                        (durationIsTimestamp ? ONE : ZERO),
-                    start: durationIsTimestamp ? block.timestamp : block.number
+                    expiryOffset: (settings.duration << ONE) |
+                        (settings.durationIsTimestamp ? ONE : ZERO),
+                    start: settings.durationIsTimestamp
+                        ? block.timestamp
+                        : block.number
                 });
                 _NAMESPACE
                     .erc7201Slot()
-                    .deriveMapping(account)
+                    .deriveMapping(settings.provider)
                     .asBytes32()
                     .tstore(key);
-                _latest[account] = key;
-                emit Start(account, key);
+                _latest[settings.provider] = key;
+                emit Start({owner: settings.provider, key: key});
                 return key;
             }
         }

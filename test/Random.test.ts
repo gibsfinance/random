@@ -112,8 +112,12 @@ describe("Random", () => {
         section: utils.section(parts),
         index: parts.index,
       }))
+      const section = {
+        ...utils.defaultSection,
+        provider: ctx.signers[0].account!.address,
+      }
       await expectations.emit(ctx,
-        ctx.random.write.heat([required, false, 12n, selections], { value: utils.sum(selections) }),
+        ctx.random.write.heat([required, section, selections], { value: utils.sum(selections) }),
         ctx.random, 'Heat',
         expectedEmitArgs,
       )
@@ -133,9 +137,13 @@ describe("Random", () => {
         section: utils.section(parts),
         index: parts.index,
       }))
+      const section = {
+        ...utils.defaultSection,
+        provider: ctx.signers[0].account!.address,
+      }
       await expectations.emit(ctx,
         ctx.random.write.heat(
-          [required, false, 12n, selections],
+          [required, section, selections],
           /* { value: utils.sum(selections) }, */
         ),
         ctx.random, 'Heat',
@@ -146,9 +154,13 @@ describe("Random", () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
       const { selections } = await testUtils.selectPreimages(ctx)
       const required = 5n
+      const section = {
+        ...utils.defaultSection,
+        provider: ctx.signers[0].account!.address,
+      }
       await expectations.revertedWithCustomError(ctx.errors,
         ctx.random.write.heat(
-          [required, false, 12n, selections],
+          [required, section, selections],
           { value: utils.sum(selections) - 1n },
         ),
         'MissingPayment',
@@ -156,25 +168,52 @@ describe("Random", () => {
     })
     it('does not allow secrets to be requested twice', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
+      const section = {
+        ...utils.defaultSection,
+        provider: ctx.signers[0].account!.address,
+      }
       await expectations.revertedWithCustomError(ctx.errors, ctx.random.write.heat(
-        [ctx.required, false, 12n, ctx.selections],
+        [ctx.required, section, ctx.selections],
         { value: utils.sum(ctx.selections) },
       ), 'UnableToService')
     })
     describe('the required parameter must be', () => {
       it('greater than 0', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+        const section = {
+          ...utils.defaultSection,
+          provider: ctx.signers[0].account!.address,
+        }
         await expectations.revertedWithCustomError(ctx.errors,
-          ctx.random.write.heat([0n, false, 12n, []]),
+          ctx.random.write.heat([0n, section, []]),
+          'UnableToService',
+        )
+      })
+      it('must have a non zero address', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+        const { selections } = await testUtils.selectPreimages(ctx)
+        const section = {
+          ...utils.defaultSection,
+        }
+        expect(section.provider).to.equal(viem.zeroAddress)
+        await expectations.revertedWithCustomError(ctx.errors,
+          ctx.random.write.heat(
+            [5n, section, selections],
+            { value: utils.sum(selections) },
+          ),
           'UnableToService',
         )
       })
       it('no more than 255', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
         const { selections } = await testUtils.selectPreimages(ctx)
+        const section = {
+          ...utils.defaultSection,
+          provider: ctx.signers[0].account!.address,
+        }
         await expectations.revertedWithCustomError(ctx.errors,
           ctx.random.write.heat(
-            [256n, false, 12n, selections],
+            [256n, section, selections],
             { value: utils.sum(selections) },
           ),
           'UnableToService',
@@ -183,9 +222,13 @@ describe("Random", () => {
       it('greater than or equal to the potential locations', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
         const { selections } = await testUtils.selectPreimages(ctx)
+        const section = {
+          ...utils.defaultSection,
+          provider: ctx.signers[0].account!.address,
+        }
         await expectations.revertedWithCustomError(ctx.errors,
           ctx.random.write.heat(
-            [BigInt(selections.length + 1), false, 12n, selections],
+            [BigInt(selections.length + 1), section, selections],
             { value: utils.sum(selections) },
           ),
           'UnableToService',
@@ -196,9 +239,14 @@ describe("Random", () => {
       it('must equal the preimages being requested', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
         const { selections } = await testUtils.selectPreimages(ctx)
+        const section = {
+          ...utils.defaultSection,
+          provider: ctx.signers[0].account!.address,
+          duration: 1n << 39n,
+        }
         await expectations.revertedWithCustomError(ctx.errors,
           ctx.random.write.heat(
-            [BigInt(selections.length), false, 1n << 39n, selections],
+            [BigInt(selections.length), section, selections],
             { value: utils.sum(selections) },
           ),
           'Misconfigured',
@@ -207,9 +255,15 @@ describe("Random", () => {
       it('must equal the preimages being requested', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
         const { selections } = await testUtils.selectPreimages(ctx)
+        const section = {
+          ...utils.defaultSection,
+          provider: ctx.signers[0].account!.address,
+          duration: 120n,
+          durationIsTimestamp: true,
+        }
         await expectations.revertedWithCustomError(ctx.errors,
           ctx.random.write.heat(
-            [BigInt(selections.length), true, 120n, selections],
+            [BigInt(selections.length), section, selections],
             { value: utils.sum(selections) },
           ),
           'Misconfigured',
@@ -222,7 +276,12 @@ describe("Random", () => {
       it('can detect by checking a section via the reader', async () => {
         const ctx = await helpers.loadFixture(testUtils.deploy)
         const [signer] = ctx.signers
+        const [provider] = ctx.randomnessProviders
         const section = {
+          ...utils.defaultSection,
+          provider: provider.account!.address,
+        }
+        const sec = {
           ...utils.defaultSection,
           provider: signer.account!.address,
         }
@@ -234,19 +293,11 @@ describe("Random", () => {
           value: section.price * 100n,
         }))
         await testUtils.confirmTx(ctx, ctx.random.write.heat([
-          2n,
-          section.durationIsTimestamp,
-          section.duration,
+          2n, sec,
           [{ ...section }, { ...section, index: 9n }], // 0th location
         ], {
           value: section.price * 2n,
         }))
-        // const [selection] = ctx.selections
-        // const provider = selection.signer
-        // const section = {
-        //   ...utils.defaultSection,
-        //   provider: provider.account!.address,
-        // }
         const [len, bitmask] = await ctx.reader.read.consumed([section])
         const offset = len % 8n
         // globally shift so that our target ends up at the right most bit
@@ -468,15 +519,16 @@ describe("Random", () => {
       })
       it('refunded tokens go back to randomness owner', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
-        const { selections, signers, starts } = ctx
+        const { selections, signers, starts, randomnessProviders } = ctx
+        const [provider] = randomnessProviders
         const [start] = starts
         const [signer1, signer2] = signers
         await helpers.mine(12)
         await expectations.changeResults(ctx, ctx.random.write.chop([start.args.key!, selections], {
           account: signer2.account,
         }),
-          [signer1, signer2],
-          [utils.sum(selections) * 2n, 0n],
+          [signer1, signer2, provider],
+          [utils.sum(selections) * 2n, 0n, 0n],
           (opts: expectations.CheckResultOpts) => (
             ctx.random.read.balanceOf([opts.address, viem.zeroAddress], {
               blockNumber: opts.blockNumber,
@@ -511,6 +563,7 @@ describe("Random", () => {
         const chopResult = ctx.random.write.chop(
           [start.args.key!, selections],
         )
+        const provider = await ctx.hre.viem.getPublicClient()
         await expectations.changeResults(ctx,
           chopResult,
           [signer.account!.address],
@@ -694,7 +747,11 @@ describe("Random", () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
         const { selections } = await testUtils.selectPreimages(ctx)
         const [signer] = ctx.signers
-        await expectations.emit(ctx, ctx.random.write.heat([5n, false, 12n, selections], {
+        const section = {
+          ...utils.defaultSection,
+          provider: signer.account!.address,
+        }
+        await expectations.emit(ctx, ctx.random.write.heat([5n, section, selections], {
           value: utils.sum(selections) + oneEther,
         }), ctx.random, 'Heat')
         await expect(ctx.random.read.balanceOf([signer.account!.address, viem.zeroAddress]))
@@ -724,14 +781,22 @@ describe("Random", () => {
             duration: 120n,
           })
         })
+        const { signers } = ctx
+        const [signer] = signers
         const { selections } = await testUtils.selectPreimages(ctx, 5, [{
           ...utils.defaultSection,
           durationIsTimestamp: true,
           duration: 120n,
         }])
         const required = 5n
+        const section = {
+          ...utils.defaultSection,
+          durationIsTimestamp: true,
+          duration: 120n,
+          provider: signer.account!.address,
+        }
         const heatTx = await ctx.random.write.heat([
-          required, true, 120n, selections,
+          required, section, selections,
         ], { value: utils.sum(selections) })
         const receipt = await testUtils.confirmTx(ctx, heatTx)
         const starts = await ctx.random.getEvents.Start({}, {
@@ -800,7 +865,9 @@ describe("Random", () => {
   describe('tokens', () => {
     it('can take tokens as payment', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+      const { signers } = ctx
       const { selections } = await testUtils.selectPreimages(ctx)
+      const [signer] = signers
       const required = 5n
       const expectedUsed = selections.slice(0, Number(required))
       const expectedEmitArgs = expectedUsed.map((parts) => ({
@@ -808,8 +875,12 @@ describe("Random", () => {
         section: utils.section(parts),
         index: parts.index,
       }))
+      const section = {
+        ...utils.defaultSection,
+        provider: signer.account!.address,
+      }
       await expectations.emit(ctx,
-        ctx.random.write.heat([required, false, 12n, selections], { value: utils.sum(selections) }),
+        ctx.random.write.heat([required, section, selections], { value: utils.sum(selections) }),
         ctx.random, 'Heat',
         expectedEmitArgs,
       )
