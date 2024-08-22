@@ -29,6 +29,10 @@ contract Reader {
         rand = _rand;
     }
 
+    /**
+     * retrieve the address that contains preimage bytes
+     * @param info the location of a preimage sstore2 contract on chain
+     */
     function _pointer(
         PreimageLocation.Info calldata info
     ) internal view returns (address) {
@@ -46,12 +50,24 @@ contract Reader {
         return pntr;
     }
 
+    /**
+     * read the bytes held in a preimage section
+     * @param info the location of a preimage on chain
+     */
     function pointer(
         PreimageLocation.Info calldata info
     ) external view returns (bytes memory) {
         return _pointer(info).read();
     }
 
+    /**
+     * get a series of bytes containing bit flags denoting which indicies of a given section have been consumed
+     * @param section the section in question (info where index can be set to zero)
+     * @return len the length in preimages of the section
+     * @return indices a series of bytes containing true bits denoting which indicies,
+     * from left to right, that contain consumed preimages
+     * @dev note that this is a very costly function with (at current chain state) up to 767 external calls
+     */
     function consumed(
         PreimageLocation.Info calldata section
     ) external view returns (uint256 len, bytes memory indices) {
@@ -81,6 +97,10 @@ contract Reader {
         }
     }
 
+    /**
+     * read a preimage's 32 bytes
+     * @param info the location of the preimage to read
+     */
     function at(
         PreimageLocation.Info calldata info
     ) external view returns (bytes32) {

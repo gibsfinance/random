@@ -99,8 +99,7 @@ contract Consumer {
             if (_preimageToSecret[_preimage[id]] != bytes32(ZERO)) {
                 return;
             }
-            bytes32 key = _key[id];
-            IRandom.Randomness memory r = IRandom(rand).randomness(key);
+            IRandom.Randomness memory r = IRandom(rand).randomness(_key[id]);
             bytes32 hashed = revealedSecret.hash();
             if (IRandom(rand).expired({timeline: r.timeline})) {
                 _undermineExpired({
