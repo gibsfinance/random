@@ -17,7 +17,7 @@ event Undermine(uint256 id, bytes32 preimage);
 
 event Chain(bytes32 indexed owner, uint256 id, bytes32 key);
 
-event Reveal(uint256 id, bytes32 formerSecret);
+event ConsumerReveal(uint256 id, bytes32 formerSecret);
 
 contract Consumer {
     using EfficientHashLib for bytes32;
@@ -54,7 +54,7 @@ contract Consumer {
     mapping(uint256 id => bytes32 preimage) internal _preimage;
     mapping(uint256 id => bytes32 key) internal _key;
 
-    function _undermineExpired(uint256 id, bytes32 hashed, IRandom.Randomness memory r) internal {
+    function _undermineExpired(uint256 id, bytes32 hashed, bytes32 seed) internal {
         // order preimage cannot be overriden until after all secrets have been revealed
         // this creates a high incentive for both player 1, and rule enforcer to get secrets on chain
         // before the expired line is crossed. either:
@@ -63,7 +63,7 @@ contract Consumer {
         // 3) if either one waits too long - and allows others overwrite the preimage,
         //    then the benefiting party risks a re-roll of the randomness seed
         unchecked {
-            if (r.seed == bytes32(ZERO)) {
+            if (seed == bytes32(ZERO)) {
                 return;
             }
             if (hashed == _preimage[id]) {
@@ -102,14 +102,18 @@ contract Consumer {
             bytes32 key = _key[id];
             IRandom.Randomness memory r = IRandom(rand).randomness(key);
             bytes32 hashed = revealedSecret.hash();
-            if (IRandom(rand).expired(r.timeline)) {
-                _undermineExpired(id, hashed, r);
+            if (IRandom(rand).expired({timeline: r.timeline})) {
+                _undermineExpired({
+                    id: id,
+                    hashed: hashed,
+                    seed: r.seed
+                });
             }
             if (hashed != _preimage[id]) {
                 revert SecretMismatch();
             }
             _preimageToSecret[hashed] = revealedSecret;
-            emit Reveal({id: id, formerSecret: revealedSecret});
+            emit ConsumerReveal({id: id, formerSecret: revealedSecret});
             // we do not emit an event here because it is more likely that users will simply
             // do it themselves via a contract or only care about the latest
         }
@@ -124,7 +128,12 @@ contract Consumer {
         if (key == bytes32(ZERO)) {
             revert Errors.Misconfigured();
         }
-        return _chainTo(LibMulticaller.senderOrSigner(), underminable, preimage, key);
+        return _chainTo({
+            owner: LibMulticaller.senderOrSigner(),
+            underminable: underminable,
+            preimage: preimage,
+            key: key
+        });
     }
 
     function chainTo(address owner, bool underminable, bytes32 preimage, bytes32 key)
@@ -132,7 +141,12 @@ contract Consumer {
         payable
         returns (uint256)
     {
-        return _chainTo(owner, underminable, preimage, key);
+        return _chainTo({
+            owner: owner,
+            underminable: underminable,
+            preimage: preimage,
+            key: key
+        });
     }
 
     function latestId() external view returns (uint256) {

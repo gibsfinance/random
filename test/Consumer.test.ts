@@ -193,7 +193,7 @@ describe('Consumer', () => {
       ])
       await expectations.emit(ctx,
         multicallTx, ctx.consumer,
-        'Reveal',
+        'ConsumerReveal',
         {
           id: latestId,
           formerSecret: s.secret,
@@ -206,7 +206,7 @@ describe('Consumer', () => {
       ])
       await expectations.not.emit(ctx,
         duplicateMulticallTx, ctx.consumer,
-        'Reveal',
+        'ConsumerReveal',
       )
     })
     it('can reveal after expiry', async () => {
@@ -269,7 +269,7 @@ describe('Consumer', () => {
       await helpers.mine(12)
       await expectations.emit(ctx,
         multicallTx, ctx.consumer,
-        'Reveal',
+        'ConsumerReveal',
         {
           id: latestId,
           formerSecret: s.secret,
@@ -297,7 +297,7 @@ describe('Consumer', () => {
       await expectations.emit(ctx,
         ctx.consumer.write.tell([latestId, s.secret]),
         ctx.consumer,
-        'Reveal',
+        'ConsumerReveal',
         {
           id: latestId,
           formerSecret: s.secret,

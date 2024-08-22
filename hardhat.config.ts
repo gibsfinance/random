@@ -30,6 +30,10 @@ const config: HardhatUserConfig = {
       settings: {
         viaIR: true,
         evmVersion: 'cancun',
+        optimizer: {
+          enabled: true,
+          runs: 1_000,
+        },
       },
     }],
   },
@@ -118,6 +122,9 @@ const config: HardhatUserConfig = {
     baseFee: 100_000,
     tokenPrice: '0.00004',
     currencyDisplayPrecision: 8,
+    reportFormat: 'terminal',
+    showMethodSig: true,
+    trackGasDeltas: true,
   },
 };
 

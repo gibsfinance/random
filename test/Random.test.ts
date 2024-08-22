@@ -428,6 +428,44 @@ describe("Random", () => {
           key: start.args.key!,
         })
       })
+      it('cannot call chop twice', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
+        const { selections, signers, starts } = ctx
+        const [start] = starts
+        await helpers.mine(12)
+        const chopResult = ctx.random.write.chop([start.args.key!, selections], { value: oneEther })
+        await expectations.changeEtherBalances(ctx,
+          chopResult,
+          [signers[0].account!.address, ctx.random.address],
+          [-oneEther, oneEther],
+        )
+        await expectations.emit(ctx, chopResult, ctx.random, 'Chop', {
+          key: start.args.key!,
+        })
+        await expectations.revertedWithCustomError(ctx.random,
+          ctx.random.write.chop([start.args.key!, selections]),
+          'UnableToService',
+        )
+      })
+      it('cannot call cast after chop', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
+        const { selections, signers, starts } = ctx
+        const [start] = starts
+        await helpers.mine(12)
+        const chopResult = ctx.random.write.chop([start.args.key!, selections], { value: oneEther })
+        await expectations.changeEtherBalances(ctx,
+          chopResult,
+          [signers[0].account!.address, ctx.random.address],
+          [-oneEther, oneEther],
+        )
+        await expectations.emit(ctx, chopResult, ctx.random, 'Chop', {
+          key: start.args.key!,
+        })
+        await expectations.revertedWithCustomError(ctx.random,
+          ctx.random.write.cast([start.args.key!, selections, (new Array(selections.length)).fill(viem.zeroHash)]),
+          'UnableToService',
+        )
+      })
       it('refunded tokens go back to randomness owner', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
         const { selections, signers, starts } = ctx
@@ -548,13 +586,31 @@ describe("Random", () => {
     })
     it('can call bleach to shut down a whole section of preimages', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
-      const [provider] = ctx.randomnessProviders
-      await expectations.emit(ctx, ctx.random.write.bleach([{
+      const { randomnessProviders, selections, all } = ctx
+      const [provider] = randomnessProviders
+      const consumedCount = selections.filter((selection) => (
+        selection.signer.account!.address === provider.account!.address
+      )).length
+      const unused = _.filter(all, { provider: provider.account!.address }).length - consumedCount
+      const bleachTx = ctx.random.write.bleach([{
         ...utils.defaultSection,
         provider: provider.account!.address,
       }], {
         account: provider.account!,
-      }), ctx.random, 'Bleach')
+        value: 1n,
+      })
+      await expectations.emit(ctx, bleachTx, ctx.random, 'Bleach')
+      await expectations.changeResults(ctx, bleachTx,
+        [provider.account!.address],
+        [1n + (BigInt(unused) * utils.defaultSection.price)],
+        (opts) => ctx.random.read.balanceOf([opts.address, viem.zeroAddress], {
+          blockNumber: opts.blockNumber,
+        })
+      )
+      await expectations.changeEtherBalances(ctx, bleachTx,
+        [provider.account!.address, ctx.random.address],
+        [-1n, 1n],
+      )
     })
     it('can call bleach on a pointer that does not exist, but will revert', async () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
