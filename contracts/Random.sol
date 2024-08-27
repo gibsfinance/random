@@ -553,8 +553,12 @@ contract Random is IRandom {
             address pntr = data.write(); // deploy a contract with immutable preimages written into it
             _pointers[owner][tkn][info.price][start] = pntr;
             _preimageCount[owner][tkn][info.price] = start + count;
+            info.provider = owner;
+            info.offset = start;
             emit Ink({
+                sender: provider,
                 provider: owner,
+                section: info.section(),
                 offset: (start << ONE_TWO_EIGHT) | (start + count),
                 pointer: pntr
             });
