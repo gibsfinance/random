@@ -1,5 +1,5 @@
 {
-  "name": "hardhat-project",
+  "name": "@gibsfinance/random",
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.7",
     "@nomicfoundation/hardhat-toolbox-viem": "^3.0.0",
@@ -34,6 +34,7 @@
     "test": "NODE_OPTIONS=--max-old-space-size=8192 hardhat --max-memory 8192 test",
     "coverage": "REPORT_GAS=true NODE_OPTIONS=--max-old-space-size=8192 SOLIDITY_COVERAGE=true hardhat --max-memory 8192 coverage",
     "build": "hardhat compile",
+    "deploy": "hardhat ignition deploy",
     "generate-randomness": "tsx ./lib/bin/generate.ts"
   }
 }

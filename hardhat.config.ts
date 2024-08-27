@@ -10,18 +10,18 @@ import 'solidity-coverage'
 import 'hardhat-gas-reporter'
 import 'hardhat-dependency-compiler'
 // import '@nomicfoundation/hardhat-verify'`
-import { main as ink } from './tasks/ink'
+// import { main as ink } from './tasks/ink'
 import { bigint, string } from "hardhat/internal/core/params/argumentTypes";
 
 Error.stackTraceLimit = Infinity
 
 const { env } = process
 
-task('ink', 'writes data on chain')
-  .addOptionalParam('token', 'the token to require as payment', viem.zeroAddress, string)
-  .addOptionalParam('price', 'name the price of each preimage', 0n, bigint)
-  .addOptionalParam('random', 'the contract to look at')
-  .setAction(ink)
+// task('ink', 'writes data on chain')
+//   .addOptionalParam('token', 'the token to require as payment', viem.zeroAddress, string)
+//   .addOptionalParam('price', 'name the price of each preimage', 0n, bigint)
+//   .addOptionalParam('random', 'the contract to look at')
+//   .setAction(ink)
 
 const config: HardhatUserConfig = {
   solidity: {
