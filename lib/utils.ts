@@ -209,6 +209,13 @@ export const section = (inputs: Omit<PreimageInfo, 'index'> = defaultSection) =>
   ]), 'hex')
 }
 
+export const location = (section: viem.Hex, index: bigint | number) => {
+  return viem.keccak256(viem.concatHex([
+    section,
+    viem.numberToHex(index, { size: 32 }),
+  ]), 'hex')
+}
+
 export const sum = (s: PreimageInfo[]) => s.reduce<bigint>((total, { price }) => total + price, 0n)
 
 export const contractName = {
