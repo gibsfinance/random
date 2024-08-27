@@ -36,5 +36,6 @@
     "build": "hardhat compile",
     "deploy": "hardhat ignition deploy",
     "generate-randomness": "tsx ./lib/bin/generate.ts"
-  }
+  },
+  "version": "0.0.1"
 }
