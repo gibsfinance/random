@@ -9,7 +9,9 @@
   },
   "files": [
     "artifacts",
-    "contracts"
+    "contracts",
+    "ignition",
+    "lib"
   ],
   "dependencies": {
     "@nomicfoundation/hardhat-verify": "^2.0.8",
