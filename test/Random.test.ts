@@ -779,6 +779,11 @@ describe("Random", () => {
             })
           )
         )
+        if (!i) {
+          await expectations.not.emit(ctx, ctx.random.write.bleach([section], {
+            account: provider.account!,
+          }), ctx.random, 'Bleach')
+        }
       })
       // await promiseLimit<number>(1).map(iterations, async () => {
       //   const bleachTx = ctx.random.write.bleach([{
