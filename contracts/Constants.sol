@@ -7,7 +7,7 @@ event Bleach(address indexed provider, bytes32 section);
 
 event Reprice(address indexed provider, uint256 pricePer);
 
-event Ink(address sender, address indexed provider, bytes32 section, uint256 offset, address pointer);
+event Ink(address indexed provider, uint256 offset, address pointer);
 
 event Heat(address indexed provider, bytes32 section, uint256 index);
 

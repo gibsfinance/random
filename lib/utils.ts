@@ -230,3 +230,32 @@ export const contractName = {
 } as const
 
 export type Names = typeof contractName
+
+const slots = [
+  'timeline',
+  'seed',
+  'latest',
+  'custodied',
+  'count',
+] as const
+
+const slotList = Object.values(slots)
+
+type Slot = typeof slotList[number]
+
+const byteOptions = { size: 32, dir: 'left' } as const
+
+export const slot = (slot: Slot, location: Partial<PreimageInfo>) => {
+  const index = slots.indexOf(slot)
+  if (slot === 'count') {
+    return viem.keccak256(
+      viem.concatBytes([
+        viem.padBytes(viem.toBytes(location.provider!), byteOptions),
+        viem.toBytes(encodeToken(location)),
+        viem.numberToBytes(location.price!, byteOptions),
+        viem.numberToBytes(index, byteOptions)
+      ]),
+    )
+  }
+  throw new Error('slot not defined')
+}

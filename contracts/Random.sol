@@ -553,12 +553,8 @@ contract Random is IRandom {
             address pntr = data.write(); // deploy a contract with immutable preimages written into it
             _pointers[owner][tkn][info.price][start] = pntr;
             _preimageCount[owner][tkn][info.price] = start + count;
-            info.provider = owner;
-            info.offset = start;
             emit Ink({
-                sender: provider,
                 provider: owner,
-                section: info.section(),
                 offset: (start << ONE_TWO_EIGHT) | (start + count),
                 pointer: pntr
             });
@@ -787,7 +783,6 @@ contract Random is IRandom {
                 encodedToken: encodedToken
             }) / THREE_TWO;
             bytes32 section = info.section();
-            emit Bleach(provider, section);
             // consumes a whole pointer
             uint256 amount;
             uint256 start = info.offset;
@@ -796,6 +791,7 @@ contract Random is IRandom {
             uint256 len;
             uint256 i;
             uint256 flags;
+            uint256 targetedFlags;
             uint256 max = type(uint256).max;
             do {
                 if (len == ZERO) {
@@ -808,23 +804,31 @@ contract Random is IRandom {
                 flags = _accessFlags[info.provider][encodedToken][info.price][
                     start / TWO_FIVE_SIX
                 ];
-                _accessFlags[info.provider][encodedToken][info.price][
-                    start / TWO_FIVE_SIX
-                ] = flags | mask;
-                amount += (info.price * len);
-                i = start % TWO_FIVE_SIX;
-                do {
-                    if (((flags << i) >> TWO_FIVE_FIVE) == ONE) {
-                        amount -= info.price;
-                    }
-                    ++i;
-                } while (i < len);
+                targetedFlags =
+                    (flags << (start % TWO_FIVE_SIX)) >>
+                    (TWO_FIVE_SIX - len);
+                if (targetedFlags < mask) {
+                    _accessFlags[info.provider][encodedToken][info.price][
+                        start / TWO_FIVE_SIX
+                    ] = flags | mask;
+                    amount += (info.price * len);
+                    i = start % TWO_FIVE_SIX;
+                    do {
+                        if (((flags << i) >> TWO_FIVE_FIVE) == ONE) {
+                            amount -= info.price;
+                        }
+                        ++i;
+                    } while (i < len);
+                }
                 start += len;
                 len = TWO_FIVE_SIX;
             } while (start < end);
-            // assume that amount is > 0 otherwise there is not economic reason to run this fn
-            // therefore writing the sstore is always going to have a non zero delta
-            _custodied[provider][info.token] += amount;
+            if (amount > ZERO) {
+                emit Bleach(provider, section);
+                // assume that amount is > 0 otherwise there is not economic reason to run this fn
+                // therefore writing the sstore is always going to have a non zero delta
+                _custodied[provider][info.token] += amount;
+            }
         }
     }
 }
