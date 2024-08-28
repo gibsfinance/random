@@ -531,18 +531,18 @@ contract Random is IRandom {
                 revert Errors.Misconfigured();
             }
             // access control regulated by the sender/signer
-            address provider = LibMulticaller.senderOrSigner();
+            address account = LibMulticaller.senderOrSigner();
             if (msg.value > ZERO) {
-                _custodied[provider][address(0)] += msg.value;
+                _custodied[account][address(0)] += msg.value;
             }
-            uint256 limit = _custodied[provider][info.token];
+            uint256 limit = _custodied[account][info.token];
             uint256 toStake = count * info.price;
             if (limit < toStake) {
                 revert Errors.MissingPayment();
             }
             // at this point, the only address that can unlock this value
             // is one that has access to the secrets or pays for randomness and does not get it in a timely manner
-            _custodied[provider][info.token] -= toStake;
+            _custodied[account][info.token] -= toStake;
             // owner of the newly created randomness set by calldata
             address owner = info.provider;
             if (owner == address(0)) {
@@ -553,8 +553,12 @@ contract Random is IRandom {
             address pntr = data.write(); // deploy a contract with immutable preimages written into it
             _pointers[owner][tkn][info.price][start] = pntr;
             _preimageCount[owner][tkn][info.price] = start + count;
+            info.provider = owner;
+            info.offset = start;
             emit Ink({
+                sender: account,
                 provider: owner,
+                section: info.section(),
                 offset: (start << ONE_TWO_EIGHT) | (start + count),
                 pointer: pntr
             });
@@ -824,7 +828,7 @@ contract Random is IRandom {
                 len = TWO_FIVE_SIX;
             } while (start < end);
             if (amount > ZERO) {
-                emit Bleach(provider, section);
+                emit Bleach({provider: provider, section: section});
                 // assume that amount is > 0 otherwise there is not economic reason to run this fn
                 // therefore writing the sstore is always going to have a non zero delta
                 _custodied[provider][info.token] += amount;

@@ -385,7 +385,19 @@ describe("Random", () => {
         ))
         const partialSecrets = secrets.slice(0, secrets.length - 2)
         partialSecrets.push(viem.zeroHash, viem.zeroHash)
-        await expectations.not.emit(ctx, ctx.random.write.cast([start.args.key!, selections, partialSecrets]), ctx.random, 'Cast')
+        const partialTx = ctx.random.write.cast([start.args.key!, selections, partialSecrets])
+        await expectations.not.emit(ctx, partialTx, ctx.random, 'Cast')
+        const results = await Promise.all(selections.map(async (selection, index) => {
+          if (partialSecrets[index] === viem.zeroHash) return
+          const section = utils.section(selection)
+          await expectations.emit(ctx, partialTx, ctx.random, 'Reveal', {
+            provider: viem.getAddress(selection.provider),
+            location: utils.location(section, selection.index),
+            formerSecret: secretByPreimage.get(selection.preimage),
+          })
+          return true
+        }))
+        expect(_.compact(results).length).to.be.greaterThan(0)
         await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]), ctx.random, 'Cast')
       })
       it('fails if the data pointer is set to a zero address', async () => {
