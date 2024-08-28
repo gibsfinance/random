@@ -12,7 +12,7 @@
     "chai": "^4.5.0",
     "hardhat": "^2.22.9",
     "hardhat-dependency-compiler": "^1.2.1",
-    "hardhat-gas-reporter": "^1.0.8",
+    "hardhat-gas-reporter": "^2.2.1",
     "hardhat-tracer": "^3.1.0",
     "mocha": "^10.7.0",
     "solidity-coverage": "^0.8.12",
@@ -36,7 +36,6 @@
     "test": "NODE_OPTIONS=--max-old-space-size=8192 hardhat --max-memory 8192 test",
     "coverage": "REPORT_GAS=true NODE_OPTIONS=--max-old-space-size=8192 SOLIDITY_COVERAGE=true hardhat --max-memory 8192 coverage",
     "build": "hardhat compile",
-    "deploy": "hardhat ignition deploy",
     "generate-randomness": "tsx ./lib/bin/generate.ts"
   },
   "version": "0.0.4"

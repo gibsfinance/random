@@ -9,9 +9,6 @@ import 'hardhat-tracer'
 import 'solidity-coverage'
 import 'hardhat-gas-reporter'
 import 'hardhat-dependency-compiler'
-// import '@nomicfoundation/hardhat-verify'`
-// import { main as ink } from './tasks/ink'
-import { bigint, string } from "hardhat/internal/core/params/argumentTypes";
 
 Error.stackTraceLimit = Infinity
 
