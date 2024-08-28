@@ -50,7 +50,7 @@ export const revertedWithCustomError = async (contract: viem.GetContractReturnTy
 
 type Filter = any[] | Record<string, any>
 
-export const _emit = async (
+const _emit = async (
   ctx: Context, _hash: viem.Hex | Promise<viem.Hex>,
   contract: viem.GetContractReturnType,
   eventName: string, args?: Filter | Filter[],

@@ -1,4 +1,5 @@
 import * as utils from '../lib/utils'
+import promiseLimit from 'promise-limit'
 import * as viem from 'viem'
 import _ from "lodash"
 import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
@@ -653,10 +654,12 @@ describe("Random", () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
       const { randomnessProviders, selections, all } = ctx
       const [provider] = randomnessProviders
-      const consumedCount = selections.filter((selection) => (
+      const consumedUnder = selections.filter((selection) => (
         selection.signer.account!.address === provider.account!.address
-      )).length
-      const unused = _.filter(all, { provider: provider.account!.address }).length - consumedCount
+      ))
+      const allUnder = _.filter(all, { provider: provider.account!.address })
+      const unused = allUnder.length - consumedUnder.length
+      // console.log('consumed %o', consumedUnder.map(({ index }) => index))
       const bleachTx = ctx.random.write.bleach([{
         ...utils.defaultSection,
         provider: provider.account!.address,
@@ -715,6 +718,93 @@ describe("Random", () => {
       }], {
         account: rp2.account!,
       }), 'SignerMismatch')
+    })
+    it('can call bleach for a partialy consumed section', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { randomnessProviders } = ctx
+      const section = utils.defaultSection
+      const [secretGroup] = await utils.createTestPreimages(section)
+
+      const baselineRequired = 5
+      const maxSecretSet = 32
+      const secrets = secretGroup.slice(0, maxSecretSet)
+      const iterations = _.range(0, maxSecretSet - baselineRequired)
+      const preimages = _.map(secrets, 'preimage')
+      const [provider] = randomnessProviders
+      const bytecode = viem.concatHex(preimages)
+      const template = {
+        ...utils.defaultSection,
+        provider: provider.account!.address,
+      }
+      await utils.limiters.range.map(iterations, async () => {
+        await ctx.random.write.ink([template, bytecode], {
+          account: provider.account!,
+          value: utils.defaultSection.price * BigInt(preimages.length),
+        })
+      })
+      await utils.limiters.range.map(iterations, async (i) => {
+        const required = baselineRequired + i
+        const offset = BigInt(preimages.length) * BigInt(i)
+        const shuffled = _.shuffle(secrets).slice(0, required)
+        const locations = shuffled.map((sec) => ({
+          ...template,
+          offset,
+          index: sec.index,
+        }))
+        await ctx.random.write.heat([BigInt(required), template, locations], {
+          value: utils.defaultSection.price * BigInt(required),
+        })
+      })
+      await utils.limiters.range.map(iterations, async (i) => {
+        const required = BigInt(baselineRequired) + BigInt(i)
+        const offset = BigInt(preimages.length) * BigInt(i)
+        const section = {
+          ...template,
+          offset,
+          index: 0n,
+        }
+        const bleach = ctx.random.write.bleach([section], {
+          account: provider.account!,
+        })
+        await expectations.emit(ctx, bleach, ctx.random, 'Bleach', {
+          provider: viem.getAddress(template.provider),
+          section: utils.section(section),
+        })
+        await expectations.changeResults(ctx, bleach,
+          [provider],
+          [(BigInt(preimages.length) - required) * template.price],
+          (opts) => (
+            ctx.random.read.balanceOf([opts.address, template.token], {
+              blockNumber: opts.blockNumber,
+            })
+          )
+        )
+      })
+      // await promiseLimit<number>(1).map(iterations, async () => {
+      //   const bleachTx = ctx.random.write.bleach([{
+      //     ...utils.defaultSection,
+      //     provider: provider.account!.address,
+      //   }], {
+      //     account: provider.account!,
+      //     value: 1n,
+      //   })
+      //   await expectations.emit(ctx, bleachTx, ctx.random, 'Bleach')
+      //   await expectations.changeResults(ctx, bleachTx,
+      //     [provider.account!.address],
+      //     [1n + (BigInt(unused) * utils.defaultSection.price)],
+      //     (opts) => ctx.random.read.balanceOf([opts.address, viem.zeroAddress], {
+      //       blockNumber: opts.blockNumber,
+      //     })
+      //   )
+      //   await expectations.changeEtherBalances(ctx, bleachTx,
+      //     [provider.account!.address, ctx.random.address],
+      //     [-1n, 1n],
+      //   )
+      // })
+      // const consumedCount = selections.filter((selection) => (
+      //   selection.signer.account!.address === provider.account!.address
+      // )).length
+      // const unused = _.filter(all, { provider: provider.account!.address }).length - consumedCount
     })
   })
   describe('token custody', () => {

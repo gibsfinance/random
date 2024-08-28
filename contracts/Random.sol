@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {LibPRNG} from "solady/src/utils/LibPRNG.sol";
+import {LibBitmap} from "solady/src/utils/LibBitmap.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
@@ -31,6 +32,8 @@ contract Random is IRandom {
 
     using PreimageLocation for PreimageLocation.Info;
 
+    using LibBitmap for LibBitmap.Bitmap;
+
     string private constant _NAMESPACE = "random";
 
     mapping(address account => bytes32 latest) internal _latest;
@@ -40,7 +43,7 @@ contract Random is IRandom {
         internal _preimageCount;
     mapping(address provider => mapping(uint256 token => mapping(uint256 price => mapping(uint256 offset => address pointer))))
         internal _pointers;
-    mapping(address provider => mapping(uint256 token => mapping(uint256 price => mapping(uint256 index => uint256 accessFlags))))
+    mapping(address provider => mapping(uint256 token => mapping(uint256 price => LibBitmap.Bitmap bitmap)))
         internal _accessFlags;
     mapping(address provider => mapping(uint256 token => mapping(uint256 price => mapping(uint256 index => bytes32 formerSecret))))
         internal _formerSecret;
@@ -62,9 +65,13 @@ contract Random is IRandom {
             if (_consumed({info: info, encodedToken: encodedToken})) {
                 return false;
             }
-            _accessFlags[info.provider][encodedToken][info.price][
-                (info.offset + info.index) / TWO_FIVE_SIX
-            ] |= (ONE << ((info.offset + info.index) % TWO_FIVE_SIX));
+            _accessFlags[info.provider][encodedToken][info.price].set(
+                info.offset + info.index
+            );
+            // _accessFlags[info.provider][encodedToken][info.price][
+            //     (info.offset + info.index) / TWO_FIVE_SIX
+            // ] |= (ONE <<
+            //     (TWO_FIVE_FIVE - ((info.offset + info.index) % TWO_FIVE_SIX)));
             emit Heat({
                 provider: info.provider,
                 section: section,
@@ -91,14 +98,10 @@ contract Random is IRandom {
             revert Errors.Misconfigured();
         }
         // returning zero means that the secret has not been requested yet on chain
-        uint256 section = _accessFlags[info.provider][encodedToken][info.price][
-            (info.index + info.offset) / TWO_FIVE_SIX
-        ];
         return
-            ((section <<
-                (TWO_FIVE_FIVE -
-                    ((info.index + info.offset) % TWO_FIVE_SIX))) >>
-                TWO_FIVE_FIVE) == ONE;
+            _accessFlags[info.provider][encodedToken][info.price].get(
+                info.offset + info.index
+            );
     }
 
     /**
@@ -793,7 +796,11 @@ contract Random is IRandom {
             uint256 end = start + size; // exclusive end
             uint256 mask;
             uint256 len;
+            uint256 f;
             uint256 i;
+            LibBitmap.Bitmap storage bitmap = _accessFlags[info.provider][
+                encodedToken
+            ][info.price];
             uint256 flags;
             uint256 targetedFlags;
             uint256 max = type(uint256).max;
@@ -804,25 +811,20 @@ contract Random is IRandom {
                 if (start + len > end) {
                     len = end - start;
                 }
-                mask = (max << (start % TWO_FIVE_SIX)) >> (TWO_FIVE_SIX - len);
-                flags = _accessFlags[info.provider][encodedToken][info.price][
-                    start / TWO_FIVE_SIX
-                ];
-                targetedFlags =
-                    (flags << (start % TWO_FIVE_SIX)) >>
-                    (TWO_FIVE_SIX - len);
+                mask = (max >> (TWO_FIVE_SIX - len)); // at root (all f's to the right)
+                flags = bitmap.map[start / TWO_FIVE_SIX];
+                targetedFlags = ((flags << (TWO_FIVE_SIX - (start + len))) >>
+                    (TWO_FIVE_SIX - len)); // at root (all bits to the right)
                 if (targetedFlags < mask) {
-                    _accessFlags[info.provider][encodedToken][info.price][
-                        start / TWO_FIVE_SIX
-                    ] = flags | mask;
-                    amount += (info.price * len);
+                    bitmap.setBatch(start, len);
                     i = start % TWO_FIVE_SIX;
+                    f = i + len;
                     do {
-                        if (((flags << i) >> TWO_FIVE_FIVE) == ONE) {
-                            amount -= info.price;
+                        if (((flags >> i) & ONE) == ZERO) {
+                            amount += info.price;
                         }
                         ++i;
-                    } while (i < len);
+                    } while (i < f);
                 }
                 start += len;
                 len = TWO_FIVE_SIX;
