@@ -20,6 +20,7 @@ library StorageSlot {
     function asBytes32(bytes32 slot) internal pure returns (Bytes32SlotType) {
         return Bytes32SlotType.wrap(slot);
     }
+
     /**
      * @dev Load the value held at location `slot` in transient storage.
      */

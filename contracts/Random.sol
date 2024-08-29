@@ -48,6 +48,8 @@ contract Random is IRandom {
     mapping(address provider => mapping(uint256 token => mapping(uint256 price => mapping(uint256 index => bytes32 formerSecret))))
         internal _formerSecret;
     mapping(bytes32 key => bool chopped) internal _chopped;
+    mapping(address account => mapping(bytes32 txHash => bytes32 latest))
+        internal _latestInTx;
 
     /**
      * start the process to reveal the ink that was written (using invisible ink as a visual analogy)
@@ -344,7 +346,8 @@ contract Random is IRandom {
         address owner,
         bool onlySameTx
     ) external view override returns (bytes32 key) {
-        key = _NAMESPACE.erc7201Slot().deriveMapping(owner).asBytes32().tload();
+        // key = _NAMESPACE.erc7201Slot().deriveMapping(owner).asBytes32().tload();
+        key = _latestInTx[owner][_txHash()];
         if (key == bytes32(ZERO)) {
             if (onlySameTx) {
                 revert Errors.UnableToService();
@@ -472,16 +475,39 @@ contract Random is IRandom {
                         ? block.timestamp
                         : block.number
                 });
-                _NAMESPACE
-                    .erc7201Slot()
-                    .deriveMapping(settings.provider)
-                    .asBytes32()
-                    .tstore(key);
-                _latest[settings.provider] = key;
+                _storeLatest({provider: settings.provider, key: key});
                 emit Start({owner: settings.provider, key: key});
                 return key;
             }
         }
+    }
+
+    function _storeLatest(address provider, bytes32 key) internal {
+        // _NAMESPACE
+        //     .erc7201Slot()
+        //     .deriveMapping(settings.provider)
+        //     .asBytes32()
+        //     .store(key);
+        // this mode is insufficient for randomness due to block builders
+        // being able to name their own transaction order
+        _latestInTx[provider][_txHash()] = key;
+        _latest[provider] = key;
+    }
+
+    function _txHash() internal view returns (bytes32) {
+        return
+            keccak256(
+                abi.encodePacked(
+                    block.coinbase,
+                    block.basefee,
+                    block.chainid,
+                    block.timestamp,
+                    block.number,
+                    blockhash(block.number),
+                    tx.origin,
+                    tx.gasprice
+                )
+            );
     }
 
     /**
