@@ -209,6 +209,10 @@ export const section = (inputs: Omit<PreimageInfo, 'index'> = defaultSection) =>
   ]), 'hex')
 }
 
+export const template = (inputs: Omit<PreimageInfo, 'index' | 'offset'> = defaultSection) => (
+  section({ ...inputs, offset: 0n })
+)
+
 export const location = (section: viem.Hex, index: bigint | number) => {
   return viem.keccak256(viem.concatHex([
     section,
