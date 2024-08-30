@@ -5,9 +5,9 @@ a repo for generating randomness on chain
 ### deployment notes
 
 ```bash
-npx hardhat ignition deploy ignition/modules/Random.ts --network pulsechainV4 --verify
-npx hardhat ignition deploy ignition/modules/Reader.ts --network pulsechainV4 --verify
-npx hardhat ignition deploy ignition/modules/Consumer.ts --network pulsechainV4 --verify
+npx hardhat ignition deploy ignition/modules/Random.ts --network pulsechainV4
+npx hardhat ignition deploy ignition/modules/Reader.ts --network pulsechainV4
+npx hardhat ignition deploy ignition/modules/Consumer.ts --network pulsechainV4
 npx hardhat ignition verify chain-943 --include-unrelated-contracts
 ```
 
