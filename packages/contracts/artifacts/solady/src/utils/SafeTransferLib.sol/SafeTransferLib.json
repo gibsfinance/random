@@ -1,0 +1,41 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "SafeTransferLib",
+  "sourceName": "solady/src/utils/SafeTransferLib.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "ApproveFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ETHTransferFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "Permit2AmountOverflow",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "Permit2Failed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TransferFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TransferFromFailed",
+      "type": "error"
+    }
+  ],
+  "bytecode": "0x6080806040523460175760399081601c823930815050f35b5f80fdfe5f80fdfea26469706673582212201a62634496810b0d05d3be6210ef8a789418f1508b1f224e8472c01b9e0a5e9264736f6c63430008190033",
+  "deployedBytecode": "0x5f80fdfea26469706673582212201a62634496810b0d05d3be6210ef8a789418f1508b1f224e8472c01b9e0a5e9264736f6c63430008190033",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

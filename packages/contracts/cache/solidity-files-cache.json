@@ -1,0 +1,1088 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/Constants.sol": {
+      "lastModificationDate": 1724863470060,
+      "contentHash": "19ba3efaf547d64f5e48f6a481c819dc",
+      "sourceName": "contracts/Constants.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "Errors"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/Reader.sol": {
+      "lastModificationDate": 1724344565819,
+      "contentHash": "a923afd6d7a7a628e1bd0b5afbbdbfe3",
+      "sourceName": "contracts/Reader.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "multicaller/src/LibMulticaller.sol",
+        "solady/src/utils/SSTORE2.sol",
+        "./implementations/IRandom.sol",
+        "./Constants.sol",
+        "./PreimageLocation.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "Reader"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/implementations/IRandom.sol": {
+      "lastModificationDate": 1724345386452,
+      "contentHash": "670f456594e692d65540531790019098",
+      "sourceName": "contracts/implementations/IRandom.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "../PreimageLocation.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "IRandom"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/PreimageLocation.sol": {
+      "lastModificationDate": 1724255101832,
+      "contentHash": "2e4f9e8450a97d7d3c1883e5878d4f83",
+      "sourceName": "contracts/PreimageLocation.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "solady/src/utils/EfficientHashLib.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "PreimageLocation"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/node_modules/.pnpm/multicaller@1.3.2/node_modules/multicaller/src/LibMulticaller.sol": {
+      "lastModificationDate": 1725290617058,
+      "contentHash": "0518165e1838fbf9597f3e285d0db7c2",
+      "sourceName": "multicaller/src/LibMulticaller.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.4"
+      ],
+      "artifacts": [
+        "LibMulticaller"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/node_modules/.pnpm/solady@0.0.228/node_modules/solady/src/utils/SSTORE2.sol": {
+      "lastModificationDate": 1725290617162,
+      "contentHash": "af7f21077cb906b45154cc6173ffaf4f",
+      "sourceName": "solady/src/utils/SSTORE2.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.4"
+      ],
+      "artifacts": [
+        "SSTORE2"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/node_modules/.pnpm/solady@0.0.228/node_modules/solady/src/utils/EfficientHashLib.sol": {
+      "lastModificationDate": 1725290617148,
+      "contentHash": "deea1409bd09f961870f5ff746405536",
+      "sourceName": "solady/src/utils/EfficientHashLib.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.4"
+      ],
+      "artifacts": [
+        "EfficientHashLib"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/Random.sol": {
+      "lastModificationDate": 1724964843669,
+      "contentHash": "5c7e6b25a7055a55948ecb94875dbffb",
+      "sourceName": "contracts/Random.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "solady/src/utils/SSTORE2.sol",
+        "solady/src/utils/LibPRNG.sol",
+        "solady/src/utils/LibBitmap.sol",
+        "solady/src/utils/SafeTransferLib.sol",
+        "solady/src/utils/EfficientHashLib.sol",
+        "multicaller/src/LibMulticaller.sol",
+        "./implementations/IRandom.sol",
+        "./PreimageLocation.sol",
+        "./Constants.sol",
+        "./StorageSlot.sol",
+        "./SlotDerivation.sol",
+        "./implementations/ConsumerReceiver.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "Random"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/StorageSlot.sol": {
+      "lastModificationDate": 1724953229373,
+      "contentHash": "a6a0a9a8907daf4b990164633d524ff0",
+      "sourceName": "contracts/StorageSlot.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "StorageSlot"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/SlotDerivation.sol": {
+      "lastModificationDate": 1723483888643,
+      "contentHash": "64b633960a12b70b9a6926499e0842d7",
+      "sourceName": "contracts/SlotDerivation.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "SlotDerivation"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/implementations/ConsumerReceiver.sol": {
+      "lastModificationDate": 1724279146530,
+      "contentHash": "89a49b08afbe8ec393440c27da5718a9",
+      "sourceName": "contracts/implementations/ConsumerReceiver.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "ConsumerReceiver"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/node_modules/.pnpm/solady@0.0.228/node_modules/solady/src/utils/LibPRNG.sol": {
+      "lastModificationDate": 1725290617158,
+      "contentHash": "db009807ef1c4f9ccd6a337822053172",
+      "sourceName": "solady/src/utils/LibPRNG.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.4"
+      ],
+      "artifacts": [
+        "LibPRNG"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/node_modules/.pnpm/solady@0.0.228/node_modules/solady/src/utils/SafeTransferLib.sol": {
+      "lastModificationDate": 1725290617161,
+      "contentHash": "a19146dcd450e5f528ccc2c7620a3dcd",
+      "sourceName": "solady/src/utils/SafeTransferLib.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.4"
+      ],
+      "artifacts": [
+        "SafeTransferLib"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/node_modules/.pnpm/solady@0.0.228/node_modules/solady/src/utils/LibBitmap.sol": {
+      "lastModificationDate": 1725290617157,
+      "contentHash": "ffdb7b587a9479f2a8967eb8f785c0f3",
+      "sourceName": "solady/src/utils/LibBitmap.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./LibBit.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.4"
+      ],
+      "artifacts": [
+        "LibBitmap"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/node_modules/.pnpm/solady@0.0.228/node_modules/solady/src/utils/LibBit.sol": {
+      "lastModificationDate": 1725290617156,
+      "contentHash": "0f9b218f823bb843ad9627a663678dc5",
+      "sourceName": "solady/src/utils/LibBit.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.4"
+      ],
+      "artifacts": [
+        "LibBit"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/Consumer.sol": {
+      "lastModificationDate": 1724344878439,
+      "contentHash": "1d1a040390c8c359b29066c082184931",
+      "sourceName": "contracts/Consumer.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "solady/src/utils/SSTORE2.sol",
+        "solady/src/utils/LibPRNG.sol",
+        "solady/src/utils/SafeTransferLib.sol",
+        "solady/src/utils/EfficientHashLib.sol",
+        "multicaller/src/LibMulticaller.sol",
+        "./implementations/IRandom.sol",
+        "./PreimageLocation.sol",
+        "solady/src/tokens/ERC20.sol",
+        "./Constants.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "Consumer"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/node_modules/.pnpm/solady@0.0.228/node_modules/solady/src/tokens/ERC20.sol": {
+      "lastModificationDate": 1725290617150,
+      "contentHash": "6b39f7c149a328e2908199c5a6125d53",
+      "sourceName": "solady/src/tokens/ERC20.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.4"
+      ],
+      "artifacts": [
+        "ERC20"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/FundedConsumer.sol": {
+      "lastModificationDate": 1724862227728,
+      "contentHash": "02bb415fd55da0ad3959869b5d9384ad",
+      "sourceName": "contracts/FundedConsumer.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./Consumer.sol",
+        "./Random.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "FundedConsumer"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/test/ERC20.sol": {
+      "lastModificationDate": 1723582503598,
+      "contentHash": "2e15c36cac9564ef4217a444165239ad",
+      "sourceName": "contracts/test/ERC20.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "solady/src/tokens/ERC20.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "ERC20"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/node_modules/.pnpm/multicaller@1.3.2/node_modules/multicaller/src/MulticallerEtcher.sol": {
+      "lastModificationDate": 1725290617059,
+      "contentHash": "74a5b2a374995a19015fdae0484e3094",
+      "sourceName": "multicaller/src/MulticallerEtcher.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./Multicaller.sol",
+        "./MulticallerWithSender.sol",
+        "./MulticallerWithSigner.sol",
+        "./LibMulticaller.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.4"
+      ],
+      "artifacts": [
+        "MulticallerEtcher"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/node_modules/.pnpm/multicaller@1.3.2/node_modules/multicaller/src/MulticallerWithSigner.sol": {
+      "lastModificationDate": 1725290617059,
+      "contentHash": "9415054b83fc84ba5b6053580a7b6fd4",
+      "sourceName": "multicaller/src/MulticallerWithSigner.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.4"
+      ],
+      "artifacts": [
+        "MulticallerWithSigner"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/node_modules/.pnpm/multicaller@1.3.2/node_modules/multicaller/src/MulticallerWithSender.sol": {
+      "lastModificationDate": 1725290617059,
+      "contentHash": "68351cfb717dbc2fefff1beaff8bc96f",
+      "sourceName": "multicaller/src/MulticallerWithSender.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.4"
+      ],
+      "artifacts": [
+        "MulticallerWithSender"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/node_modules/.pnpm/multicaller@1.3.2/node_modules/multicaller/src/Multicaller.sol": {
+      "lastModificationDate": 1725290617059,
+      "contentHash": "042dd136741b60bb3203ae70cee62488",
+      "sourceName": "multicaller/src/Multicaller.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.4"
+      ],
+      "artifacts": [
+        "Multicaller"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/hardhat-dependency-compiler/multicaller/src/MulticallerWithSender.sol": {
+      "lastModificationDate": 1725291198211,
+      "contentHash": "626917c0bef2e51c8f4d79f20e09f82a",
+      "sourceName": "contracts/hardhat-dependency-compiler/multicaller/src/MulticallerWithSender.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "multicaller/src/MulticallerWithSender.sol"
+      ],
+      "versionPragmas": [
+        ">0.0.0"
+      ],
+      "artifacts": []
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/hardhat-dependency-compiler/multicaller/src/MulticallerWithSigner.sol": {
+      "lastModificationDate": 1725291198211,
+      "contentHash": "103de9df2b793ab88a6a39e9c635dc37",
+      "sourceName": "contracts/hardhat-dependency-compiler/multicaller/src/MulticallerWithSigner.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "multicaller/src/MulticallerWithSigner.sol"
+      ],
+      "versionPragmas": [
+        ">0.0.0"
+      ],
+      "artifacts": []
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/test/Etcher.sol": {
+      "lastModificationDate": 1723483909416,
+      "contentHash": "990eabe2463cc958fe48153cfc6854dc",
+      "sourceName": "contracts/test/Etcher.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "multicaller/src/MulticallerEtcher.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "Etcher"
+      ]
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/hardhat-dependency-compiler/multicaller/src/MulticallerEtcher.sol": {
+      "lastModificationDate": 1725291198211,
+      "contentHash": "4012d8097c802c8623771aff9844d4d0",
+      "sourceName": "contracts/hardhat-dependency-compiler/multicaller/src/MulticallerEtcher.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "multicaller/src/MulticallerEtcher.sol"
+      ],
+      "versionPragmas": [
+        ">0.0.0"
+      ],
+      "artifacts": []
+    },
+    "/Users/michaelmclaughlin/Documents/gibs-finance/random/packages/contracts/contracts/implementations/IERC20.sol": {
+      "lastModificationDate": 1723582503597,
+      "contentHash": "86dd257094157028831d34cf9bae182a",
+      "sourceName": "contracts/implementations/IERC20.sol",
+      "solcConfig": {
+        "version": "0.8.25",
+        "settings": {
+          "viaIR": true,
+          "evmVersion": "cancun",
+          "optimizer": {
+            "enabled": true,
+            "runs": 1000
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "IERC20"
+      ]
+    }
+  }
+}
