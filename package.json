@@ -4,7 +4,7 @@
       "elliptic": "6.5.7",
       "ws": "7.5.10",
       "glob": "11",
-      "hardhat-gas-reporter^1.0.8": "2.2.1"
+      "hardhat-gas-reporter@1.0.8": "2.2.1"
     }
   }
 }

@@ -1,0 +1,40 @@
+services:
+  gibrandom-indexer-postgres:
+    container_name: gibrandom-indexer-postgres
+    image: gibsfinance/postgres
+    shm_size: 16g
+    command: ['postgres']
+    ports:
+      - 9151:5432
+    volumes:
+      - ./packages/indexer/postgres-data:/var/lib/postgresql/data
+    networks:
+      - gibrandom-indexer
+    environment:
+      - POSTGRES_DB=gibrandom-indexer
+      - POSTGRES_USER=gibrandom-indexer
+      - POSTGRES_PASSWORD=password
+
+  gibrandom-indexer:
+    container_name: gibrandom-indexer
+    shm_size: 16g
+    command: bash -c "pnpm run build && pnpm dev"
+    build:
+      context: ./packages/indexer
+    ports:
+      - 42069:42069
+    networks:
+      - gibrandom-indexer
+    volumes:
+      - ./packages/indexer/postgres-data:/app/postgres-data
+    environment:
+      DATABASE_URL: postgres://gibrandom-indexer:password@gibrandom-indexer-postgres:5432/gibrandom-indexer
+      NETWORK: pulsechainV4
+
+networks:
+  gibrandom-indexer:
+    driver: bridge
+
+volumes:
+  gibrandom-indexer:
+    external: true
