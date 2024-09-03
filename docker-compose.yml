@@ -9,10 +9,26 @@ services:
     volumes:
       - ./packages/indexer/postgres-data:/var/lib/postgresql/data
     networks:
-      - gibrandom-indexer
+      - gibrandom
     environment:
       - POSTGRES_DB=gibrandom-indexer
       - POSTGRES_USER=gibrandom-indexer
+      - POSTGRES_PASSWORD=password
+
+  gibrandom-provider-postgres:
+    container_name: gibrandom-provider-postgres
+    image: gibsfinance/postgres
+    shm_size: 16g
+    command: ['postgres']
+    ports:
+      - 9182:5432
+    volumes:
+      - ./packages/provider/postgres-data:/var/lib/postgresql/data
+    networks:
+      - gibrandom
+    environment:
+      - POSTGRES_DB=gibrandom
+      - POSTGRES_USER=gibrandom
       - POSTGRES_PASSWORD=password
 
   gibrandom-indexer:
@@ -24,17 +40,52 @@ services:
     ports:
       - 42069:42069
     networks:
-      - gibrandom-indexer
+      - gibrandom
+    depends_on:
+      - gibrandom-indexer-postgres
     volumes:
       - ./packages/indexer/postgres-data:/app/postgres-data
     environment:
       DATABASE_URL: postgres://gibrandom-indexer:password@gibrandom-indexer-postgres:5432/gibrandom-indexer
-      NETWORK: pulsechainV4
+      NETWORK: "${NETWORK:-pulsechainV4}"
+      HOST: '0.0.0.0'
+
+  gibrandom-provider:
+    container_name: gibrandom-provider
+    shm_size: 16g
+    command: bash -c "bun run provide:dev"
+    build:
+      context: ./packages/provider
+      args:
+        NPM_TOKEN: $NPM_TOKEN
+        INDEXER_URL: http://gibrandom-indexer:42069
+    networks:
+      - gibrandom
+    depends_on:
+      - gibrandom-provider-postgres
+    volumes:
+      - ./packages/provider/postgres-data:/app/postgres-data
+      - ./packages/provider/package.json:/app/package.json
+      - ./packages/provider/src:/app/src
+      - ./packages/provider/pnpm-lock.yaml:/app/pnpm-lock.yaml
+      - ./packages/provider/tsconfig.json:/app/tsconfig.json
+      - ./packages/provider/codegen.config.cjs:/app/codegen.config.cjs
+      - ./packages/provider/config.ts:/app/config.ts
+      - ./packages/provider/knexfile.ts:/app/knexfile.ts
+      - ./packages/provider/.npmrc:/app/.npmrc
+    environment:
+      DATABASE_URL: postgres://gibrandom:password@gibrandom-provider-postgres:5432/gibrandom
+      DEBUG: '${DEBUG:-💬}'
+      INDEXER_URL: http://gibrandom-indexer:42069
+      MNEMONIC: $MNEMONIC
+      RANDOMNESS_MNEMONIC: $RANDOMNESS_MNEMONIC
+      CHAIN_ID: 943
+      NPM_TOKEN: $NPM_TOKEN
 
 networks:
-  gibrandom-indexer:
+  gibrandom:
     driver: bridge
 
 volumes:
-  gibrandom-indexer:
+  gibrandom:
     external: true
