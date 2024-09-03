@@ -21,8 +21,6 @@ const database = {
   name: 'gibrandom',
 }
 
-console.log(database)
-
 const randomness = new Map<number, RandomnessConfig>([
   [pulsechainV4.id, {
     addresses: {
