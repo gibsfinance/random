@@ -45,6 +45,14 @@ services:
       - gibrandom-indexer-postgres
     volumes:
       - ./packages/indexer/postgres-data:/app/postgres-data
+      - ./packages/indexer/generated:/app/generated
+      - ./packages/indexer/src:/app/src
+      - ./packages/indexer/.eslintrc.json:/app/.eslintrc.json
+      - ./packages/indexer/pnpm-lock.yaml:/app/pnpm-lock.yaml
+      - ./packages/indexer/ponder-env.d.ts:/app/ponder-env.d.ts
+      - ./packages/indexer/ponder.config.ts:/app/ponder.config.ts
+      - ./packages/indexer/ponder.schema.ts:/app/ponder.schema.ts
+      - ./packages/indexer/tsconfig.json:/app/tsconfig.json
     environment:
       DATABASE_URL: postgres://gibrandom-indexer:password@gibrandom-indexer-postgres:5432/gibrandom-indexer
       NETWORK: "${NETWORK:-pulsechainV4}"

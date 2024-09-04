@@ -44,5 +44,5 @@
     "build": "hardhat compile",
     "generate-randomness": "tsx ./lib/bin/generate.ts"
   },
-  "version": "0.0.10"
+  "version": "0.0.12"
 }

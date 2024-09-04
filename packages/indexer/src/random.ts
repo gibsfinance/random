@@ -290,16 +290,3 @@ ponder.on('Random:Bleach', async ({ event, context }) => {
     },
   })
 })
-
-ponder.on('Reader:Ok', async ({ event, context }) => {
-  const { section } = event.args
-  const pointerId = scopedId.pointer(context, section)
-  await upsertBlock(context, event)
-  const tx = await upsertTransaction(context, event)
-  await context.db.Pointer.update({
-    id: pointerId,
-    data: {
-      lastOkTransactionId: tx.id,
-    },
-  })
-})
