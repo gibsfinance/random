@@ -50,6 +50,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           flag-name: ${{matrix.os}}-node-${{ matrix.node }}
           parallel: true
+          path-to-lcov: packages/contracts/coverage/lcov.info
       # - name: Deploy MkDocs
       #   uses: mhausenblas/mkdocs-deploy-gh-pages@1.26
 
@@ -71,7 +72,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           parallel-finished: true
-          files: packages/contracts/coverage/lcov.info
+          path-to-lcov: packages/contracts/coverage/lcov.info
 
       # - name: Create Artifact
       #   uses: actions/upload-pages-artifact
