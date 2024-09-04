@@ -129,7 +129,7 @@ export type Cast = {
   id: Scalars['String']['output'];
   index: Scalars['Int']['output'];
   key: Scalars['String']['output'];
-  reveal?: Maybe<RevealPage>;
+  reveal?: Maybe<LinkPage>;
   seed?: Maybe<Scalars['String']['output']>;
   start: Start;
   startId: Scalars['String']['output'];
@@ -144,7 +144,7 @@ export type CastRevealArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   orderBy?: InputMaybe<Scalars['String']['input']>;
   orderDirection?: InputMaybe<Scalars['String']['input']>;
-  where?: InputMaybe<RevealFilter>;
+  where?: InputMaybe<LinkFilter>;
 };
 
 export type CastFilter = {
@@ -565,6 +565,69 @@ export type InkPage = {
   pageInfo: PageInfo;
 };
 
+export type Link = {
+  __typename?: 'Link';
+  cast?: Maybe<Cast>;
+  castId?: Maybe<Scalars['String']['output']>;
+  id: Scalars['String']['output'];
+  index: Scalars['Int']['output'];
+  preimage: Preimage;
+  preimageId: Scalars['String']['output'];
+  transaction: Transaction;
+  transactionId: Scalars['String']['output'];
+};
+
+export type LinkFilter = {
+  AND?: InputMaybe<Array<InputMaybe<LinkFilter>>>;
+  OR?: InputMaybe<Array<InputMaybe<LinkFilter>>>;
+  castId?: InputMaybe<Scalars['String']['input']>;
+  castId_gt?: InputMaybe<Scalars['String']['input']>;
+  castId_gte?: InputMaybe<Scalars['String']['input']>;
+  castId_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  castId_lt?: InputMaybe<Scalars['String']['input']>;
+  castId_lte?: InputMaybe<Scalars['String']['input']>;
+  castId_not?: InputMaybe<Scalars['String']['input']>;
+  castId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  id?: InputMaybe<Scalars['String']['input']>;
+  id_gt?: InputMaybe<Scalars['String']['input']>;
+  id_gte?: InputMaybe<Scalars['String']['input']>;
+  id_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  id_lt?: InputMaybe<Scalars['String']['input']>;
+  id_lte?: InputMaybe<Scalars['String']['input']>;
+  id_not?: InputMaybe<Scalars['String']['input']>;
+  id_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  index?: InputMaybe<Scalars['Int']['input']>;
+  index_gt?: InputMaybe<Scalars['Int']['input']>;
+  index_gte?: InputMaybe<Scalars['Int']['input']>;
+  index_in?: InputMaybe<Array<InputMaybe<Scalars['Int']['input']>>>;
+  index_lt?: InputMaybe<Scalars['Int']['input']>;
+  index_lte?: InputMaybe<Scalars['Int']['input']>;
+  index_not?: InputMaybe<Scalars['Int']['input']>;
+  index_not_in?: InputMaybe<Array<InputMaybe<Scalars['Int']['input']>>>;
+  preimageId?: InputMaybe<Scalars['String']['input']>;
+  preimageId_gt?: InputMaybe<Scalars['String']['input']>;
+  preimageId_gte?: InputMaybe<Scalars['String']['input']>;
+  preimageId_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  preimageId_lt?: InputMaybe<Scalars['String']['input']>;
+  preimageId_lte?: InputMaybe<Scalars['String']['input']>;
+  preimageId_not?: InputMaybe<Scalars['String']['input']>;
+  preimageId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  transactionId?: InputMaybe<Scalars['String']['input']>;
+  transactionId_gt?: InputMaybe<Scalars['String']['input']>;
+  transactionId_gte?: InputMaybe<Scalars['String']['input']>;
+  transactionId_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  transactionId_lt?: InputMaybe<Scalars['String']['input']>;
+  transactionId_lte?: InputMaybe<Scalars['String']['input']>;
+  transactionId_not?: InputMaybe<Scalars['String']['input']>;
+  transactionId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+};
+
+export type LinkPage = {
+  __typename?: 'LinkPage';
+  items: Array<Link>;
+  pageInfo: PageInfo;
+};
+
 export type PageInfo = {
   __typename?: 'PageInfo';
   endCursor?: Maybe<Scalars['String']['output']>;
@@ -751,6 +814,8 @@ export type Preimage = {
   heatId?: Maybe<Scalars['String']['output']>;
   id: Scalars['String']['output'];
   index: Scalars['Int']['output'];
+  link?: Maybe<Link>;
+  linkId?: Maybe<Scalars['String']['output']>;
   pointer: Pointer;
   pointerId: Scalars['String']['output'];
   reveal?: Maybe<Reveal>;
@@ -810,6 +875,14 @@ export type PreimageFilter = {
   index_lte?: InputMaybe<Scalars['Int']['input']>;
   index_not?: InputMaybe<Scalars['Int']['input']>;
   index_not_in?: InputMaybe<Array<InputMaybe<Scalars['Int']['input']>>>;
+  linkId?: InputMaybe<Scalars['String']['input']>;
+  linkId_gt?: InputMaybe<Scalars['String']['input']>;
+  linkId_gte?: InputMaybe<Scalars['String']['input']>;
+  linkId_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  linkId_lt?: InputMaybe<Scalars['String']['input']>;
+  linkId_lte?: InputMaybe<Scalars['String']['input']>;
+  linkId_not?: InputMaybe<Scalars['String']['input']>;
+  linkId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
   pointerId?: InputMaybe<Scalars['String']['input']>;
   pointerId_gt?: InputMaybe<Scalars['String']['input']>;
   pointerId_gte?: InputMaybe<Scalars['String']['input']>;
@@ -893,6 +966,8 @@ export type Query = {
   heats: HeatPage;
   ink?: Maybe<Ink>;
   inks: InkPage;
+  link?: Maybe<Link>;
+  links: LinkPage;
   pointer?: Maybe<Pointer>;
   pointers: PointerPage;
   preimage?: Maybe<Preimage>;
@@ -1030,6 +1105,21 @@ export type QueryInksArgs = {
 };
 
 
+export type QueryLinkArgs = {
+  id: Scalars['String']['input'];
+};
+
+
+export type QueryLinksArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  orderBy?: InputMaybe<Scalars['String']['input']>;
+  orderDirection?: InputMaybe<Scalars['String']['input']>;
+  where?: InputMaybe<LinkFilter>;
+};
+
+
 export type QueryPointerArgs = {
   id: Scalars['String']['input'];
 };
@@ -1136,8 +1226,6 @@ export type QueryUnveilsArgs = {
 
 export type Reveal = {
   __typename?: 'Reveal';
-  cast?: Maybe<Cast>;
-  castId?: Maybe<Scalars['String']['output']>;
   id: Scalars['String']['output'];
   index: Scalars['Int']['output'];
   preimage: Preimage;
@@ -1149,14 +1237,6 @@ export type Reveal = {
 export type RevealFilter = {
   AND?: InputMaybe<Array<InputMaybe<RevealFilter>>>;
   OR?: InputMaybe<Array<InputMaybe<RevealFilter>>>;
-  castId?: InputMaybe<Scalars['String']['input']>;
-  castId_gt?: InputMaybe<Scalars['String']['input']>;
-  castId_gte?: InputMaybe<Scalars['String']['input']>;
-  castId_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
-  castId_lt?: InputMaybe<Scalars['String']['input']>;
-  castId_lte?: InputMaybe<Scalars['String']['input']>;
-  castId_not?: InputMaybe<Scalars['String']['input']>;
-  castId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
   id?: InputMaybe<Scalars['String']['input']>;
   id_gt?: InputMaybe<Scalars['String']['input']>;
   id_gte?: InputMaybe<Scalars['String']['input']>;
@@ -1599,7 +1679,7 @@ export type Cast = {
   id: Scalars['String']['output'];
   index: Scalars['Int']['output'];
   key: Scalars['String']['output'];
-  reveal?: Maybe<RevealPage>;
+  reveal?: Maybe<LinkPage>;
   seed?: Maybe<Scalars['String']['output']>;
   start: Start;
   startId: Scalars['String']['output'];
@@ -1614,7 +1694,7 @@ export type CastRevealArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   orderBy?: InputMaybe<Scalars['String']['input']>;
   orderDirection?: InputMaybe<Scalars['String']['input']>;
-  where?: InputMaybe<RevealFilter>;
+  where?: InputMaybe<LinkFilter>;
 };
 
 export type CastFilter = {
@@ -2035,6 +2115,69 @@ export type InkPage = {
   pageInfo: PageInfo;
 };
 
+export type Link = {
+  __typename?: 'Link';
+  cast?: Maybe<Cast>;
+  castId?: Maybe<Scalars['String']['output']>;
+  id: Scalars['String']['output'];
+  index: Scalars['Int']['output'];
+  preimage: Preimage;
+  preimageId: Scalars['String']['output'];
+  transaction: Transaction;
+  transactionId: Scalars['String']['output'];
+};
+
+export type LinkFilter = {
+  AND?: InputMaybe<Array<InputMaybe<LinkFilter>>>;
+  OR?: InputMaybe<Array<InputMaybe<LinkFilter>>>;
+  castId?: InputMaybe<Scalars['String']['input']>;
+  castId_gt?: InputMaybe<Scalars['String']['input']>;
+  castId_gte?: InputMaybe<Scalars['String']['input']>;
+  castId_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  castId_lt?: InputMaybe<Scalars['String']['input']>;
+  castId_lte?: InputMaybe<Scalars['String']['input']>;
+  castId_not?: InputMaybe<Scalars['String']['input']>;
+  castId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  id?: InputMaybe<Scalars['String']['input']>;
+  id_gt?: InputMaybe<Scalars['String']['input']>;
+  id_gte?: InputMaybe<Scalars['String']['input']>;
+  id_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  id_lt?: InputMaybe<Scalars['String']['input']>;
+  id_lte?: InputMaybe<Scalars['String']['input']>;
+  id_not?: InputMaybe<Scalars['String']['input']>;
+  id_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  index?: InputMaybe<Scalars['Int']['input']>;
+  index_gt?: InputMaybe<Scalars['Int']['input']>;
+  index_gte?: InputMaybe<Scalars['Int']['input']>;
+  index_in?: InputMaybe<Array<InputMaybe<Scalars['Int']['input']>>>;
+  index_lt?: InputMaybe<Scalars['Int']['input']>;
+  index_lte?: InputMaybe<Scalars['Int']['input']>;
+  index_not?: InputMaybe<Scalars['Int']['input']>;
+  index_not_in?: InputMaybe<Array<InputMaybe<Scalars['Int']['input']>>>;
+  preimageId?: InputMaybe<Scalars['String']['input']>;
+  preimageId_gt?: InputMaybe<Scalars['String']['input']>;
+  preimageId_gte?: InputMaybe<Scalars['String']['input']>;
+  preimageId_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  preimageId_lt?: InputMaybe<Scalars['String']['input']>;
+  preimageId_lte?: InputMaybe<Scalars['String']['input']>;
+  preimageId_not?: InputMaybe<Scalars['String']['input']>;
+  preimageId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  transactionId?: InputMaybe<Scalars['String']['input']>;
+  transactionId_gt?: InputMaybe<Scalars['String']['input']>;
+  transactionId_gte?: InputMaybe<Scalars['String']['input']>;
+  transactionId_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  transactionId_lt?: InputMaybe<Scalars['String']['input']>;
+  transactionId_lte?: InputMaybe<Scalars['String']['input']>;
+  transactionId_not?: InputMaybe<Scalars['String']['input']>;
+  transactionId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+};
+
+export type LinkPage = {
+  __typename?: 'LinkPage';
+  items: Array<Link>;
+  pageInfo: PageInfo;
+};
+
 export type PageInfo = {
   __typename?: 'PageInfo';
   endCursor?: Maybe<Scalars['String']['output']>;
@@ -2221,6 +2364,8 @@ export type Preimage = {
   heatId?: Maybe<Scalars['String']['output']>;
   id: Scalars['String']['output'];
   index: Scalars['Int']['output'];
+  link?: Maybe<Link>;
+  linkId?: Maybe<Scalars['String']['output']>;
   pointer: Pointer;
   pointerId: Scalars['String']['output'];
   reveal?: Maybe<Reveal>;
@@ -2280,6 +2425,14 @@ export type PreimageFilter = {
   index_lte?: InputMaybe<Scalars['Int']['input']>;
   index_not?: InputMaybe<Scalars['Int']['input']>;
   index_not_in?: InputMaybe<Array<InputMaybe<Scalars['Int']['input']>>>;
+  linkId?: InputMaybe<Scalars['String']['input']>;
+  linkId_gt?: InputMaybe<Scalars['String']['input']>;
+  linkId_gte?: InputMaybe<Scalars['String']['input']>;
+  linkId_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  linkId_lt?: InputMaybe<Scalars['String']['input']>;
+  linkId_lte?: InputMaybe<Scalars['String']['input']>;
+  linkId_not?: InputMaybe<Scalars['String']['input']>;
+  linkId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
   pointerId?: InputMaybe<Scalars['String']['input']>;
   pointerId_gt?: InputMaybe<Scalars['String']['input']>;
   pointerId_gte?: InputMaybe<Scalars['String']['input']>;
@@ -2363,6 +2516,8 @@ export type Query = {
   heats: HeatPage;
   ink?: Maybe<Ink>;
   inks: InkPage;
+  link?: Maybe<Link>;
+  links: LinkPage;
   pointer?: Maybe<Pointer>;
   pointers: PointerPage;
   preimage?: Maybe<Preimage>;
@@ -2500,6 +2655,21 @@ export type QueryInksArgs = {
 };
 
 
+export type QueryLinkArgs = {
+  id: Scalars['String']['input'];
+};
+
+
+export type QueryLinksArgs = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  before?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  orderBy?: InputMaybe<Scalars['String']['input']>;
+  orderDirection?: InputMaybe<Scalars['String']['input']>;
+  where?: InputMaybe<LinkFilter>;
+};
+
+
 export type QueryPointerArgs = {
   id: Scalars['String']['input'];
 };
@@ -2606,8 +2776,6 @@ export type QueryUnveilsArgs = {
 
 export type Reveal = {
   __typename?: 'Reveal';
-  cast?: Maybe<Cast>;
-  castId?: Maybe<Scalars['String']['output']>;
   id: Scalars['String']['output'];
   index: Scalars['Int']['output'];
   preimage: Preimage;
@@ -2619,14 +2787,6 @@ export type Reveal = {
 export type RevealFilter = {
   AND?: InputMaybe<Array<InputMaybe<RevealFilter>>>;
   OR?: InputMaybe<Array<InputMaybe<RevealFilter>>>;
-  castId?: InputMaybe<Scalars['String']['input']>;
-  castId_gt?: InputMaybe<Scalars['String']['input']>;
-  castId_gte?: InputMaybe<Scalars['String']['input']>;
-  castId_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
-  castId_lt?: InputMaybe<Scalars['String']['input']>;
-  castId_lte?: InputMaybe<Scalars['String']['input']>;
-  castId_not?: InputMaybe<Scalars['String']['input']>;
-  castId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
   id?: InputMaybe<Scalars['String']['input']>;
   id_gt?: InputMaybe<Scalars['String']['input']>;
   id_gte?: InputMaybe<Scalars['String']['input']>;

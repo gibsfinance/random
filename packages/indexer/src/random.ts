@@ -170,13 +170,13 @@ ponder.on('Random:Start', async ({ event, context }) => {
   })
 })
 
-ponder.on('Random:Reveal', async ({ event, context }) => {
+ponder.on('Random:Link', async ({ event, context }) => {
   const {
     // provider,
     location,
     formerSecret,
   } = event.args
-  const revealId = scopedId.reveal(context, location)
+  const linkId = scopedId.link(context, location)
   const preimageId = scopedId.preimage(context, location)
   await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
@@ -184,6 +184,7 @@ ponder.on('Random:Reveal', async ({ event, context }) => {
     id: preimageId,
     data: {
       secret: formerSecret,
+      linkId,
     },
   })
   await context.db.Pointer.update({
@@ -192,8 +193,8 @@ ponder.on('Random:Reveal', async ({ event, context }) => {
       lastOkTransactionId: tx.id,
     },
   })
-  await context.db.Reveal.create({
-    id: revealId,
+  await context.db.Link.create({
+    id: linkId,
     data: {
       index: event.log.logIndex,
       preimageId,
@@ -239,6 +240,35 @@ ponder.on('Random:Cast', async ({ event, context }) => {
       key,
       startId,
       seed,
+    },
+  })
+})
+
+ponder.on('Random:Reveal', async ({ event, context }) => {
+  await upsertBlock(context, event)
+  const tx = await upsertTransaction(context, event)
+  const preimageId = scopedId.preimage(context, event.args.location)
+  const revealCreate = {
+    index: event.log.logIndex,
+    transactionId: tx.id,
+    preimageId,
+  }
+  const reveal = await context.db.Reveal.upsert({
+    id: scopedId.reveal(context, event.args.location),
+    create: revealCreate,
+    update: revealCreate,
+  })
+  const preimage = await context.db.Preimage.update({
+    id: preimageId,
+    data: {
+      secret: event.args.formerSecret,
+      revealId: reveal.id,
+    },
+  })
+  await context.db.Pointer.update({
+    id: preimage.pointerId,
+    data: {
+      lastOkTransactionId: tx.id,
     },
   })
 })

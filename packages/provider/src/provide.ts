@@ -4,7 +4,7 @@ import { indexer } from './indexer'
 import { signers } from './signers'
 import config from '../config'
 import { generatePreimages, generateSecret, generateSeed } from './randomenss'
-import { addresses, contracts, token } from './contracts'
+import { addresses, contracts, getLatestBaseFee, token } from './contracts'
 import { chain, publicClient } from './chain'
 import { slot } from './slots'
 import { db } from './db'
@@ -13,7 +13,7 @@ import * as randomUtils from '@gibs/random/lib/utils'
 import _ from 'lodash'
 import { log } from './logger'
 import { Secret } from 'knex/types/tables'
-import { msgBoard } from './msgboard'
+import { Random$Type } from "@gibs/random/artifacts/contracts/Random.sol/Random";
 
 const outstandingSecrets = () => (
   db.select('*').from(tableNames.secret)
@@ -252,8 +252,28 @@ const checkHeat = async () => {
     provider: provider.account!.address,
     template_in: templates,
   })
-  const preimagesObjects = pointers.items.flatMap(({ preimages }) => (
-    preimages!.items
+  const preimagesObjects = pointers.items.flatMap(({
+    preimages,
+    provider,
+    token,
+    duration,
+    durationIsTimestamp,
+    price,
+    offset,
+  }) => (
+    preimages!.items.map((preimage) => ({
+      location: {
+        provider: provider as viem.Hex,
+        token: token as viem.Hex,
+        duration,
+        durationIsTimestamp,
+        price,
+        offset,
+        index: BigInt(preimage.index),
+      },
+      data: preimage.data as viem.Hex,
+      heat: preimage.heat,
+    }))
   ))
   const sorted = _.sortBy(preimagesObjects, [
     (p) => +p.heat!.transaction.block.timestamp,
@@ -263,49 +283,89 @@ const checkHeat = async () => {
   const preimageHashes = sorted.map(({ data }) => data) as viem.Hex[]
 
   const preimageToSecret = await generateSecretsFromPreimages(preimageHashes)
-  const msgboard = msgBoard()
-  const contents = await msgboard.content()
-  for (const p of sorted) {
-    const preimage = p.data as viem.Hex
-    const messages = contents[preimage] || {}
-    const secret = preimageToSecret.get(preimage)!
-    if (Object.entries(messages).find(([_key, { data }]) => data === secret)) {
-      log('existing work     %o', preimage)
-      continue
-    }
-    log('performing work   %o', preimage)
-    // const processes: Subprocess<'ignore', 'pipe', 'inherit'>[] = []
-    // const serializedWork = await Promise.race(
-    //   _.range(0, 8).map((i) => {
-    //     return new Promise<string>((resolve) => {
-    //       let first = false
-    //       const child = Bun.spawn({
-    //         cmd: ['bun', './src/dowork'],
-    //         serialization: 'json',
-    //         // stdin: 'pipe',
-    //         ipc(validWork, child) {
-    //           log(validWork)
-    //           if (!first) {
-    //             child.send(JSON.stringify({ work: true, start: (i + 1).toString(), category: preimage, data: secret }))
-    //             first = true
-    //             return
-    //           }
-    //           resolve(validWork.toString())
-    //         },
-    //       })
-    //       processes.push(child)
-    //     })
-    //   })
-    // )
-    // processes.forEach((sp) => {
-    //   sp.kill()
-    // })
-    // const work = Work.fromJSON(serializedWork)
-    const msgboard = msgBoard()
-    const work = await msgboard.doPoW(preimage, secret)
-    const id = await msgboard.add(work.toRLP())
-    log('added work        %o', preimage)
+  const { random, multicallerWithSender } = contracts()
+  const lastBaseFee = await getLatestBaseFee()
+  const overrides = {
+    account: provider.account!,
+    gasLimit: 100_000n * BigInt(preimageToSecret.size),
+    maxFeePerGas: lastBaseFee * 2n,
+    maxPriorityFeePerGas: lastBaseFee > 10n ? lastBaseFee / 10n : 1n,
+    type: 'eip1559',
+  } as const
+  if (preimageToSecret.size === 0) return
+  if (preimageToSecret.size === 1) {
+    const [first] = sorted
+    const secret = preimageToSecret.get(first.data)!
+    const revealTx = await random.write.reveal(
+      [first.location, secret],
+      overrides,
+    )
+    log('reveal 1: %o', revealTx)
+    await publicClient.waitForTransactionReceipt({
+      hash: revealTx,
+    })
+  } else {
+    const targets = (new Array(preimageToSecret.size)).fill(random.address)
+    const data = sorted.map((input) => (
+      viem.encodeFunctionData({
+        abi: random.abi as Random$Type["abi"],
+        functionName: 'reveal',
+        args: [input.location, preimageToSecret.get(input.data)!],
+      })
+    ))
+    const values = (new Array(targets.length)).fill(0n)
+    const tx = await multicallerWithSender.write.aggregateWithSender(
+      [targets, data, values],
+      overrides,
+    )
+    log('reveal %o: %o', targets.length, tx)
+    await publicClient.waitForTransactionReceipt({
+      hash: tx,
+    })
   }
+  // const msgboard = msgBoard()
+  // const contents = await msgboard.content()
+  // for (const p of sorted) {
+  //   const preimage = p.data as viem.Hex
+  //   const messages = contents[preimage] || {}
+  //   const secret = preimageToSecret.get(preimage)!
+  //   if (Object.entries(messages).find(([_key, { data }]) => data === secret)) {
+  //     log('existing work     %o', preimage)
+  //     continue
+  //   }
+  //   log('performing work   %o', preimage)
+  // const processes: Subprocess<'ignore', 'pipe', 'inherit'>[] = []
+  // const serializedWork = await Promise.race(
+  //   _.range(0, 8).map((i) => {
+  //     return new Promise<string>((resolve) => {
+  //       let first = false
+  //       const child = Bun.spawn({
+  //         cmd: ['bun', './src/dowork'],
+  //         serialization: 'json',
+  //         // stdin: 'pipe',
+  //         ipc(validWork, child) {
+  //           log(validWork)
+  //           if (!first) {
+  //             child.send(JSON.stringify({ work: true, start: (i + 1).toString(), category: preimage, data: secret }))
+  //             first = true
+  //             return
+  //           }
+  //           resolve(validWork.toString())
+  //         },
+  //       })
+  //       processes.push(child)
+  //     })
+  //   })
+  // )
+  // processes.forEach((sp) => {
+  //   sp.kill()
+  // })
+  // const work = Work.fromJSON(serializedWork)
+  //   const msgboard = msgBoard()
+  //   const work = await msgboard.doPoW(preimage, secret)
+  //   const id = await msgboard.add(work.toRLP())
+  //   log('added work        %o', preimage)
+  // }
 }
 
 const hasAdequateDeposits = async (section: randomUtils.PreimageInfo, runner: viem.WalletClient, count: number) => {
@@ -323,8 +383,8 @@ const hasAdequateDeposits = async (section: randomUtils.PreimageInfo, runner: vi
 }
 
 const intervals = new Map<threads.Runner, number>([
-  [checkSurplus, 60_000],
-  [checkHeat, 15_000],
+  [checkSurplus, 120_000],
+  [checkHeat, 10_000],
 ])
 
 const notEnoughFundsLog = (token: viem.Hex, availableAddresses: viem.Hex[]) => {

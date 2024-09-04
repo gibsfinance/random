@@ -6,12 +6,11 @@ import * as threads from './threads'
 import { contracts, getLatestBaseFee } from "./contracts"
 import { signers } from "./signers"
 import * as randomUtils from '@gibs/random/lib/utils'
-import { msgBoard } from "./msgboard"
 import { db } from "./db"
 import { tableNames } from "./db/tables"
 import { generateSeed } from "./randomenss"
-import { Message } from "@pulsechain/msgboard"
 import { log } from "./logger"
+import _ from "lodash"
 
 const getOutstanding = async (template: viem.Hex) => {
   const [count] = await db.count('*')
@@ -26,22 +25,20 @@ const getOutstanding = async (template: viem.Hex) => {
 
 const consumeRandomness = async () => {
   const conf = config.randomness.get(chain.id)!
-  const { provider } = await signers()
+  const { consumer } = await signers()
+  const lastBaseFee = await getLatestBaseFee()
+  const overrides = {
+    account: consumer.account!,
+    maxFeePerGas: lastBaseFee * 2n,
+    maxPriorityFeePerGas: lastBaseFee > 10n ? lastBaseFee / 10n : 1n,
+    type: 'eip1559',
+    gas: 10_000_000n,
+  } as const
   await Promise.all(conf.streams.map(async (randomConfig) => {
     const rand = Math.floor(Math.random() * 256)
     const required = 3
     const decimals = 18
     const price = viem.parseUnits(randomConfig.info.price, decimals)
-    // const outstanding = await getOutstanding(randomUtils.template({
-    //   provider: provider.account!.address,
-    //   token: randomConfig.info.token,
-    //   price,
-    //   duration: BigInt(randomConfig.info.duration),
-    //   durationIsTimestamp: randomConfig.info.durationIsTimestamp,
-    // }))
-    // if (outstanding > 3n) {
-    //   return
-    // }
     const { pointers } = await indexer.pointersOrderedBySelf({
       pointerLimit: 100,
       pointerFilter: {
@@ -74,8 +71,6 @@ const consumeRandomness = async () => {
       log('required=%o location=%o', required, locations)
       throw new Error('ran out of locations!')
     }
-    const { consumer } = await signers()
-    const lastBaseFee = await getLatestBaseFee()
     log('consuming %o locations', locations.length)
     await contracts().random.write.heat([BigInt(required), {
       ...randomConfig.info,
@@ -85,28 +80,34 @@ const consumeRandomness = async () => {
       offset: 0n,
       index: 0n,
     }, locations], {
-      account: consumer.account!,
+      ...overrides,
       value: randomUtils.sum(locations),
-      maxFeePerGas: lastBaseFee * 2n,
-      maxPriorityFeePerGas: lastBaseFee / 5n,
-      type: 'eip1559',
-      gas: 10_000_000n,
     })
-    // log(locations)
   }))
 }
 
 const detectSecrets = async () => {
   const { consumer } = await signers()
-  const msgboard = msgBoard()
-  const content = await msgboard.content()
-  const keys = Object.keys(content)
-  const { id, key } = generateSeed()
+  // const msgboard = msgBoard()
+  // const content = await msgboard.content()
+  const { preimages } = await indexer.unlinkedSecrets({
+    // revealId: null,
+    // linkId: null,
+    secret_not: null,
+    castId: null,
+  })
+  const preimageHashes = preimages.items.map((preimage) => (
+    preimage.data
+  ))
+  const startKeyToPreimages = _.groupBy(preimages.items, 'start.key')
+  // const keys = Object.keys(content)
+  const { id } = generateSeed()
   const existing = await db.select('*')
     .from(tableNames.secret)
-    .whereIn('preimage', keys)
+    .whereIn('preimage', preimageHashes)
     .where('seedId', id)
   // log(existing)
+  const checked = new Set<viem.Hex>()
   for (const secret of existing) {
     const { preimages } = await indexer.unfinishedStarts({
       data: secret.preimage
@@ -115,47 +116,51 @@ const detectSecrets = async () => {
     if (start?.chopped || start?.castId) continue
     const heats = start?.heat?.items
     if (!heats) continue
-    const secrets: viem.Hex[] = []
-    for (const heat of heats) {
-      const preimage = heat.preimage
-      const known = Object.values(content[preimage.data as viem.Hex] as Record<viem.Hex, Message> || {}).find(({ data }) => (
-        viem.keccak256(data) === preimage.data
-      ))?.data
-      if (known) {
-        secrets.push(known as viem.Hex)
-      }
+    // const secrets: viem.Hex[] = []
+    // const preimage = heat.preimage
+    const key = start.key as viem.Hex
+    if (checked.has(key)) {
+      break
     }
-    if (secrets.length !== heats.length) {
+    checked.add(key)
+    const orderedPreimages = _.sortBy(startKeyToPreimages[key], 'heat.index')
+    const secrets = orderedPreimages.map<viem.Hex>((p) => (
+      p.secret as viem.Hex
+    ))
+    if (_.compact(secrets).length !== heats.length) {
       continue
     }
-    const pointerLocations = heats.map<randomUtils.PreimageInfo>(({ preimage }) => ({
-      provider: preimage.pointer.provider as viem.Hex,
-      token: preimage.pointer.token as viem.Hex,
-      price: BigInt(preimage.pointer.price),
-      durationIsTimestamp: preimage.pointer.durationIsTimestamp,
-      duration: BigInt(preimage.pointer.duration),
-      offset: BigInt(preimage.pointer.offset),
-      index: BigInt(preimage.index),
-    }))
-    const txHash = await contracts().random.write.cast([start.key as viem.Hex, pointerLocations, secrets], {
+    const lastBaseFee = await getLatestBaseFee()
+    const overrides = {
       account: consumer.account!,
-    })
+      maxFeePerGas: lastBaseFee * 2n,
+      maxPriorityFeePerGas: lastBaseFee > 10n ? lastBaseFee / 10n : 1n,
+      type: 'eip1559',
+      gas: 10_000_000n,
+    } as const
+    const pointerLocations = heats.map<randomUtils.PreimageInfo>(({
+      preimage: { pointer, index }
+    }) => ({
+      provider: pointer.provider as viem.Hex,
+      token: pointer.token as viem.Hex,
+      price: BigInt(pointer.price),
+      durationIsTimestamp: pointer.durationIsTimestamp,
+      duration: BigInt(pointer.duration),
+      offset: BigInt(pointer.offset),
+      index: BigInt(index),
+    }))
+    const txHash = await contracts().random.write.cast(
+      [start.key as viem.Hex, pointerLocations, secrets], overrides)
     log('sending cast %o', txHash)
     await publicClient.waitForTransactionReceipt({
       hash: txHash,
     })
-    // const known = await db.select('*')
-    //   .from(tableNames.secret)
-    //   .whereIn('preimage', images)
-    // log(heats)
-    // const s = generateSecret(key, Number(secret.index))
   }
-  // log('finished loop')
 }
 
 const intervals = new Map<threads.Runner, number>([
-  [consumeRandomness, 60_000 * 30],
-  [detectSecrets, 20_000],
+  [consumeRandomness, 60_000 * 10],
+  [detectSecrets, 10_000],
 ])
 
 export const main = async () => {

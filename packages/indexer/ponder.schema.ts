@@ -96,8 +96,10 @@ export default createSchema((p) => ({
     cast: p.one('castId'),
     revealId: p.hex().optional().references('Reveal.id'),
     reveal: p.one('revealId'),
+    linkId: p.hex().optional().references('Link.id'),
+    link: p.one('linkId'),
   }),
-  Reveal: p.createTable({
+  Link: p.createTable({
     id: p.hex(),
     index: p.int(),
     preimageId: p.hex().references('Preimage.id'),
@@ -107,6 +109,14 @@ export default createSchema((p) => ({
     castId: p.hex().optional().references('Cast.id'),
     cast: p.one('castId'),
   }),
+  Reveal: p.createTable({
+    id: p.hex(),
+    index: p.int(),
+    preimageId: p.hex().references('Preimage.id'),
+    preimage: p.one('preimageId'),
+    transactionId: p.hex().references('Transaction.id'),
+    transaction: p.one('transactionId'),
+  }),
   Cast: p.createTable({
     id: p.hex(),
     index: p.int(),
@@ -115,7 +125,7 @@ export default createSchema((p) => ({
     transaction: p.one('transactionId'),
     startId: p.hex().references('Start.id'),
     start: p.one('startId'),
-    reveal: p.many('Reveal.castId'),
+    reveal: p.many('Link.castId'),
     expiredId: p.hex().optional().references('Expired.id'),
     expired: p.one('expiredId'),
     seed: p.hex().optional(),

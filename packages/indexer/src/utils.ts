@@ -35,6 +35,9 @@ export const scopedId = {
   reveal: (c: Context, location: viem.Hex) => (
     scopeId(c, 'reveal', c.contracts.Random.address, location)
   ),
+  link: (c: Context, location: viem.Hex) => (
+    scopeId(c, 'link', c.contracts.Random.address, location)
+  ),
   cast: (c: Context, key: viem.Hex) => (
     scopeId(c, 'cast', c.contracts.Random.address, key)
   ),

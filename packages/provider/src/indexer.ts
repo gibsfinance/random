@@ -8,6 +8,29 @@ import * as viem from 'viem'
 const { gql } = gqlreq
 
 export const queries = {
+  unlinkedSecrets: gql`query UnlinkedSecrets($preimageFilter: PreimageFilter!) {
+    preimages(where: $preimageFilter) {
+      items {
+        data
+        secret
+        pointer {
+          provider
+          token
+          duration
+          durationIsTimestamp
+          price
+          offset
+        }
+        index
+        heat {
+          index
+        }
+        start {
+          key
+        }
+      }
+    }
+  }`,
   preimagesInStart: gql`query GetStartBatches ($preimageFilter: PreimageFilter!) {
     preimages(where: $preimageFilter) {
       items {
@@ -43,6 +66,11 @@ export const queries = {
     pointers (where: $pointerFilter) {
       items {
         provider
+        price
+        duration
+        durationIsTimestamp
+        token
+        offset
         preimages(where: {
           accessed: true,
           revealId: null,
@@ -51,6 +79,7 @@ export const queries = {
           items {
             data
             timestamp
+            index
             heat {
               index
               transaction {
@@ -141,6 +170,12 @@ const client = (): gqlreq.GraphQLClient => {
 }
 
 export const indexer = {
+  unlinkedSecrets: async (preimageFilter: PreimageFilter) => {
+    return await client().request<Pick<Query, 'preimages'>>({
+      document: queries.unlinkedSecrets,
+      variables: { preimageFilter },
+    })
+  },
   unfinishedStarts: async (preimageFilter: PreimageFilter) => {
     return await client().request<Pick<Query, 'preimages'>>({
       document: queries.preimagesInStart,
