@@ -38,9 +38,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Install dependencies
-        run: pnpm install
-
       - name: Run compile (+lint)
         run: cd packages/contracts && pnpm build && cd ../..
 
@@ -74,6 +71,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           parallel-finished: true
+          files: packages/contracts/coverage/lcov.info
 
       # - name: Create Artifact
       #   uses: actions/upload-pages-artifact
