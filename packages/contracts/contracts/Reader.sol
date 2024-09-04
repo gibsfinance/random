@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {IRandom} from "./implementations/IRandom.sol";
-import {Errors, Ok} from "./Constants.sol";
+import {Errors, Ok, Reveal} from "./Constants.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
 
 error Misconfigured();
@@ -104,6 +104,12 @@ contract Reader {
     function at(
         PreimageLocation.Info calldata info
     ) external view returns (bytes32) {
+        return _at(info);
+    }
+
+    function _at(
+        PreimageLocation.Info calldata info
+    ) internal view returns (bytes32) {
         return
             bytes32(
                 _pointer(info).read(
@@ -131,6 +137,22 @@ contract Reader {
                 emit Ok(provider, infos[i].section());
                 ++i;
             } while (i < len);
+        }
+    }
+
+    function reveal(
+        PreimageLocation.Info calldata info,
+        bytes32 formerSecret
+    ) external payable {
+        if (_at(info) == keccak256(abi.encode(formerSecret))) {
+            // this event is the same one used during cast
+            // but it should not be used as a signal that the randomness has been cast
+            // only the cast event should be used for that
+            emit Reveal({
+                provider: info.provider,
+                location: info.location(),
+                formerSecret: formerSecret
+            });
         }
     }
 }
