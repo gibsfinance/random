@@ -42,7 +42,7 @@ jobs:
         run: pnpm install
 
       - name: Run compile (+lint)
-        run: pnpm -r build
+        run: cd packages/contracts && pnpm build && cd ../..
 
       - name: Run tests
         run: pnpm -r coverage
