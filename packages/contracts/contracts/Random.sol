@@ -9,7 +9,7 @@ import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {IRandom} from "./implementations/IRandom.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
-import {Errors, Cast, Reveal, Ink, Heat, Start, Expired, Chop, Bleach} from "./Constants.sol";
+import {Errors, Cast, Reveal, Link, Ink, Heat, Start, Expired, Chop, Bleach} from "./Constants.sol";
 import {StorageSlot} from "./StorageSlot.sol";
 import {SlotDerivation} from "./SlotDerivation.sol";
 import {ConsumerReceiver} from "./implementations/ConsumerReceiver.sol";
@@ -46,7 +46,9 @@ contract Random is IRandom {
     mapping(address provider => mapping(uint256 token => mapping(uint256 price => LibBitmap.Bitmap bitmap)))
         internal _accessFlags;
     mapping(address provider => mapping(uint256 token => mapping(uint256 price => mapping(uint256 index => bytes32 formerSecret))))
-        internal _formerSecret;
+        internal _linkedSecret;
+    mapping(address provider => mapping(uint256 token => mapping(uint256 price => mapping(uint256 index => bytes32 formerSecret))))
+        internal _revealedSecret;
     mapping(bytes32 key => bool chopped) internal _chopped;
     mapping(address account => mapping(bytes32 txHash => bytes32 latest))
         internal _latestInTx;
@@ -70,10 +72,6 @@ contract Random is IRandom {
             _accessFlags[info.provider][encodedToken][info.price].set(
                 info.offset + info.index
             );
-            // _accessFlags[info.provider][encodedToken][info.price][
-            //     (info.offset + info.index) / TWO_FIVE_SIX
-            // ] |= (ONE <<
-            //     (TWO_FIVE_FIVE - ((info.offset + info.index) % TWO_FIVE_SIX)));
             emit Heat({
                 provider: info.provider,
                 section: section,
@@ -142,35 +140,23 @@ contract Random is IRandom {
         bytes32 formerSecret
     ) internal returns (bytes32 location, bool first) {
         unchecked {
-            uint256 tkn = info.encodeToken();
-            address pntr = _pointers[info.provider][tkn][info.price][
-                info.offset
-            ];
-            if (pntr == address(0)) {
-                revert Errors.Misconfigured();
-            }
             // length check is skipped because if one goes out of bounds you either err
             // or you end up with zero bytes, which would be quite the feat to find the hash for
             // always read 32 bytes
-            if (
-                formerSecret.hash() !=
-                bytes32(
-                    pntr.read(
-                        (info.index * THREE_TWO),
-                        ((info.index * THREE_TWO) + THREE_TWO)
-                    )
-                )
-            ) {
+            if (formerSecret.hash() != _toPreimage(info)) {
                 revert Errors.SecretMismatch();
             }
+            uint256 tkn = info.encodeToken();
             // only ever set once but do not penalize for lack of coordination
             location = info.location();
-            if (_secret(info, tkn) == bytes32(ZERO)) {
-                _formerSecret[info.provider][tkn][info.price][
+            (bytes32 linkedSecret, ) = _secret(info, tkn);
+            if (linkedSecret == bytes32(ZERO)) {
+                _linkedSecret[info.provider][tkn][info.price][
                     info.offset + info.index
                 ] = formerSecret;
+                // gives provider access to staked tokens
                 _custodied[info.provider][info.token] += info.price;
-                emit Reveal({
+                emit Link({
                     provider: info.provider,
                     location: location,
                     formerSecret: formerSecret
@@ -178,6 +164,45 @@ contract Random is IRandom {
                 return (location, true);
             }
             return (location, false);
+        }
+    }
+
+    function _toPreimage(
+        PreimageLocation.Info calldata info
+    ) internal view returns (bytes32) {
+        uint256 tkn = info.encodeToken();
+        address pntr = _pointers[info.provider][tkn][info.price][info.offset];
+        if (pntr == address(0)) {
+            revert Errors.Misconfigured();
+        }
+        // length check is skipped because if one goes out of bounds you either err
+        // or you end up with zero bytes, which would be quite the feat to find the hash for
+        // always read 32 bytes
+        return
+            bytes32(
+                pntr.read(
+                    (info.index * THREE_TWO),
+                    ((info.index * THREE_TWO) + THREE_TWO)
+                )
+            );
+    }
+
+    function reveal(
+        PreimageLocation.Info calldata info,
+        bytes32 formerSecret
+    ) external payable {
+        if (_toPreimage(info) == keccak256(abi.encode(formerSecret))) {
+            // this event is the same one used during cast
+            // but it should not be used as a signal that the randomness has been cast
+            // only the cast event should be used for that
+            _revealedSecret[info.provider][info.encodeToken()][info.price][
+                info.offset + info.index
+            ] = formerSecret;
+            emit Reveal({
+                provider: info.provider,
+                location: info.location(),
+                formerSecret: formerSecret
+            });
         }
     }
 
@@ -195,11 +220,17 @@ contract Random is IRandom {
     function _secret(
         PreimageLocation.Info calldata info,
         uint256 encodedToken
-    ) internal view returns (bytes32) {
-        return
-            _formerSecret[info.provider][encodedToken][info.price][
-                info.offset + info.index
-            ];
+    ) internal view returns (bytes32 linkedSecret, bytes32 revealedSecret) {
+        linkedSecret = _linkedSecret[info.provider][encodedToken][info.price][
+            info.offset + info.index
+        ];
+        if (linkedSecret == bytes32(ZERO)) {
+            revealedSecret = _revealedSecret[info.provider][encodedToken][
+                info.price
+            ][info.offset + info.index];
+        } else {
+            revealedSecret = linkedSecret;
+        }
     }
 
     /**
@@ -627,13 +658,13 @@ contract Random is IRandom {
             uint256 i;
             uint256 len = info.length;
             bytes32[] memory locations = new bytes32[](len);
+            bytes32 revealedSecret;
             do {
-                if (
-                    _secret({
-                        info: info[i],
-                        encodedToken: info[i].encodeToken()
-                    }) == bytes32(ZERO)
-                ) {
+                (, revealedSecret) = _secret({
+                    info: info[i],
+                    encodedToken: info[i].encodeToken()
+                });
+                if (revealedSecret == bytes32(ZERO)) {
                     // take the provider's stake
                     remaining += info[i].price;
                 }
@@ -688,6 +719,7 @@ contract Random is IRandom {
                 uint256 firstFlicks;
                 bool first;
                 bool missing;
+                bytes32 linkedSecret;
                 do {
                     if (revealed[i] != bytes32(ZERO)) {
                         (locations[i], first) = _flick({
@@ -698,14 +730,27 @@ contract Random is IRandom {
                             ++firstFlicks;
                         }
                     } else {
-                        revealed[i] = _secret({
+                        (revealed[i], linkedSecret) = _secret({
                             info: info[i],
                             encodedToken: info[i].encodeToken()
                         });
                         if (revealed[i] == bytes32(ZERO)) {
-                            missing = true;
+                            if (linkedSecret == bytes32(ZERO)) {
+                                missing = true;
+                                locations[i] = info[i].location();
+                            } else {
+                                (locations[i], first) = _flick({
+                                    info: info[i],
+                                    formerSecret: linkedSecret
+                                });
+                                revealed[i] = linkedSecret;
+                                if (first) {
+                                    ++firstFlicks;
+                                }
+                            }
+                        } else {
+                            locations[i] = info[i].location();
                         }
-                        locations[i] = info[i].location();
                     }
                     total += info[i].price;
                     ++i;
@@ -715,8 +760,8 @@ contract Random is IRandom {
                 }
                 // this allows users to submit partial secret sets and unlock their staked tokens
                 // without risking omission attacks from late or downed actors
+                _timeline[key] += firstFlicks;
                 if (missing) {
-                    _timeline[key] += firstFlicks;
                     return CastState.MISSING_SECRET;
                 }
                 // mark as generated

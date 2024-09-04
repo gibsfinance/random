@@ -13,6 +13,8 @@ event Heat(address indexed provider, bytes32 section, uint256 index);
 
 event Start(address indexed owner, bytes32 key); // no need to index because all keys should be unique
 
+event Link(address indexed provider, bytes32 location, bytes32 formerSecret);
+
 event Reveal(address indexed provider, bytes32 location, bytes32 formerSecret);
 
 event Expired(bytes32 key);

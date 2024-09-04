@@ -29,14 +29,4 @@ describe('Reader', () => {
       index: BigInt(secrets.length), // an off by 1 error
     }]), 'IndexOutOfBounds')
   })
-  it('allows you to reveal contracts', async () => {
-    const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
-    const { secretBatches, preimageLocations, reader } = ctx
-    const [secrets] = secretBatches
-    const [locations] = preimageLocations
-    const [secret] = secrets
-    const [location] = locations
-    await expectations.not.emit(ctx, reader.write.reveal([location, viem.zeroHash]), reader, 'Reveal')
-    await expectations.emit(ctx, reader.write.reveal([location, secret.secret]), reader, 'Reveal')
-  })
 })

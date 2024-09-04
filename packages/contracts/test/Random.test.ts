@@ -391,7 +391,7 @@ describe("Random", () => {
         const results = await Promise.all(selections.map(async (selection, index) => {
           if (partialSecrets[index] === viem.zeroHash) return
           const section = utils.section(selection)
-          await expectations.emit(ctx, partialTx, ctx.random, 'Reveal', {
+          await expectations.emit(ctx, partialTx, ctx.random, 'Link', {
             provider: viem.getAddress(selection.provider),
             location: utils.location(section, selection.index),
             formerSecret: secretByPreimage.get(selection.preimage),
@@ -400,6 +400,16 @@ describe("Random", () => {
         }))
         expect(_.compact(results).length).to.be.greaterThan(0)
         await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]), ctx.random, 'Cast')
+      })
+      it('allows you to reveal secrets without getting staked funds back', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+        const { secretBatches, preimageLocations, random } = ctx
+        const [secrets] = secretBatches
+        const [locations] = preimageLocations
+        const [secret] = secrets
+        const [location] = locations
+        await expectations.not.emit(ctx, random.write.reveal([location, viem.zeroHash]), random, 'Reveal')
+        await expectations.emit(ctx, random.write.reveal([location, secret.secret]), random, 'Reveal')
       })
       it('fails if the data pointer is set to a zero address', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
