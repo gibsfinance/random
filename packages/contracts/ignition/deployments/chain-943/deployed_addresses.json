@@ -1,7 +1,7 @@
 {
-  "RandomModule#Random": "0xC4d14204836cd4Acb35BE6c669Cd3204Ff2aD6c7",
-  "ReaderModule#Random": "0xC4d14204836cd4Acb35BE6c669Cd3204Ff2aD6c7",
-  "ReaderModule#Reader": "0x73976a98A355E224FA9BC6fe79B21615a4e69103",
-  "ConsumerModule#Random": "0xC4d14204836cd4Acb35BE6c669Cd3204Ff2aD6c7",
-  "ConsumerModule#Consumer": "0x006AD247Be9197f7BF18C9982b8545a07b9e552B"
+  "RandomModule#Random": "0xa1D27CD2a136F841a3b33c904C401FEEA0F820d5",
+  "ReaderModule#Random": "0xa1D27CD2a136F841a3b33c904C401FEEA0F820d5",
+  "ReaderModule#Reader": "0xCb4057d7DA4CE521B93b71186DfE11f9FBC3e3b1",
+  "ConsumerModule#Random": "0xa1D27CD2a136F841a3b33c904C401FEEA0F820d5",
+  "ConsumerModule#Consumer": "0xd5dDe6185a2548926cc58c35A3EEB6F88E661964"
 }

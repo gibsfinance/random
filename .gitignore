@@ -20,3 +20,6 @@ cloving.json
 postgres-data
 cache
 artifacts
+
+packages/contracts/ignition/deployments/*/build-info/
+packages/contracts/ignition/deployments/*/journal.jsonl
