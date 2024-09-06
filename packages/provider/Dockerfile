@@ -12,7 +12,6 @@ COPY ./tsconfig.json /app/tsconfig.json
 COPY ./codegen.config.cjs /app/codegen.config.cjs
 COPY ./config.ts /app/config.ts
 COPY ./knexfile.ts /app/knexfile.ts
-COPY ./.npmrc /app/.npmrc
 WORKDIR /app
 
 RUN bun install
