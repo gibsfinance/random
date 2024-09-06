@@ -5,7 +5,7 @@ import config from '../../../config'
 export async function up(knex: Knex): Promise<void> {
   await knex.raw('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
   await knex.raw('CREATE EXTENSION IF NOT EXISTS citext')
-  await knex.raw('CREATE EXTENSION IF NOT EXISTS plpython3u')
+  // await knex.raw('CREATE EXTENSION IF NOT EXISTS plpython3u')
   await knex.raw(`
 CREATE OR REPLACE FUNCTION autoupdate_timestamp()
 RETURNS TRIGGER AS $$
@@ -14,13 +14,13 @@ BEGIN
   RETURN NEW;
 END; $$
 LANGUAGE 'plpgsql'`)
-  await knex.raw(`CREATE OR REPLACE FUNCTION keccak256(input TEXT)
-RETURNS TEXT AS $$
-import sha3
-k = sha3.keccak_256()
-k.update(input.encode('utf-8'))
-return k.hexdigest()
-$$ LANGUAGE plpython3u`)
+  //   await knex.raw(`CREATE OR REPLACE FUNCTION keccak256(input TEXT)
+  // RETURNS TEXT AS $$
+  // import sha3
+  // k = sha3.keccak_256()
+  // k.update(input.encode('utf-8'))
+  // return k.hexdigest()
+  // $$ LANGUAGE plpython3u`)
   await knex.raw(`create or replace function
 count_rows(schema text, tablename text) returns integer
 as
@@ -65,7 +65,7 @@ export async function down(knex: Knex): Promise<void> {
   }
   await knex.raw('DROP EXTENSION IF EXISTS "uuid-ossp"')
   await knex.raw('DROP EXTENSION IF EXISTS citext')
-  await knex.raw('DROP FUNCTION IF EXISTS keccak256()')
+  // await knex.raw('DROP FUNCTION IF EXISTS keccak256()')
   await knex.raw('DROP FUNCTION IF EXISTS autoupdate_timestamp()')
   await knex.raw('DROP FUNCTION IF EXISTS count_rows(text,text)')
   await knex.raw('DROP FUNCTION IF EXISTS numeric_to_bit(numeric)')
