@@ -18,7 +18,7 @@ const database = {
   url: env.DATABASE_URL || 'postgres://gibrandom:password@localhost:9182/gibrandom',
   schema: env.DATABASE_SCHEMA || 'public',
   ssl: env.DATABASE_SSL === 'true',
-  name: 'gibrandom',
+  name: env.DATABASE_NAME || 'gibrandom',
 }
 
 const randomness = new Map<number, RandomnessConfig>([
