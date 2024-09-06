@@ -63,7 +63,6 @@ const checkSurplus = async () => {
               .whereIn('preimage', data)
               .whereNull('section')
               .returning('*')
-            console.log(section, updated.length, data.length)
             if (updated.length && updated.length !== data.length) {
               log(updated)
               throw new Error('unable to update')
