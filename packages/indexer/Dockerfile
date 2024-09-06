@@ -1,4 +1,4 @@
-FROM node:20-slim AS base
+FROM node:20-slim
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
@@ -12,7 +12,7 @@ COPY ./tsconfig.json /app/tsconfig.json
 COPY ./.eslintrc.json /app/.eslintrc.json
 WORKDIR /app
 
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install
+RUN pnpm install
 
 EXPOSE 8000
 EXPOSE 42069

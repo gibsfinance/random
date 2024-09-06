@@ -6,22 +6,8 @@ import * as threads from './threads'
 import { contracts, getLatestBaseFee } from "./contracts"
 import { signers } from "./signers"
 import * as randomUtils from '@gibs/random/lib/utils'
-import { db } from "./db"
-import { tableNames } from "./db/tables"
-import { generateSeed } from "./randomenss"
 import { log } from "./logger"
 import _ from "lodash"
-
-const getOutstanding = async (template: viem.Hex) => {
-  const [count] = await db.count('*')
-    .from(tableNames.secret)
-    .where('exposed', true)
-    .where('template', template)
-  if (!count) {
-    return 0n
-  }
-  return BigInt(count.count)
-}
 
 const consumeRandomness = async () => {
   const conf = config.randomness.get(chain.id)!
@@ -88,11 +74,7 @@ const consumeRandomness = async () => {
 
 const detectSecrets = async () => {
   const { consumer } = await signers()
-  // const msgboard = msgBoard()
-  // const content = await msgboard.content()
   const { preimages } = await indexer.unlinkedSecrets({
-    // revealId: null,
-    // linkId: null,
     secret_not: null,
     castId: null,
   })
@@ -100,24 +82,15 @@ const detectSecrets = async () => {
     preimage.data
   ))
   const startKeyToPreimages = _.groupBy(preimages.items, 'start.key')
-  // const keys = Object.keys(content)
-  const { id } = generateSeed()
-  const existing = await db.select('*')
-    .from(tableNames.secret)
-    .whereIn('preimage', preimageHashes)
-    .where('seedId', id)
-  // log(existing)
   const checked = new Set<viem.Hex>()
-  for (const secret of existing) {
+  for (const preimage of preimageHashes) {
     const { preimages } = await indexer.unfinishedStarts({
-      data: secret.preimage
+      data: preimage
     })
     const start = preimages.items?.[0]?.heat?.start
     if (start?.chopped || start?.castId) continue
     const heats = start?.heat?.items
     if (!heats) continue
-    // const secrets: viem.Hex[] = []
-    // const preimage = heat.preimage
     const key = start.key as viem.Hex
     if (checked.has(key)) {
       break
