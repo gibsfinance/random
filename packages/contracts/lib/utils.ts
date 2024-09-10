@@ -9,7 +9,7 @@ import { mnemonicToSeedSync } from '@scure/bip39'
 
 export const limiters = {
   range: promiseLimit<number>(16),
-  signers: promiseLimit<viem.WalletClient>(16),
+  signers: promiseLimit<viem.WalletClient>(1),
 }
 
 export const byteword = 32n
@@ -235,6 +235,28 @@ export const contractName = {
 
 export type Names = typeof contractName
 
+export const encodeTimeline = ({
+  owner,
+  start,
+  duration,
+  durationIsTimestamp,
+  count = 0n,
+}: {
+  owner: viem.Hex;
+  start: bigint;
+  duration: bigint;
+  durationIsTimestamp: boolean;
+  count?: bigint;
+}) => {
+  return viem.numberToHex((
+    BigInt(owner) << 96n
+    | BigInt.asUintN(48, start) << 48n
+    | BigInt.asUintN(39, duration) << 9n
+    | (durationIsTimestamp ? 1n : 0n) << 8n
+    | BigInt.asUintN(8, count)
+  ), { size: 32 })
+}
+
 const slots = [
   'timeline',
   'seed',
@@ -245,21 +267,68 @@ const slots = [
 
 const slotList = Object.values(slots)
 
-type Slot = typeof slotList[number]
+export type Slot = typeof slotList[number]
 
-const byteOptions = { size: 32, dir: 'left' } as const
+export const slotKeyToFormer = new Map<string, (inputs: SlotInputs, slotIndexBytes: Uint8Array) => viem.Hex>([
+  ['timeline', (inputs, index) => {
+    const key = inputs.key!
+    const keySlot = viem.keccak256(viem.concatBytes([
+      viem.hexToBytes(key, { size: 32 }),
+      index,
+    ]))
+    return keySlot
+  }],
+  ['latest', (inputs, index) => {
+    const account = inputs.account!
+    const accountSlot = viem.keccak256(viem.concatBytes([
+      viem.pad(viem.hexToBytes(account), { size: 32, dir: 'left' }),
+      index,
+    ]))
+    return accountSlot
+  }],
+  ['count', (inputs, index) => {
+    const location = inputs.location!
+    const providerKeySlot = viem.keccak256(viem.concatBytes([
+      viem.pad(viem.hexToBytes(location.provider!), { size: 32, dir: 'left' }),
+      index,
+    ]), 'bytes')
+    const locationSlot = viem.keccak256(viem.concatBytes([
+      viem.toBytes(encodeToken(location)),
+      providerKeySlot,
+    ]), 'bytes')
+    const priceSlot = viem.keccak256(viem.concatBytes([
+      viem.numberToBytes(location.price!, { size: 32 }),
+      locationSlot,
+    ]), 'hex')
+    return priceSlot
+  }],
+  ['custodied', (inputs, index) => {
+    const { token, account } = inputs
+    const accountSlot = viem.keccak256(viem.concatBytes([
+      viem.pad(viem.hexToBytes(account!), { size: 32, dir: 'left' }),
+      index,
+    ]), 'bytes')
+    const tokenSlot = viem.keccak256(viem.concatBytes([
+      viem.pad(viem.hexToBytes(token!), { size: 32, dir: 'left' }),
+      accountSlot,
+    ]))
+    return tokenSlot
+  }],
+])
 
-export const slot = (slot: Slot, location: Partial<PreimageInfo>) => {
-  const index = slots.indexOf(slot)
-  if (slot === 'count') {
-    return viem.keccak256(
-      viem.concatBytes([
-        viem.padBytes(viem.toBytes(location.provider!), byteOptions),
-        viem.toBytes(encodeToken(location)),
-        viem.numberToBytes(location.price!, byteOptions),
-        viem.numberToBytes(index, byteOptions)
-      ]),
-    )
+export type SlotInputs = Partial<{
+  key: viem.Hex;
+  location: Partial<PreimageInfo>
+  account: viem.Hex;
+  token: viem.Hex;
+}>
+
+export const slot = (slot: Slot, slotInputs: SlotInputs, idx?: number) => {
+  const index = _.isUndefined(idx) ? slots.indexOf(slot) : idx
+  const indexBytes = viem.numberToBytes(index, { size: 32 })
+  const key = slotKeyToFormer.get(slot)?.(slotInputs, indexBytes)
+  if (!key) {
+    throw new Error('slot not defined')
   }
-  throw new Error('slot not defined')
+  return key
 }

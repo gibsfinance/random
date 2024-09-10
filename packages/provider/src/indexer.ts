@@ -137,6 +137,7 @@ export const queries = {
       items {
         data
         section
+        index
       }
     }
   }`,
@@ -145,7 +146,7 @@ export const queries = {
       chainId: $chainId,
       address: $address,
       provider: $provider
-    }) {
+    }, orderBy: "offset", orderDirection: "asc") {
       items {
         id
         remaining
@@ -156,6 +157,15 @@ export const queries = {
         duration
         durationIsTimestamp
         offset
+        section
+        template
+        count
+        offset
+        ink {
+          transaction {
+            hash
+          }
+        }
       }
     }
   }`

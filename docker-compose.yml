@@ -65,7 +65,6 @@ services:
     build:
       context: ./packages/provider
       args:
-        NPM_TOKEN: $NPM_TOKEN
         INDEXER_URL: http://gibrandom-indexer:42069
     networks:
       - gibrandom
@@ -88,7 +87,6 @@ services:
       MNEMONIC: $MNEMONIC
       RANDOMNESS_MNEMONIC: $RANDOMNESS_MNEMONIC
       CHAIN_ID: 943
-      NPM_TOKEN: $NPM_TOKEN
 
 networks:
   gibrandom:

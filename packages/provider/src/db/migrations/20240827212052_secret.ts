@@ -23,9 +23,7 @@ export async function up(knex: Knex): Promise<void> {
   }
 }
 
-
 export async function down(knex: Knex): Promise<void> {
   await knex.schema.withSchema(userConfig.database.schema)
     .dropTableIfExists(tableNames.secret)
 }
-

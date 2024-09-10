@@ -53,6 +53,7 @@ ponder.on("Random.ink()", async ({ event, context }) => {
       id: pointerId,
       data: {
         remaining: preimages.length,
+        inkId,
         section,
         count: preimages.length,
         storage: inkEvent.args.pointer,

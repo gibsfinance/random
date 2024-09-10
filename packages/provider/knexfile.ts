@@ -1,6 +1,6 @@
 import configuration from './config'
 import { makeConfig } from './src/db/config'
-console.log(configuration)
+
 const config = makeConfig({
   connection: configuration.database.url,
 })
