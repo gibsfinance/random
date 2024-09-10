@@ -15,10 +15,19 @@ import { log } from './logger'
 import type { Secret } from 'knex/types/tables'
 import type { Random$Type } from "@gibs/random/artifacts/contracts/Random.sol/Random";
 import type { StreamConfig } from './types'
+import { Preimage } from './gql/graphql'
 
 const outstandingSecrets = () => (
   db.select('*').from(tableNames.secret)
     .whereNull('section')
+    .whereILike('randomContractAddress', addresses().random)
+    .where('chainId', chain.id)
+)
+
+const unsharedPreimages = () => (
+  db.select('*')
+    .from(tableNames.secret)
+    .whereNull('inkTransactionId')
     .whereILike('randomContractAddress', addresses().random)
     .where('chainId', chain.id)
 )
@@ -332,9 +341,52 @@ const generateSecretsFromPreimages = async (preimages: viem.Hex[]) => {
   ])))
 }
 
-const checkHeat = async () => {
+const checkInk = async () => {
+  // const preimages = await unsharedPreimages()
   const { provider } = await signers()
+  const { pointers } = await indexer.pointers({
+    provider: provider.account!.address,
+  })
+  for (const pointer of pointers.items) {
+    // console.log(pointer)
+    const [{ count }] = await db.count('preimage')
+      .from(tableNames.secret)
+      .where('section', pointer.section)
+    // console.log(count)
+    if (Number(count) === pointer.count) {
+      continue
+    }
+    console.log('fetching section', pointer.section)
+    const { preimages } = await indexer.preimages({
+      section: pointer.section,
+    })
+    const start = BigInt(pointer.offset)
+    const toIndex = start + BigInt(pointer.count)
+    console.log(start, toIndex)
+    const generatedPreimages = await generatePreimages(start, toIndex)
+    const sectionIndexToPreimage = new Map<number, Preimage>(
+      preimages.items.map((preimage) => (
+        [preimage.index, preimage] as const
+      ))
+    )
+    for (let i = 0; i < generatedPreimages.length; i++) {
+      const gPre = generatedPreimages[i]
+      const indexedPreimage = sectionIndexToPreimage.get(i)
+      if (gPre.preimage !== indexedPreimage?.data) {
+        console.log(gPre.preimage, indexedPreimage)
+        throw new Error('preimage generated does not match!')
+      }
+    }
+  }
+  // console.log('uninked %o', preimages.length)
+}
+
+const checkHeat = async () => {
   const templates = await templatesWithOutstanding()
+  if (!templates.length) {
+    return
+  }
+  const { provider } = await signers()
   const { pointers } = await indexer.requestsForSecrets({
     provider: provider.account!.address,
     template_in: templates,
@@ -426,11 +478,10 @@ const checkHeat = async () => {
 }
 
 const checkResults = async () => {
-  const templates = await templatesWithOutstanding()
-  if (!templates.length) {
-    return
-  }
-  await checkHeat()
+  await Promise.all([
+    checkInk(),
+    checkHeat(),
+  ])
   // const msgboard = msgBoard()
   // const contents = await msgboard.content()
   // for (const p of sorted) {

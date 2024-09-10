@@ -22,29 +22,23 @@ library PreimageLocation {
         return info.section().location(info.index);
     }
 
-    function location(
-        bytes32 sec,
-        uint256 index
-    ) internal pure returns (bytes32) {
+    function location(bytes32 sec, uint256 index) internal pure returns (bytes32) {
         return sec.hash(bytes32(index));
     }
 
     function section(Info memory info) internal pure returns (bytes32) {
         unchecked {
-            return
-                EfficientHashLib.hash(
-                    bytes32(uint256(uint160(info.provider))),
-                    bytes32(info.encodeToken()),
-                    bytes32(info.price),
-                    bytes32(info.offset)
-                );
+            return EfficientHashLib.hash(
+                bytes32(uint256(uint160(info.provider))),
+                bytes32(info.encodeToken()),
+                bytes32(info.price),
+                bytes32(info.offset)
+            );
         }
     }
 
     function encodeToken(Info memory info) internal pure returns (uint256) {
-        return
-            ((info.durationIsTimestamp ? 1 : 0) << 255) |
-            (uint256(uint40(info.duration)) << 160) |
-            uint256(uint160(info.token));
+        return ((info.durationIsTimestamp ? 1 : 0) << 255) | (uint256(uint40(info.duration) << 1 >> 1) << 160)
+            | uint256(uint160(info.token));
     }
 }

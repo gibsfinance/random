@@ -1,5 +1,4 @@
 import * as utils from '../lib/utils'
-import promiseLimit from 'promise-limit'
 import * as viem from 'viem'
 import _ from "lodash"
 import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
