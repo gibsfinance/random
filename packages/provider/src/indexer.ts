@@ -2,7 +2,7 @@ import * as gqlreq from 'graphql-request'
 import config from '../config'
 import { contracts } from './contracts'
 import { chain } from './chain'
-import { PointerFilter, PreimageFilter, Query, StartFilter } from './gql/graphql'
+import { PointerFilter, PreimageFilter, Query } from './gql/graphql'
 import * as viem from 'viem'
 
 const { gql } = gqlreq
