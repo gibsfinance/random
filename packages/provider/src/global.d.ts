@@ -8,7 +8,7 @@ declare module 'knex/types/tables' {
   interface Secret {
     seedId: viem.Hex;
     preimage: viem.Hex;
-    index: string;
+    accountIndex: string;
     // inkIndexed: boolean;
     exposed: boolean;
     section: viem.Hex | null;

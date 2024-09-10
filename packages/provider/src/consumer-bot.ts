@@ -13,14 +13,11 @@ const consumeRandomness = async () => {
   const conf = config.randomness.get(chain.id)!
   const { consumer } = await signers()
   const lastBaseFee = await getLatestBaseFee()
-  const overrides = {
-    account: consumer.account!,
-    maxFeePerGas: lastBaseFee * 2n,
-    maxPriorityFeePerGas: lastBaseFee > 10n ? lastBaseFee / 10n : 1n,
-    type: 'eip1559',
-    gas: 10_000_000n,
-  } as const
-  await Promise.all(conf.streams.map(async (randomConfig) => {
+  let pendingNonce = await publicClient.getTransactionCount({
+    address: consumer.account!.address,
+    blockTag: 'pending',
+  })
+  const heatTxs = await Promise.all(conf.streams.map(async (randomConfig) => {
     const rand = Math.floor(Math.random() * 256)
     const required = 3
     const decimals = 18
@@ -57,8 +54,17 @@ const consumeRandomness = async () => {
       log('required=%o location=%o', required, locations)
       throw new Error('ran out of locations!')
     }
-    log('consuming %o locations', locations.length)
-    await contracts().random.write.heat([BigInt(required), {
+    const nonce = pendingNonce
+    pendingNonce++
+    const overrides = {
+      account: consumer.account!,
+      maxFeePerGas: lastBaseFee * 2n,
+      maxPriorityFeePerGas: lastBaseFee > 10n ? lastBaseFee / 10n : 1n,
+      type: 'eip1559',
+      gas: 10_000_000n,
+      nonce,
+    } as const
+    const heatTx = await contracts().random.write.heat([BigInt(required), {
       ...randomConfig.info,
       price,
       duration: BigInt(randomConfig.info.duration) * 2n,
@@ -68,6 +74,13 @@ const consumeRandomness = async () => {
     }, locations], {
       ...overrides,
       value: randomUtils.sum(locations),
+    })
+    log('consuming %o locations @ %o', locations.length, heatTx)
+    return heatTx
+  }))
+  await Promise.all(_.compact(heatTxs).map(async (heatTx) => {
+    await publicClient.waitForTransactionReceipt({
+      hash: heatTx,
     })
   }))
 }
@@ -132,7 +145,7 @@ const detectSecrets = async () => {
 }
 
 const intervals = new Map<threads.Runner, number>([
-  [consumeRandomness, 60_000 * 10],
+  [consumeRandomness, 60_000 * 3],
   [detectSecrets, 10_000],
 ])
 

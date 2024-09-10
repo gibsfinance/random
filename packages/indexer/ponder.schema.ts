@@ -34,6 +34,8 @@ export default createSchema((p) => ({
     bleach: p.one('bleachId'),
     chainId: p.bigint(),
     address: p.hex(),
+    inkId: p.hex().references('Ink.id'),
+    ink: p.one('inkId'),
   }),
   Bleach: p.createTable({
     id: p.hex(),

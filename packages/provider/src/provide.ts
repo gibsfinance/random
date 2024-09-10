@@ -3,7 +3,7 @@ import * as threads from './threads'
 import { indexer } from './indexer'
 import { signers } from './signers'
 import config from '../config'
-import { generatePreimages, generateSecret, generateSeed, type ShieldedSecret } from './randomenss'
+import { generatePreimages, generateSecret, generateSeed, type ShieldedSecret } from './randomness'
 import { addresses, contracts, getLatestBaseFee, token } from './contracts'
 import { chain, publicClient } from './chain'
 import { slot } from './slots'
@@ -12,22 +12,14 @@ import { tableNames, type Tx } from './db/tables'
 import * as randomUtils from '@gibs/random/lib/utils'
 import _ from 'lodash'
 import { log } from './logger'
-import type { Secret } from 'knex/types/tables'
+import type { Secret, Transaction } from 'knex/types/tables'
 import type { Random$Type } from "@gibs/random/artifacts/contracts/Random.sol/Random";
 import type { StreamConfig } from './types'
-import { Preimage } from './gql/graphql'
+import type { Preimage } from './gql/graphql'
 
 const outstandingSecrets = () => (
   db.select('*').from(tableNames.secret)
     .whereNull('section')
-    .whereILike('randomContractAddress', addresses().random)
-    .where('chainId', chain.id)
-)
-
-const unsharedPreimages = () => (
-  db.select('*')
-    .from(tableNames.secret)
-    .whereNull('inkTransactionId')
     .whereILike('randomContractAddress', addresses().random)
     .where('chainId', chain.id)
 )
@@ -112,6 +104,12 @@ const checkSurplus = async () => {
       // handle this case later
       return
     }
+    // writing more preimages is bottlenecked by outstanding transactions
+    // if any are pending, then do not provide any new nonces
+    const pendingTxs = await unminedTransactions()
+    if (pendingTxs.length) {
+      return
+    }
     const preimages = await generatePreimages(start, toIndex)
     await writePreimages({
       start,
@@ -123,6 +121,10 @@ const checkSurplus = async () => {
   }))
 }
 
+/**
+ * write preimages to chain using the random contract's ink method
+ * @param param0 necessary inputs to write preimages to the chain and log them
+ */
 const writePreimages = async ({
   start,
   delta,
@@ -142,75 +144,45 @@ const writePreimages = async ({
   const insertable = preimages.map((p) => ({
     ...p,
     template: templateHash,
-    random: addresses().random,
+    randomContractAddress: addresses().random,
     chainId: chain.id,
   }))
   const preimageHashes = preimages.map(({ preimage }) => preimage)
   const cost = template.price * BigInt(preimages.length)
   const tkn = template.token
   const dealingInNative = tkn === viem.zeroAddress
-  await db.transaction(async (tx) => {
-    try {
-      await tx.insert(insertable).into(tableNames.secret)
-    } catch (err) {
-      log(err)
-      log('something went wrong when trying to insert new preimages %o - %o', start, start + delta)
-      return
-    }
-    let funderIdx = -1
-    let deposited!: bigint
-    let available!: bigint
-    for (const funderIndex of randomConfig.funder) {
-      ; ([deposited, available] = await hasAdequateDeposits(tkn, wallets[funderIndex]))
-      if (deposited >= cost) {
-        available = 0n
+  const t = token(tkn)
+  let funderIdx = -1
+  let deposited!: bigint
+  let available!: bigint
+  for (const funderIndex of randomConfig.funder) {
+    ; ([deposited, available] = await hasAdequateDeposits(tkn, wallets[funderIndex]))
+    if (deposited >= cost) {
+      available = 0n
+      funderIdx = funderIndex
+      break
+    } else if (available >= cost) {
+      if ((tkn !== viem.zeroAddress) || (available / 2n >= cost)) {
         funderIdx = funderIndex
+        available /= 2n
+        deposited = 0n
         break
-      } else if (available >= cost) {
-        if ((tkn !== viem.zeroAddress) || (available / 2n >= cost)) {
-          funderIdx = funderIndex
-          available /= 2n
-          deposited = 0n
-          break
-        }
       }
     }
-    const logNotEnoughFunds = () => (
-      notEnoughFundsLog(tkn, randomConfig.funder.map((idx) => (
-        wallets[idx].account!.address
-      )))
-    )
-    if (funderIdx === -1) {
-      logNotEnoughFunds()
-      return
-    }
-    const funder = wallets[funderIdx]
-    if (cost <= deposited) {
-      await writeInk({
-        template,
-        funder,
-        preimages: preimageHashes,
-      }, tx)
-      return
-    }
-    let deficit = cost - deposited
-    if (dealingInNative) {
-      const available = await publicClient.getBalance({
-        address: funder.account!.address,
-      }) / 2n
-      if (available < deficit) {
-        log('deposit native tokens to %o', funder.account!.address)
-        return
-      }
-      await writeInk({
-        template,
-        funder,
-        preimages: preimageHashes,
-        value: deficit,
-      }, tx)
-      return
-    }
-    const t = token(tkn)
+  }
+  const logNotEnoughFunds = () => (
+    notEnoughFundsLog(tkn, randomConfig.funder.map((idx) => (
+      wallets[idx].account!.address
+    )))
+  )
+  if (funderIdx === -1) {
+    logNotEnoughFunds()
+    return
+  }
+  const funder = wallets[funderIdx]
+  let deficit = cost - deposited
+  const randAddress = contracts().random.address
+  if (tkn !== viem.zeroAddress) {
     const tokenBalance = await t.read.balanceOf([funder.account!.address])
     if (tokenBalance < deficit) {
       logNotEnoughFunds()
@@ -218,7 +190,6 @@ const writePreimages = async ({
     }
 
     // this area of this function is untested
-    const randAddress = contracts().random.address
     const allowance = await t.read.allowance([
       funder.account!.address,
       randAddress,
@@ -231,6 +202,38 @@ const writePreimages = async ({
       await publicClient.waitForTransactionReceipt({
         hash: approveTxHash,
       })
+    }
+  }
+  const transaction = await db.transaction(async (tx): Promise<Transaction | undefined> => {
+    try {
+      await tx.insert(insertable).into(tableNames.secret)
+    } catch (err) {
+      log(err)
+      log('something went wrong when trying to insert new preimages %o - %o', start, start + delta)
+      return
+    }
+    if (cost <= deposited) {
+      return await writeInk({
+        template,
+        funder,
+        preimages: preimageHashes,
+      }, tx)
+    }
+    if (dealingInNative) {
+      const available = await publicClient.getBalance({
+        address: funder.account!.address,
+      }) / 2n
+      if (available < deficit) {
+        log('deposit native tokens to %o', funder.account!.address)
+        throw new Error('unable to complete')
+      }
+      console.log('dealing in native, writing, deficit %o', deficit)
+      return await writeInk({
+        template,
+        funder,
+        preimages: preimageHashes,
+        value: deficit,
+      }, tx)
     }
     const targets: viem.Hex[] = [
       randAddress,
@@ -267,9 +270,21 @@ const writePreimages = async ({
       transactionId: transaction.transactionId,
       type: 'handoff',
     }).into(tableNames.transactionAction)
+    return transaction
   })
+  if (transaction) {
+    await publicClient.waitForTransactionReceipt({
+      hash: transaction.hash,
+    })
+  }
 }
 
+/**
+ * call the ink method and log the appropriate rows in db
+ * @param param0 necessary inputs to write preimages to the chain
+ * @param tx the database transaction that will log the appropriate rows
+ * @returns transaction row that was inserted
+ */
 const writeInk = async ({
   template,
   funder,
@@ -326,6 +341,11 @@ const templatesWithOutstanding = async () => {
   return uniq.map(({ template }) => template)
 }
 
+/**
+ * generate a set of secrets given a set of preimage primary keys that exist in the db
+ * @param preimages the preimages to key secrets against
+ * @returns a mapping of preimages to secrets
+ */
 const generateSecretsFromPreimages = async (preimages: viem.Hex[]) => {
   const seed = generateSeed()
   const preimageInfo = await db.select('*')
@@ -333,7 +353,7 @@ const generateSecretsFromPreimages = async (preimages: viem.Hex[]) => {
     .whereIn('preimage', preimages)
     .where('seedId', seed.id)
   const secrets = preimageInfo.map((preimageItem) => {
-    return generateSecret(seed.key, Number(preimageItem.index))
+    return generateSecret(seed.key, Number(preimageItem.accountIndex))
   })
   return new Map<viem.Hex, viem.Hex>(preimageInfo.map((item, i) => ([
     item.preimage,
@@ -342,17 +362,15 @@ const generateSecretsFromPreimages = async (preimages: viem.Hex[]) => {
 }
 
 const checkInk = async () => {
-  // const preimages = await unsharedPreimages()
   const { provider } = await signers()
   const { pointers } = await indexer.pointers({
     provider: provider.account!.address,
   })
+  const chainId = `${chain.id}`
   for (const pointer of pointers.items) {
-    // console.log(pointer)
     const [{ count }] = await db.count('preimage')
       .from(tableNames.secret)
       .where('section', pointer.section)
-    // console.log(count)
     if (Number(count) === pointer.count) {
       continue
     }
@@ -362,10 +380,10 @@ const checkInk = async () => {
     })
     const start = BigInt(pointer.offset)
     const toIndex = start + BigInt(pointer.count)
-    console.log(start, toIndex)
     const generatedPreimages = await generatePreimages(start, toIndex)
     const sectionIndexToPreimage = new Map<number, Preimage>(
       preimages.items.map((preimage) => (
+        // this index is relative to the section
         [preimage.index, preimage] as const
       ))
     )
@@ -377,9 +395,80 @@ const checkInk = async () => {
         throw new Error('preimage generated does not match!')
       }
     }
+    const secrets = generatedPreimages.map((s) => ({
+      ...s,
+      template: pointer.template,
+      randomContractAddress: addresses().random,
+      chainId: chain.id,
+    }))
+    await db.insert(secrets).from(tableNames.secret)
+      .onConflict(['preimage'])
+      .ignore()
+    console.log('updating %o to %o', start, toIndex)
+    const preimageHashes = _.map(preimages.items, 'data')
+    // update to upsert if tx does not exist (which is a likely scenario)
+    let transaction = await db.select('*')
+      .from(tableNames.transaction)
+      .where('chainId', chainId)
+      .where('hash', pointer.ink.transaction.hash)
+      .first()
+    if (!transaction) {
+      const originalTx = await publicClient.getTransaction({
+        hash: pointer.ink.transaction.hash as viem.Hex,
+      })
+      const inserted = await db.insert({
+        chainId,
+        hash: originalTx.hash,
+        from: originalTx.from,
+        to: originalTx.to,
+      }).from(tableNames.transaction)
+        .returning('*')
+      transaction = inserted[0]
+    }
+    await db.update({
+      inkTransactionId: transaction!.transactionId,
+      section: pointer.section,
+    }).from(tableNames.secret)
+      .whereIn('preimage', preimageHashes)
   }
-  // console.log('uninked %o', preimages.length)
+  const pendingTxs = await unminedTransactions()
+  if (pendingTxs.length) {
+    await Promise.all(pendingTxs.map(async (transaction) => {
+      const receipt = await publicClient.getTransactionReceipt({
+        hash: transaction.hash,
+      })
+      if (!receipt) {
+        return
+      }
+      await updateMinedTx(receipt as viem.TransactionReceipt)
+    }))
+  }
 }
+
+/**
+ * update the transaction row with relevant block data
+ * @param receipt the receipt of the mined transaction
+ * @param tx the database transaction
+ */
+const updateMinedTx = (receipt: viem.TransactionReceipt, tx: Tx = db) => (
+  tx.update({
+    blockNumber: receipt.blockNumber,
+    transactionIndex: receipt.transactionIndex,
+  }).from(tableNames.transaction).where({
+    chainId: `${chain.id}`,
+    hash: receipt.transactionHash,
+  })
+)
+
+/**
+ * get transaction rows with block number set to null (default)
+ * @param tx the database transaction
+ */
+const unminedTransactions = (tx: Tx = db) => (
+  tx.select('*')
+    .from(tableNames.transaction)
+    .whereNull('blockNumber')
+)
 
 const checkHeat = async () => {
   const templates = await templatesWithOutstanding()
@@ -459,11 +548,14 @@ const checkHeat = async () => {
     const [transaction] = await tx.insert({
       hash: revealTx,
       chainId: chain.id,
+      from: provider.account!.address,
+      to: random.address,
     })
       .into(tableNames.transaction)
       .returning('*')
     await tx(tableNames.secret).update({
       revealTransactionId: transaction.transactionId,
+      exposed: true,
     }).whereIn('preimage', preimageHashes)
     await tx(tableNames.transactionAction)
       .insert({

@@ -12,7 +12,7 @@ export async function up(knex: Knex): Promise<void> {
       t.renameColumn('index', 'accountIndex')
       t.renameColumn('random', 'randomContractAddress')
       // the on chain index as detected by the indexer / submitted in the ink tx
-      t.decimal('locationIndex', 78, 0)
+      // t.decimal('locationIndex', 78, 0)
       t.dropColumn('inkIndexed')
       t.dropColumn('inkTransactionHash')
       t.text('inkTransactionId')
@@ -36,7 +36,7 @@ export async function down(knex: Knex): Promise<void> {
     .alterTable(tableNames.secret, (t) => {
       t.dropColumn('revealTransactionId')
       t.dropColumn('inkTransactionId')
-      t.dropColumn('locationIndex')
+      // t.dropColumn('locationIndex')
       t.text('inkTransactionHash').nullable()
       t.renameColumn('randomContractAddress', 'random')
       t.renameColumn('accountIndex', 'index')

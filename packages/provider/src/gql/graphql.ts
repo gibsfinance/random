@@ -646,6 +646,8 @@ export type Pointer = {
   duration: Scalars['BigInt']['output'];
   durationIsTimestamp: Scalars['Boolean']['output'];
   id: Scalars['String']['output'];
+  ink: Ink;
+  inkId: Scalars['String']['output'];
   lastOkTransaction: Transaction;
   lastOkTransactionId: Scalars['String']['output'];
   offset: Scalars['BigInt']['output'];
@@ -724,6 +726,14 @@ export type PointerFilter = {
   id_lte?: InputMaybe<Scalars['String']['input']>;
   id_not?: InputMaybe<Scalars['String']['input']>;
   id_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  inkId?: InputMaybe<Scalars['String']['input']>;
+  inkId_gt?: InputMaybe<Scalars['String']['input']>;
+  inkId_gte?: InputMaybe<Scalars['String']['input']>;
+  inkId_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  inkId_lt?: InputMaybe<Scalars['String']['input']>;
+  inkId_lte?: InputMaybe<Scalars['String']['input']>;
+  inkId_not?: InputMaybe<Scalars['String']['input']>;
+  inkId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
   lastOkTransactionId?: InputMaybe<Scalars['String']['input']>;
   lastOkTransactionId_gt?: InputMaybe<Scalars['String']['input']>;
   lastOkTransactionId_gte?: InputMaybe<Scalars['String']['input']>;
@@ -2196,6 +2206,8 @@ export type Pointer = {
   duration: Scalars['BigInt']['output'];
   durationIsTimestamp: Scalars['Boolean']['output'];
   id: Scalars['String']['output'];
+  ink: Ink;
+  inkId: Scalars['String']['output'];
   lastOkTransaction: Transaction;
   lastOkTransactionId: Scalars['String']['output'];
   offset: Scalars['BigInt']['output'];
@@ -2274,6 +2286,14 @@ export type PointerFilter = {
   id_lte?: InputMaybe<Scalars['String']['input']>;
   id_not?: InputMaybe<Scalars['String']['input']>;
   id_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  inkId?: InputMaybe<Scalars['String']['input']>;
+  inkId_gt?: InputMaybe<Scalars['String']['input']>;
+  inkId_gte?: InputMaybe<Scalars['String']['input']>;
+  inkId_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  inkId_lt?: InputMaybe<Scalars['String']['input']>;
+  inkId_lte?: InputMaybe<Scalars['String']['input']>;
+  inkId_not?: InputMaybe<Scalars['String']['input']>;
+  inkId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
   lastOkTransactionId?: InputMaybe<Scalars['String']['input']>;
   lastOkTransactionId_gt?: InputMaybe<Scalars['String']['input']>;
   lastOkTransactionId_gte?: InputMaybe<Scalars['String']['input']>;

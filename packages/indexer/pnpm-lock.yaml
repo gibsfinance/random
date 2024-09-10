@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@gibs/random':
-        specifier: ^0.0.14
-        version: 0.0.14(chai@5.1.1)(typescript@5.5.4)
+        specifier: ^0.0.15
+        version: 0.0.15(chai@5.1.1)(typescript@5.5.4)
       '@ponder/core':
         specifier: ^0.5.19
         version: 0.5.19(@opentelemetry/api@1.9.0)(@types/node@20.16.3)(hono@4.5.10)(typescript@5.5.4)(viem@2.21.1(typescript@5.5.4))
@@ -239,8 +239,8 @@ packages:
     resolution: {integrity: sha512-Ys+3g2TaW7gADOJzPt83SJtCDhMjndcDMFVQ/Tj9iA1BfJzFKD9mAUXT3OenpuPHbI6P/myECxRJrofUsDx/5g==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
-  '@gibs/random@0.0.14':
-    resolution: {integrity: sha512-+K/IMvUNOkgwZAZvrl6bVIt+DXpJ5JWFSwei/aQTGKZvECA+p/sTfh6EhqcSF28gd+GWCTq9JUsRk4j+wHXi1Q==}
+  '@gibs/random@0.0.15':
+    resolution: {integrity: sha512-ivQSH8sZm4Sa0LPOCVub8UgmchLiJ/HnBm55I2bbfBGU/IPvLjvF5/Sk5uZo7yEvuPXIIwxwq2AKFXI640nPnA==}
 
   '@graphql-tools/executor@1.3.1':
     resolution: {integrity: sha512-tgJDdGf9SCAm64ofEMZdv925u6/J+eTmv36TGNLxgP2DpCJsZ6gnJ4A+0D28EazDXqJIvMiPd+3d+o3cCRCAnQ==}
@@ -812,6 +812,15 @@ packages:
       supports-color:
         optional: true
 
+  debug@4.3.7:
+    resolution: {integrity: sha512-Er2nc/H7RrMXZBFCEim6TCmMk02Z8vLC2Rbi1KEBggpo0fS6l0S1nnapwmIi3yW/+GOJap1Krg4w0Hg80oCqgQ==}
+    engines: {node: '>=6.0'}
+    peerDependencies:
+      supports-color: '*'
+    peerDependenciesMeta:
+      supports-color:
+        optional: true
+
   decompress-response@6.0.0:
     resolution: {integrity: sha512-aW35yZM6Bb/4oJlZncMH2LCoZtJXTRxES17vE3hoRiowU2kWHaJKFkSBDnDR+cm9J+9QhXmREyIfv0pji9ejCQ==}
     engines: {node: '>=10'}
@@ -1367,6 +1376,9 @@ packages:
 
   ms@2.1.2:
     resolution: {integrity: sha512-sGkPx+VjMtmA6MX27oA4FBFELFCZZ4S4XqeGOXCv68tT+jb3vk/RyaKWP0PTKyWtmLSM0b+adUTEvbs1PEaH2w==}
+
+  ms@2.1.3:
+    resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
   multicaller@1.3.2:
     resolution: {integrity: sha512-fNtaxSrHx99oQxLsnwgR19QuOchgkKbDyTKxkuv37+9yvRQErcw7OHyiSJOXB6pYwSLLSOseSgMJ+3EupUtnqw==}
@@ -2110,7 +2122,7 @@ snapshots:
 
   '@eslint/js@8.57.0': {}
 
-  '@gibs/random@0.0.14(chai@5.1.1)(typescript@5.5.4)':
+  '@gibs/random@0.0.15(chai@5.1.1)(typescript@5.5.4)':
     dependencies:
       '@scure/bip32': 1.5.0
       '@scure/bip39': 1.4.0
@@ -2425,7 +2437,7 @@ snapshots:
       '@typescript-eslint/type-utils': 6.21.0(eslint@8.57.0)(typescript@5.5.4)
       '@typescript-eslint/utils': 6.21.0(eslint@8.57.0)(typescript@5.5.4)
       '@typescript-eslint/visitor-keys': 6.21.0
-      debug: 4.3.6
+      debug: 4.3.7
       eslint: 8.57.0
       graphemer: 1.4.0
       ignore: 5.3.2
@@ -2443,7 +2455,7 @@ snapshots:
       '@typescript-eslint/types': 6.21.0
       '@typescript-eslint/typescript-estree': 6.21.0(typescript@5.5.4)
       '@typescript-eslint/visitor-keys': 6.21.0
-      debug: 4.3.6
+      debug: 4.3.7
       eslint: 8.57.0
     optionalDependencies:
       typescript: 5.5.4
@@ -2459,7 +2471,7 @@ snapshots:
     dependencies:
       '@typescript-eslint/typescript-estree': 6.21.0(typescript@5.5.4)
       '@typescript-eslint/utils': 6.21.0(eslint@8.57.0)(typescript@5.5.4)
-      debug: 4.3.6
+      debug: 4.3.7
       eslint: 8.57.0
       ts-api-utils: 1.3.0(typescript@5.5.4)
     optionalDependencies:
@@ -2473,7 +2485,7 @@ snapshots:
     dependencies:
       '@typescript-eslint/types': 6.21.0
       '@typescript-eslint/visitor-keys': 6.21.0
-      debug: 4.3.6
+      debug: 4.3.7
       globby: 11.1.0
       is-glob: 4.0.3
       minimatch: 9.0.3
@@ -2743,6 +2755,10 @@ snapshots:
   debug@4.3.6:
     dependencies:
       ms: 2.1.2
+
+  debug@4.3.7:
+    dependencies:
+      ms: 2.1.3
 
   decompress-response@6.0.0:
     dependencies:
@@ -3243,6 +3259,8 @@ snapshots:
   mkdirp-classic@0.5.3: {}
 
   ms@2.1.2: {}
+
+  ms@2.1.3: {}
 
   multicaller@1.3.2: {}
 

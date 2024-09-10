@@ -161,6 +161,11 @@ export const queries = {
         template
         count
         offset
+        ink {
+          transaction {
+            hash
+          }
+        }
       }
     }
   }`
