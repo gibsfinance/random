@@ -4,6 +4,8 @@ export const tableNames = {
   seed: 'seed',
   preimage: 'preimage', // a location
   secret: 'secret', // a secret generated from a provided mnemonic
+  transaction: 'transaction',
+  transactionAction: 'transaction_action',
   // transaction: 'transaction', // relevant transaction data
   // block: 'block', // relevant block data (number, hash, mined_at)
   // event
