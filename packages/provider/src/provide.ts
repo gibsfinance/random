@@ -274,6 +274,7 @@ const writePreimages = async ({
     return transaction
   })
   if (transaction) {
+    console.log('wrote ink: %o', transaction.hash)
     await publicClient.waitForTransactionReceipt({
       hash: transaction.hash,
     })

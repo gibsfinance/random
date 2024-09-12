@@ -91,11 +91,22 @@ ponder.on('Random:Heat', async ({ event, context }) => {
     section,
     index,
   } = event.args
-  const heatId = scopedId.heat(context, randomUtils.location(section, index))
-  const preimageId = scopedId.preimage(context, randomUtils.location(section, index))
   const pointerId = scopedId.pointer(context, section)
+
+  const pointer = await context.db.Pointer.findUnique({
+    id: pointerId,
+  })
+  const localIndex = index - pointer!.offset
+  const heatId = scopedId.heat(context, randomUtils.location(section, localIndex))
+  const preimageId = scopedId.preimage(context, randomUtils.location(section, localIndex))
   await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
+  const preimage = await context.db.Preimage.findUnique({
+    id: preimageId,
+  })
+  if (!preimage) {
+    console.log(preimageId, event.block, event.transaction, event.transactionReceipt)
+  }
   await context.db.Preimage.update({
     id: preimageId,
     data: {
