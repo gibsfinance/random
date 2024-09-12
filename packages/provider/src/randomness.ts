@@ -35,6 +35,7 @@ export const generatePreimages = async (fromIndex: number | bigint, toIndex: num
     .into(tableNames.seed)
     .onConflict(['seedId'])
     .merge(['seedId'])
+  console.log('creating range %o-%o', Number(fromIndex), Number(toIndex))
   return _.range(Number(fromIndex), Number(toIndex))
     .map((accountIndex) => ({
       seedId: id,
