@@ -36,7 +36,10 @@ const consumeRandomness = async () => {
         heatId: null,
       },
     })
-    const locations = pointers.items.flatMap((pointer) => (
+    const locations = _(pointers.items).sortBy([
+      (a) => a.ink.transaction.block.number,
+      (a) => a.ink.transaction.index,
+    ]).flatMap((pointer) => (
       pointer.preimages!.items.map((preimage) => ({
         provider: pointer.provider as viem.Hex,
         token: pointer.token as viem.Hex,
@@ -46,8 +49,9 @@ const consumeRandomness = async () => {
         offset: BigInt(pointer.offset),
         index: BigInt(preimage.index),
       }))
-    ))
+    )).value().slice(0, required)
     if (locations.length > 3) {
+      console.log('locations.length', locations.length)
       return
     }
     if (locations.length < required) {

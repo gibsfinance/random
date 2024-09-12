@@ -108,6 +108,14 @@ export const queries = {
       duration
       durationIsTimestamp
       offset
+      ink {
+        transaction {
+          index
+          block {
+            number
+          }
+        }
+      }
       preimages(
         limit: $preimageLimit,
         where: $preimageFilter,
