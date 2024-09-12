@@ -100,7 +100,7 @@ const checkSurplus = async () => {
     const start = section.offset = BigInt(storage as viem.Hex)
     const delta = randomConfig.preimagesPerInk === 'max' ? randomUtils.max : BigInt(randomConfig.preimagesPerInk)
     let toIndex = start + delta
-    if (toIndex > randomConfig.maxCoolPreimages) {
+    if (delta > randomConfig.maxCoolPreimages) {
       log('bogus case')
       // handle this case later
       return
