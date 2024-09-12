@@ -90,10 +90,11 @@ const checkSurplus = async () => {
       )
       return
     }
-    console.log('checking location %o', template)
     const storage = await publicClient.getStorageAt({
       address: contracts().random.address,
-      slot: randomUtils.slot('count', template),
+      slot: randomUtils.slot('count', {
+        location: template,
+      }),
     })
     const section = template
     const start = section.offset = BigInt(storage as viem.Hex)
