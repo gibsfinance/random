@@ -3,10 +3,9 @@ import * as threads from './threads'
 import { indexer } from './indexer'
 import { signers } from './signers'
 import config from '../config'
-import { generatePreimages, generateSecret, generateSeed, type ShieldedSecret } from './randomenss'
+import { generatePreimages, generateSecret, generateSeed, type ShieldedSecret } from './randomness'
 import { addresses, contracts, getLatestBaseFee, token } from './contracts'
 import { chain, publicClient } from './chain'
-import { slot } from './slots'
 import { db } from './db'
 import { tableNames, type Tx } from './db/tables'
 import * as randomUtils from '@gibs/random/lib/utils'
@@ -101,7 +100,7 @@ const checkSurplus = async () => {
     }
     const storage = await publicClient.getStorageAt({
       address: contracts().random.address,
-      slot: slot('count', template),
+      slot: randomUtils.slot('count', template),
     })
     const section = template
     const start = section.offset = BigInt(storage as viem.Hex)
