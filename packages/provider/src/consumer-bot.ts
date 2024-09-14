@@ -27,12 +27,13 @@ const consumeRandomness = async () => {
       pointerFilter: {
         token: randomConfig.info.token,
         price_lte: price.toString(),
+        remaining_gt: 0,
         duration_lte: randomConfig.info.duration,
         durationIsTimestamp: randomConfig.info.durationIsTimestamp,
       },
       preimageLimit: required,
       preimageFilter: {
-        data_gte: viem.bytesToHex(Uint8Array.from([rand]), { size: 32 }),
+        data_gte: viem.padHex(`0x${rand.toString(16)}0`, { dir: 'right', size: 32 }),
         heatId: null,
       },
     })
@@ -40,15 +41,17 @@ const consumeRandomness = async () => {
       (a) => +a.ink.transaction.block.number,
       (a) => +a.ink.transaction.index,
     ]).flatMap((pointer) => (
-      pointer.preimages!.items.map((preimage) => ({
-        provider: pointer.provider as viem.Hex,
-        token: pointer.token as viem.Hex,
-        price: BigInt(pointer.price),
-        duration: BigInt(pointer.duration),
-        durationIsTimestamp: pointer.durationIsTimestamp,
-        offset: BigInt(pointer.offset),
-        index: BigInt(preimage.index),
-      }))
+      pointer.preimages!.items.map((preimage) => {
+        return {
+          provider: pointer.provider as viem.Hex,
+          token: pointer.token as viem.Hex,
+          price: BigInt(pointer.price),
+          duration: BigInt(pointer.duration),
+          durationIsTimestamp: pointer.durationIsTimestamp,
+          offset: BigInt(pointer.offset),
+          index: BigInt(preimage.index),
+        }
+      })
     )).value().slice(0, required)
     if (locations.length > 3) {
       console.log('locations.length', locations.length)
@@ -58,9 +61,6 @@ const consumeRandomness = async () => {
       log('required=%o location=%o', required, locations)
       throw new Error('ran out of locations!')
     }
-    locations.forEach((location) => {
-      console.log()
-    })
     const nonce = pendingNonce
     pendingNonce++
     const overrides = {

@@ -100,7 +100,7 @@ export const queries = {
     $preimageLimit: Int!,
     $preimageFilter: PreimageFilter!
   ) {
-    pointers(where: $pointerFilter, limit: $pointerLimit) {
+    pointers(where: $pointerFilter, limit: $pointerLimit, orderBy: "offset", orderDirection: "asc") {
     items {
       provider
       token
