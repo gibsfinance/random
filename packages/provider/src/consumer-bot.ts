@@ -18,7 +18,7 @@ const consumeRandomness = async () => {
     blockTag: 'pending',
   })
   const heatTxs = await Promise.all(conf.streams.map(async (randomConfig) => {
-    const rand = Math.floor(Math.random() * 256)
+    const rand = Math.floor(Math.random() * 16)
     const required = 3
     const decimals = 18
     const price = viem.parseUnits(randomConfig.info.price, decimals)
@@ -58,6 +58,9 @@ const consumeRandomness = async () => {
       log('required=%o location=%o', required, locations)
       throw new Error('ran out of locations!')
     }
+    locations.forEach((location) => {
+      console.log()
+    })
     const nonce = pendingNonce
     pendingNonce++
     const overrides = {
@@ -149,7 +152,7 @@ const detectSecrets = async () => {
 }
 
 const intervals = new Map<threads.Runner, number>([
-  [consumeRandomness, 60_000 * 3],
+  [consumeRandomness, 60_000],
   [detectSecrets, 10_000],
 ])
 
