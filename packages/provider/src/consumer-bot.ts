@@ -37,8 +37,8 @@ const consumeRandomness = async () => {
       },
     })
     const locations = _(pointers.items).sortBy([
-      (a) => a.ink.transaction.block.number,
-      (a) => a.ink.transaction.index,
+      (a) => +a.ink.transaction.block.number,
+      (a) => +a.ink.transaction.index,
     ]).flatMap((pointer) => (
       pointer.preimages!.items.map((preimage) => ({
         provider: pointer.provider as viem.Hex,

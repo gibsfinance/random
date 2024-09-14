@@ -63,7 +63,7 @@ export const queries = {
   requestsForSecrets: gql`query GetRequestsForSecrets(
     $pointerFilter: PointerFilter!
   ) {
-    pointers (where: $pointerFilter) {
+    pointers (where: $pointerFilter, orderBy: "offset", orderDirection: "asc") {
       items {
         provider
         price
@@ -75,7 +75,7 @@ export const queries = {
           accessed: true,
           revealId: null,
           castId: null
-        }, limit: 100, orderBy: "timestamp", orderDirection: "asc") {
+        }, limit: 1000) {
           items {
             data
             timestamp

@@ -481,6 +481,7 @@ const checkHeat = async () => {
   const { pointers } = await indexer.requestsForSecrets({
     provider: provider.account!.address,
     template_in: templates,
+    remaining_gt: 0,
   })
   const preimagesObjects = pointers.items.flatMap(({
     preimages,
@@ -505,6 +506,7 @@ const checkHeat = async () => {
       heat: preimage.heat,
     }))
   ))
+  if (!preimagesObjects.length) return
   const sorted = _.sortBy(preimagesObjects, [
     (p) => +p.heat!.transaction.block.timestamp,
     (p) => +p.heat!.transaction.index,
@@ -512,6 +514,7 @@ const checkHeat = async () => {
   ])
   const preimageHashes = sorted.map(({ data }) => data) as viem.Hex[]
 
+  console.log('revealing %o', preimageHashes)
   const preimageToSecret = await generateSecretsFromPreimages(preimageHashes)
   const { random, multicallerWithSender } = contracts()
   const lastBaseFee = await getLatestBaseFee()
