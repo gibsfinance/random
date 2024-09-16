@@ -9,7 +9,7 @@ const { gql } = gqlreq
 
 export const queries = {
   unlinkedSecrets: gql`query UnlinkedSecrets($preimageFilter: PreimageFilter!) {
-    preimages(where: $preimageFilter) {
+    preimages(where: $preimageFilter, limit: 1000, orderBy: "timestamp", orderDirection: "asc") {
       items {
         data
         secret
