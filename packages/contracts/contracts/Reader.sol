@@ -30,6 +30,27 @@ contract Reader {
     }
 
     /**
+     * signal publicly that these sections are still active
+     * @param infos the sections that you wish to signal are still active
+     * @dev best to do this on a regular interval such as after a hiatus,
+     * a missed cast, or if no activity occurs after a week
+     */
+    function ok(PreimageLocation.Info[] calldata infos) external payable {
+        unchecked {
+            address provider = LibMulticaller.senderOrSigner();
+            uint256 len = infos.length;
+            uint256 i;
+            do {
+                if (infos[i].provider != provider) {
+                    revert Errors.SignerMismatch();
+                }
+                emit Ok(provider, infos[i].section());
+                ++i;
+            } while (i < len);
+        }
+    }
+
+    /**
      * retrieve the address that contains preimage bytes
      * @param info the location of a preimage sstore2 contract on chain
      */
@@ -117,26 +138,5 @@ contract Reader {
                     info.index * THREE_TWO + THREE_TWO
                 )
             );
-    }
-
-    /**
-     * signal publicly that these sections are still active
-     * @param infos the sections that you wish to signal are still active
-     * @dev best to do this on a regular interval such as after a hiatus,
-     * a missed cast, or if no activity occurs after a week
-     */
-    function ok(PreimageLocation.Info[] calldata infos) external payable {
-        unchecked {
-            address provider = LibMulticaller.senderOrSigner();
-            uint256 len = infos.length;
-            uint256 i;
-            do {
-                if (infos[i].provider != provider) {
-                    revert Errors.SignerMismatch();
-                }
-                emit Ok(provider, infos[i].section());
-                ++i;
-            } while (i < len);
-        }
     }
 }

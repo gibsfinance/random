@@ -823,6 +823,10 @@ contract Random is IRandom {
         }
     }
 
+    /**
+     * check a timeline's boolean flags in order to determine if a method should be called for it
+     * @param timeline provides the context to check
+     */
     function _shouldCall(uint256 timeline) internal pure returns (bool) {
         return (timeline << 247) >> TWO_FIVE_FIVE == ONE;
     }
