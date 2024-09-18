@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
+// import {console} from "hardhat/console.sol";
+
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {LibPRNG} from "solady/src/utils/LibPRNG.sol";
 import {LibBitmap} from "solady/src/utils/LibBitmap.sol";
@@ -256,28 +258,28 @@ contract Random is IRandom {
     /**
      * reverse previous charges toward the owner. owner can end up with up to 2x the amount they put in and
      * will have to handle distributing tokens according to their own policy
-     * @param owner owner of the randomness that is having its charges reversed
+     * @param timeline the timeline of the randomness which holds the owner and whether a call should be triggered
      * @param key the randomness key
      * @param token the token being reversed
      * @param payout the amount of the token being reversed
      */
     function _reverseCharges(
-        address owner,
+        uint256 timeline,
         bytes32 key,
         address token,
         uint256 payout
     ) internal {
-        _custodied[owner][token] += payout;
-        // allow owner to take his ball and go home
-        // do not check if the account call was successful - we do not care
-        owner.call(
-            abi.encodeWithSelector(
-                ConsumerReceiver.onReverse.selector,
-                key,
-                token,
-                payout
-            )
-        );
+        _custodied[address(uint160(timeline >> NINE_SIX))][token] += payout;
+        if (_shouldCall(timeline)) {
+            address(uint160(timeline >> NINE_SIX)).call(
+                abi.encodeWithSelector(
+                    ConsumerReceiver.onReverse.selector,
+                    key,
+                    token,
+                    payout
+                )
+            );
+        }
     }
 
     /**
@@ -355,11 +357,12 @@ contract Random is IRandom {
             return
                 Randomness({
                     owner: address(uint160(_timeline[key] >> NINE_SIX)), // 160 bits
+                    usesTimestamp: (_timeline[key] >> EIGHT) & ONE == ONE, // 1 bit
+                    callAtChange: _shouldCall(_timeline[key]),
                     start: uint256(uint48(_timeline[key] >> FOUR_EIGHT)), // 48 bits
                     duration: uint256(
-                        uint256(uint48(_timeline[key])) >> (EIGHT + ONE)
-                    ), // only 39 bits
-                    usesTimestamp: (_timeline[key] >> EIGHT) & ONE == ONE, // 1 bit
+                        uint256(uint48(_timeline[key])) >> (EIGHT + TWO)
+                    ), // only 38 bits
                     contributed: uint256(uint8(_timeline[key])), // 8 bits
                     timeline: _timeline[key],
                     seed: _seed[key]
@@ -435,7 +438,7 @@ contract Random is IRandom {
                     revert Errors.UnableToService();
                 }
                 if (
-                    (uint256(uint40(settings.duration << ONE)) >> ONE) !=
+                    (uint256(uint40(settings.duration << TWO)) >> TWO) !=
                     settings.duration
                 ) {
                     revert Errors.Misconfigured();
@@ -500,7 +503,8 @@ contract Random is IRandom {
                 // this can probably be optimized
                 _timeline[key] = _timelineFromInputs({
                     owner: settings.provider,
-                    // we already checked expiry offset above is constrained to 39 bits
+                    callAtChange: settings.callAtChange,
+                    // we already checked expiry offset above is constrained to 38 bits
                     expiryOffset: (settings.duration << ONE) |
                         (settings.durationIsTimestamp ? ONE : ZERO),
                     start: settings.durationIsTimestamp
@@ -551,13 +555,15 @@ contract Random is IRandom {
      */
     function _timelineFromInputs(
         address owner,
+        bool callAtChange,
         uint256 expiryOffset,
         uint256 start
     ) internal pure returns (uint256) {
         return
             (uint256(uint160(owner)) << NINE_SIX) |
             (uint256((uint48(start))) << FOUR_EIGHT) |
-            (uint256(uint40(expiryOffset)) << EIGHT); // last 8 bits left blank for counting as secrets are revealed
+            (uint256(uint40(expiryOffset << TWO)) << (EIGHT - ONE)) |
+            (uint256(callAtChange ? ONE : ZERO) << EIGHT); // last 8 bits left blank for counting as secrets are revealed
     }
 
     /**
@@ -648,7 +654,8 @@ contract Random is IRandom {
                 // don't penalize, because a provider could slip in before
                 return;
             }
-            if (!_expired({timeline: _timeline[key]})) {
+            uint256 timeline = _timeline[key];
+            if (!_expired({timeline: timeline})) {
                 revert Errors.UnableToService();
             }
             if (_chopped[key]) {
@@ -680,11 +687,19 @@ contract Random is IRandom {
             // AND the staked amount is released to the owner
             _chopped[key] = true;
             _reverseCharges({
-                owner: address(uint160(_timeline[key] >> NINE_SIX)),
+                timeline: timeline,
                 key: key,
                 token: info[ZERO].token,
                 payout: remaining + original
             });
+            if (_shouldCall(timeline)) {
+                address(uint160(timeline >> NINE_SIX)).call(
+                    abi.encodeWithSelector(
+                        ConsumerReceiver.onChop.selector,
+                        key
+                    )
+                );
+            }
             emit Chop({key: key});
         }
     }
@@ -715,6 +730,7 @@ contract Random is IRandom {
             uint256 len = info.length;
             uint256 i;
             uint256 total;
+            uint256 timeline = _timeline[key];
             {
                 bytes32[] memory locations = new bytes32[](len);
                 uint256 firstFlicks;
@@ -761,7 +777,8 @@ contract Random is IRandom {
                 }
                 // this allows users to submit partial secret sets and unlock their staked tokens
                 // without risking omission attacks from late or downed actors
-                _timeline[key] += firstFlicks;
+                timeline += firstFlicks;
+                _timeline[key] = timeline;
                 if (missing) {
                     return CastState.MISSING_SECRET;
                 }
@@ -778,12 +795,12 @@ contract Random is IRandom {
                 PreimageLocation.Info calldata item = info[
                     _random({key: seed, upper: len})
                 ];
-                if (_expired({timeline: _timeline[key]})) {
+                if (_expired({timeline: timeline})) {
                     // if secrets are submitted late, then the owner gets half of their payment back
                     uint256 payout = total / 2;
                     total -= payout;
                     _reverseCharges({
-                        owner: address(uint160(_timeline[key] >> NINE_SIX)),
+                        timeline: timeline,
                         key: key,
                         token: item.token,
                         payout: payout
@@ -793,8 +810,21 @@ contract Random is IRandom {
                 }
                 _custodied[item.provider][item.token] += total;
             }
+            if (_shouldCall(timeline)) {
+                address(uint160(timeline >> NINE_SIX)).call(
+                    abi.encodeWithSelector(
+                        ConsumerReceiver.onCast.selector,
+                        key,
+                        seed
+                    )
+                );
+            }
             return CastState.SCATTERED;
         }
+    }
+
+    function _shouldCall(uint256 timeline) internal pure returns (bool) {
+        return (timeline << 247) >> TWO_FIVE_FIVE == ONE;
     }
 
     /**

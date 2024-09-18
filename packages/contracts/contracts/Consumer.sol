@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
+// import {console} from "hardhat/console.sol";
+
 import {SSTORE2} from "solady/src/utils/SSTORE2.sol";
 import {LibPRNG} from "solady/src/utils/LibPRNG.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
@@ -109,6 +111,9 @@ contract Consumer {
                 });
             }
             if (hashed != _preimage[id]) {
+                // console.log(id);
+                // console.logBytes32(hashed);
+                // console.logBytes32(_preimage[id]);
                 revert SecretMismatch();
             }
             _preimageToSecret[hashed] = revealedSecret;

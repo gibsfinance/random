@@ -1,8 +1,7 @@
 import * as viem from 'viem'
 import _ from 'lodash'
 import { confirmTx, type Context } from './utils'
-// import { ERC20$Type } from '../artifacts/contracts/implementations/ERC20.sol/ERC20'
-import { ERC20$Type } from '../artifacts/solady/src/tokens/ERC20.sol/ERC20'
+import type { ERC20$Type } from '../artifacts/solady/src/tokens/ERC20.sol/ERC20'
 
 export const revertedWithCustomError = async (contract: viem.GetContractReturnType, p: Promise<any>, errorName: string, args?: any[]) => {
   let threw = false

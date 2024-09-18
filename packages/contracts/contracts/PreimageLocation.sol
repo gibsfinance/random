@@ -6,6 +6,7 @@ import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 library PreimageLocation {
     struct Info {
         address provider;
+        bool callAtChange;
         bool durationIsTimestamp;
         uint256 duration;
         address token;
@@ -47,7 +48,8 @@ library PreimageLocation {
 
     function encodeToken(Info memory info) internal pure returns (uint256) {
         return
-            ((info.durationIsTimestamp ? 1 : 0) << 255) |
+            (uint256(info.durationIsTimestamp ? 1 : 0) << 255) |
+            (uint256(info.callAtChange ? 1 : 0) << 254) |
             (uint256((uint40(info.duration) << 1) >> 1) << 160) |
             uint256(uint160(info.token));
     }

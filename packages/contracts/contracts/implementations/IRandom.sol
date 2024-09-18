@@ -6,6 +6,7 @@ import {PreimageLocation} from "../PreimageLocation.sol";
 abstract contract IRandom {
     uint256 internal constant ZERO = 0;
     uint256 internal constant ONE = 1;
+    uint256 internal constant TWO = 2;
     uint256 internal constant EIGHT = 8;
     uint256 internal constant ONE_SIX = 16;
     uint256 internal constant THREE_TWO = 32;
@@ -24,6 +25,7 @@ abstract contract IRandom {
 
     struct Randomness {
         address owner;
+        bool callAtChange;
         bool usesTimestamp;
         uint256 duration;
         uint256 start;
@@ -64,7 +66,8 @@ abstract contract IRandom {
             // end
             return
                 (
-                    (timeline << (TWO_FIVE_FIVE - EIGHT)) >> TWO_FIVE_FIVE ==
+                    (timeline << (TWO_FIVE_FIVE - (EIGHT + ONE))) >>
+                        TWO_FIVE_FIVE ==
                         ZERO
                         ? block.number
                         : block.timestamp
@@ -72,7 +75,7 @@ abstract contract IRandom {
                     // start
                     (uint256(uint48(timeline >> FOUR_EIGHT))) >
                 // expiration delta
-                (uint256(uint40(timeline) >> (EIGHT + ONE)));
+                (uint256(uint40(timeline) >> (EIGHT + TWO)));
         }
     }
 }

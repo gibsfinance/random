@@ -138,6 +138,7 @@ export const dataToPreimages = (data: viem.Hex) => {
 
 export type PreimageInfo = {
   provider: viem.Hex;
+  callAtChange: boolean;
   durationIsTimestamp: boolean;
   duration: bigint;
   token: viem.Hex;
@@ -148,20 +149,9 @@ export type PreimageInfo = {
 
 export type PreimageInfoOptions = Partial<PreimageInfo>
 
-// export const defaultPrice = viem.parseEther('100')
-
-// export const defaultDurationIsTimestamp = false
-
-// export const defaultDuration = 12n
-
-// export const defaultProvider = viem.zeroAddress
-
-// export const defaultToken = viem.zeroAddress
-
-// export const defaultOffset = 0n
-
 export const defaultSection: PreimageInfo = {
   provider: viem.zeroAddress,
+  callAtChange: false,
   durationIsTimestamp: false,
   duration: 12n,
   token: viem.zeroAddress,
@@ -170,23 +160,11 @@ export const defaultSection: PreimageInfo = {
   index: 0n,
 }
 
-// export const providerKeyParts = (key: viem.Hex) => {
-//   const num = BigInt(key)
-//   const provider = viem.toHex(num >> 96n, { size: 20 })
-//   const offset = BigInt.asUintN(80, num >> 16n)
-//   const localIndex = BigInt.asUintN(16, num)
-//   return {
-//     provider: viem.getAddress(provider),
-//     offset,
-//     localIndex,
-//     index: offset + localIndex,
-//   }
-// }
-
 export const encodeToken = (inputs: Partial<PreimageInfo>) => {
   return viem.numberToHex(
     (inputs.durationIsTimestamp ? 1n : 0n) << 255n
-    | BigInt.asUintN(39, inputs.duration!) << 160n
+    | (inputs.callAtChange ? 1n : 0n) << 254n
+    | BigInt.asUintN(38, inputs.duration!) << 160n
     | BigInt(inputs.token!),
     { size: 32 } // encode as a uint256
   )
@@ -194,8 +172,9 @@ export const encodeToken = (inputs: Partial<PreimageInfo>) => {
 
 export const parseTimeline = (timeline: bigint) => ({
   owner: viem.numberToHex(BigInt.asUintN(160, timeline >> 96n), { size: 20 }),
-  usesTimestamp: BigInt.asUintN(1, timeline >> 8n) === 1n,
-  duration: BigInt.asUintN(39, timeline >> 9n),
+  callAtChange: BigInt.asUintN(1, timeline >> 8n) === 1n,
+  usesTimestamp: BigInt.asUintN(1, timeline >> 9n) === 1n,
+  duration: BigInt.asUintN(38, timeline >> 9n),
   start: BigInt.asUintN(48, timeline >> 48n),
   contributed: BigInt.asUintN(8, timeline),
 })
@@ -237,6 +216,7 @@ export type Names = typeof contractName
 
 export const encodeTimeline = ({
   owner,
+  callAtChange,
   start,
   duration,
   durationIsTimestamp,
@@ -246,13 +226,15 @@ export const encodeTimeline = ({
   start: bigint;
   duration: bigint;
   durationIsTimestamp: boolean;
+  callAtChange: boolean;
   count?: bigint;
 }) => {
   return viem.numberToHex((
     BigInt(owner) << 96n
     | BigInt.asUintN(48, start) << 48n
-    | BigInt.asUintN(39, duration) << 9n
-    | (durationIsTimestamp ? 1n : 0n) << 8n
+    | BigInt.asUintN(38, duration) << 10n
+    | (durationIsTimestamp ? 1n : 0n) << 9n
+    | (callAtChange ? 1n : 0n) << 8n
     | BigInt.asUintN(8, count)
   ), { size: 32 })
 }

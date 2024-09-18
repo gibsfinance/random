@@ -37,6 +37,7 @@ describe('slots', () => {
     expect(BigInt(value as string)).to.equal(
       utils.encodeTimeline({
         owner: signer.account!.address,
+        callAtChange: false,
         duration: 12n,
         durationIsTimestamp: false,
         start: start.blockNumber,
