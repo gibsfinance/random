@@ -61,12 +61,19 @@ services:
   gibrandom-provider:
     container_name: gibrandom-provider
     shm_size: 16g
-    command: bash -c "bun run provide:dev"
+    command: >
+      bash -c "
+        echo 'Waiting for 1 minute before starting the provider...'
+        sleep 60
+        echo 'Starting consumer now'
+        bun run provide:dev
+      "
     build:
       context: ./packages/provider
     networks:
       - gibrandom
     depends_on:
+      - gibrandom-indexer
       - gibrandom-provider-postgres
     volumes:
       - ./packages/provider/postgres-data:/app/postgres-data
@@ -77,6 +84,8 @@ services:
       - ./packages/provider/package.json:/app/package.json
       - ./packages/provider/pnpm-lock.yaml:/app/pnpm-lock.yaml
       - ./packages/provider/tsconfig.json:/app/tsconfig.json
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgres://gibrandom:password@gibrandom-provider-postgres:5432/gibrandom
       DEBUG: '${DEBUG:-💬}'
@@ -88,11 +97,20 @@ services:
   gibrandom-consume:
     container_name: gibrandom-consume
     shm_size: 16g
-    command: bash -c "bun run consumer-bot"
+    command: >
+      bash -c "
+        echo 'Waiting for 1 minute before starting the consumer...'
+        sleep 60
+        echo 'Starting consumer now'
+        bun run consumer-bot
+      "
     build:
       context: ./packages/provider
     networks:
       - gibrandom
+    depends_on:
+      - gibrandom-indexer
+      - gibrandom-provider-postgres
     volumes:
       - ./packages/provider/postgres-data:/app/postgres-data
       - ./packages/provider/src:/app/src
@@ -102,15 +120,18 @@ services:
       - ./packages/provider/package.json:/app/package.json
       - ./packages/provider/pnpm-lock.yaml:/app/pnpm-lock.yaml
       - ./packages/provider/tsconfig.json:/app/tsconfig.json
+    env_file:
+      - .env
     environment:
       DEBUG: '${DEBUG:-💬}'
-      INDEXER_URL: '${INDEXER_URL:-http://gibrandom-indexer:42069}'
+      INDEXER_URL: http://gibrandom-indexer:42069
       MNEMONIC: $MNEMONIC
       RANDOMNESS_MNEMONIC: $RANDOMNESS_MNEMONIC
       CHAIN_ID: 943
 
 networks:
   gibrandom:
+    name: gibrandom
     driver: bridge
 
 volumes:
