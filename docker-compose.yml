@@ -64,24 +64,47 @@ services:
     command: bash -c "bun run provide:dev"
     build:
       context: ./packages/provider
-      args:
-        INDEXER_URL: http://gibrandom-indexer:42069
     networks:
       - gibrandom
     depends_on:
       - gibrandom-provider-postgres
     volumes:
       - ./packages/provider/postgres-data:/app/postgres-data
-      - ./packages/provider/package.json:/app/package.json
       - ./packages/provider/src:/app/src
-      - ./packages/provider/pnpm-lock.yaml:/app/pnpm-lock.yaml
-      - ./packages/provider/tsconfig.json:/app/tsconfig.json
       - ./packages/provider/codegen.config.cjs:/app/codegen.config.cjs
       - ./packages/provider/config.ts:/app/config.ts
       - ./packages/provider/knexfile.ts:/app/knexfile.ts
-      - ./packages/provider/.npmrc:/app/.npmrc
+      - ./packages/provider/package.json:/app/package.json
+      - ./packages/provider/pnpm-lock.yaml:/app/pnpm-lock.yaml
+      - ./packages/provider/tsconfig.json:/app/tsconfig.json
     environment:
       DATABASE_URL: postgres://gibrandom:password@gibrandom-provider-postgres:5432/gibrandom
+      DEBUG: '${DEBUG:-💬}'
+      INDEXER_URL: http://gibrandom-indexer:42069
+      MNEMONIC: $MNEMONIC
+      RANDOMNESS_MNEMONIC: $RANDOMNESS_MNEMONIC
+      CHAIN_ID: 943
+
+  gibrandom-consume:
+    container_name: gibrandom-consume
+    shm_size: 16g
+    command: bash -c "bun run consumer-bot"
+    build:
+      context: ./packages/provider
+    networks:
+      - gibrandom
+    depends_on:
+      - gibrandom-provider-postgres
+    volumes:
+      - ./packages/provider/postgres-data:/app/postgres-data
+      - ./packages/provider/src:/app/src
+      - ./packages/provider/codegen.config.cjs:/app/codegen.config.cjs
+      - ./packages/provider/config.ts:/app/config.ts
+      - ./packages/provider/knexfile.ts:/app/knexfile.ts
+      - ./packages/provider/package.json:/app/package.json
+      - ./packages/provider/pnpm-lock.yaml:/app/pnpm-lock.yaml
+      - ./packages/provider/tsconfig.json:/app/tsconfig.json
+    environment:
       DEBUG: '${DEBUG:-💬}'
       INDEXER_URL: http://gibrandom-indexer:42069
       MNEMONIC: $MNEMONIC

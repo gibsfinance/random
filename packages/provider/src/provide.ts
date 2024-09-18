@@ -579,49 +579,6 @@ const checkResults = async () => {
     checkInk(),
     checkHeat(),
   ])
-  // const msgboard = msgBoard()
-  // const contents = await msgboard.content()
-  // for (const p of sorted) {
-  //   const preimage = p.data as viem.Hex
-  //   const messages = contents[preimage] || {}
-  //   const secret = preimageToSecret.get(preimage)!
-  //   if (Object.entries(messages).find(([_key, { data }]) => data === secret)) {
-  //     log('existing work     %o', preimage)
-  //     continue
-  //   }
-  //   log('performing work   %o', preimage)
-  // const processes: Subprocess<'ignore', 'pipe', 'inherit'>[] = []
-  // const serializedWork = await Promise.race(
-  //   _.range(0, 8).map((i) => {
-  //     return new Promise<string>((resolve) => {
-  //       let first = false
-  //       const child = Bun.spawn({
-  //         cmd: ['bun', './src/dowork'],
-  //         serialization: 'json',
-  //         // stdin: 'pipe',
-  //         ipc(validWork, child) {
-  //           log(validWork)
-  //           if (!first) {
-  //             child.send(JSON.stringify({ work: true, start: (i + 1).toString(), category: preimage, data: secret }))
-  //             first = true
-  //             return
-  //           }
-  //           resolve(validWork.toString())
-  //         },
-  //       })
-  //       processes.push(child)
-  //     })
-  //   })
-  // )
-  // processes.forEach((sp) => {
-  //   sp.kill()
-  // })
-  // const work = Work.fromJSON(serializedWork)
-  //   const msgboard = msgBoard()
-  //   const work = await msgboard.doPoW(preimage, secret)
-  //   const id = await msgboard.add(work.toRLP())
-  //   log('added work        %o', preimage)
-  // }
 }
 
 const hasAdequateDeposits = async (tkn: viem.Hex, runner: viem.WalletClient) => {
