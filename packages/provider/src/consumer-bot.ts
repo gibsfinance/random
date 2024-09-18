@@ -18,6 +18,7 @@ const lock = promiseLimit(1)
 const consumeRandomness = async () => {
   const conf = config.randomness.get(chain.id)!
   if (!(await status())) {
+    console.log('waiting for status ready')
     return
   }
   const { consumer } = await signers()
@@ -105,6 +106,7 @@ const consumeRandomness = async () => {
 
 const detectSecrets = async () => {
   if (!(await status())) {
+    console.log('waiting for status ready')
     return
   }
   const { consumer } = await signers()

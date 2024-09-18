@@ -181,6 +181,8 @@ export const queries = {
 
 let c: null | gqlreq.GraphQLClient = null
 
+console.log('indexer %o', config.indexer.url)
+
 const client = (): gqlreq.GraphQLClient => {
   if (c) return c
   c = new gqlreq.GraphQLClient(config.indexer.url!)

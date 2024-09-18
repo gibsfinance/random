@@ -93,8 +93,6 @@ services:
       context: ./packages/provider
     networks:
       - gibrandom
-    depends_on:
-      - gibrandom-provider-postgres
     volumes:
       - ./packages/provider/postgres-data:/app/postgres-data
       - ./packages/provider/src:/app/src
@@ -106,7 +104,7 @@ services:
       - ./packages/provider/tsconfig.json:/app/tsconfig.json
     environment:
       DEBUG: '${DEBUG:-💬}'
-      INDEXER_URL: http://gibrandom-indexer:42069
+      INDEXER_URL: '${INDEXER_URL:-http://gibrandom-indexer:42069}'
       MNEMONIC: $MNEMONIC
       RANDOMNESS_MNEMONIC: $RANDOMNESS_MNEMONIC
       CHAIN_ID: 943

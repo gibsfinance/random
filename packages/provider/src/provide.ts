@@ -30,6 +30,7 @@ const logSigner = _.once((provider: viem.Hex) => {
 
 const checkSurplus = async () => {
   if (!(await status())) {
+    console.log('waiting for status ready')
     return
   }
   const { wallets } = await signers()
@@ -143,9 +144,6 @@ const writePreimages = async ({
   preimages: ShieldedSecret[];
   randomConfig: StreamConfig;
 }) => {
-  if (!(await status())) {
-    return
-  }
   const { wallets } = await signers()
   log('images %o', preimages.length)
   const templateHash = randomUtils.template(template)
@@ -372,6 +370,7 @@ const generateSecretsFromPreimages = async (preimages: viem.Hex[]) => {
 
 const checkInk = async () => {
   if (!(await status())) {
+    console.log('waiting for status ready')
     return
   }
   const { provider } = await signers()
@@ -484,6 +483,7 @@ const unminedTransactions = (tx: Tx = db) => (
 
 const checkHeat = async () => {
   if (!(await status())) {
+    console.log('waiting for status ready')
     return
   }
   const templates = await templatesWithOutstanding()
