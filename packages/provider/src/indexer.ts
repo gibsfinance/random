@@ -188,6 +188,11 @@ const client = (): gqlreq.GraphQLClient => {
 }
 
 export const indexer = {
+  status: async () => {
+    return await client().request<Pick<Query, '_meta'>>({
+      document: `query Status{_meta{status}}`,
+    })
+  },
   unlinkedSecrets: async (preimageFilter: PreimageFilter) => {
     return await client().request<Pick<Query, 'preimages'>>({
       document: queries.unlinkedSecrets,

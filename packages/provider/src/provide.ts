@@ -15,6 +15,7 @@ import type { Secret, Transaction } from 'knex/types/tables'
 import type { Random$Type } from "@gibs/random/artifacts/contracts/Random.sol/Random";
 import type { StreamConfig } from './types'
 import type { Preimage } from './gql/graphql'
+import { status } from './utils'
 
 const outstandingSecrets = () => (
   db.select('*').from(tableNames.secret)
@@ -28,6 +29,9 @@ const logSigner = _.once((provider: viem.Hex) => {
 })
 
 const checkSurplus = async () => {
+  if (!(await status())) {
+    return
+  }
   const { wallets } = await signers()
   await Promise.all(config.randomness.get(chain.id)!.streams.map(async (randomConfig) => {
     const provider = wallets[randomConfig.provider]
@@ -139,6 +143,9 @@ const writePreimages = async ({
   preimages: ShieldedSecret[];
   randomConfig: StreamConfig;
 }) => {
+  if (!(await status())) {
+    return
+  }
   const { wallets } = await signers()
   log('images %o', preimages.length)
   const templateHash = randomUtils.template(template)
@@ -364,6 +371,9 @@ const generateSecretsFromPreimages = async (preimages: viem.Hex[]) => {
 }
 
 const checkInk = async () => {
+  if (!(await status())) {
+    return
+  }
   const { provider } = await signers()
   const { pointers } = await indexer.pointers({
     provider: provider.account!.address,
@@ -473,6 +483,9 @@ const unminedTransactions = (tx: Tx = db) => (
 )
 
 const checkHeat = async () => {
+  if (!(await status())) {
+    return
+  }
   const templates = await templatesWithOutstanding()
   if (!templates.length) {
     return

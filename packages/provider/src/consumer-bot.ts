@@ -2,13 +2,14 @@ import promiseLimit from 'promise-limit'
 import { indexer } from "./indexer"
 import * as viem from 'viem'
 import config from '../config'
-import { chain, publicClient } from "./chain"
+import { chain, name, publicClient } from "./chain"
 import * as threads from './threads'
 import { contracts, getLatestBaseFee } from "./contracts"
 import { signers } from "./signers"
 import * as randomUtils from '@gibs/random/lib/utils'
 import { log } from "./logger"
 import _ from "lodash"
+import { status } from './utils'
 
 const limit = promiseLimit<viem.Hex>(4)
 
@@ -16,6 +17,9 @@ const lock = promiseLimit(1)
 
 const consumeRandomness = async () => {
   const conf = config.randomness.get(chain.id)!
+  if (!(await status())) {
+    return
+  }
   const { consumer } = await signers()
   const lastBaseFee = await getLatestBaseFee()
   await lock(async () => {
@@ -58,14 +62,14 @@ const consumeRandomness = async () => {
             index: BigInt(preimage.index),
           }
         })
-      )).value().slice(0, required)
+      )).slice(0, required).value()
       if (locations.length > 3) {
         log('locations.length', locations.length)
         return
       }
       if (locations.length < required) {
-        log('required=%o location=%o', required, locations)
-        throw new Error('ran out of locations!')
+        log('ran out of locations required=%o location=%o', required, locations)
+        return
       }
       const nonce = pendingNonce
       pendingNonce++
@@ -100,6 +104,9 @@ const consumeRandomness = async () => {
 }
 
 const detectSecrets = async () => {
+  if (!(await status())) {
+    return
+  }
   const { consumer } = await signers()
   const { preimages } = await indexer.unlinkedSecrets({
     secret_not: null,
