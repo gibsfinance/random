@@ -636,6 +636,24 @@ describe("Random", () => {
           key: start.args.key!,
         })
       })
+      it('will still call the appropriate handler', async () => {
+        const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
+        const { selections, signers, starts, secretByPreimage } = ctx
+        const [, signer2] = signers
+        const [start] = starts
+        await helpers.mine(13)
+        const secrets = selections.map((selection) => (
+          secretByPreimage.get(selection.preimage) as viem.Hex
+        ))
+        const castTx = ctx.random.write.cast(
+          [start.args.key!, selections, secrets],
+          { account: signer2.account! },
+        )
+        await expectations.emit(ctx, castTx, ctx.random, 'Cast')
+        await expectations.emit(ctx, castTx, ctx.random, 'Expired', {
+          key: start.args.key!,
+        })
+      })
     })
   })
   describe('public signals to indicate the efficacy/health of preimages', () => {

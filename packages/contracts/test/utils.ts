@@ -6,18 +6,15 @@ import hre from 'hardhat'
 import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
 import * as utils from '../lib/utils'
 import { type Names, contractName } from '../lib/utils'
-// import RandomModule from '../ignition/modules/Random'
-// import ReaderModule from '../ignition/modules/Reader'
-// import ConsumerModule from '../ignition/modules/Consumer'
 
 const deployMulticaller = async (name: Names[keyof Names], address: viem.Hex) => {
   const provider = await hre.viem.getPublicClient()
-  const code = await provider.getBytecode({
+  const code = await provider.getCode({
     address,
   })
   if (!code || code == '0x') {
     const tmpMulticaller = await hre.viem.deployContract(name as any)
-    const code = await provider.getBytecode({ address: tmpMulticaller.address }) as any
+    const code = await provider.getCode({ address: tmpMulticaller.address }) as any
     await provider.request({
       method: 'hardhat_setCode' as any,
       params: [
@@ -34,6 +31,8 @@ export const deploy = async () => {
   const random = await hre.viem.deployContract(contractName.Random)
   const reader = await hre.viem.deployContract(contractName.Reader, [random.address])
   const consumer = await hre.viem.deployContract(contractName.Consumer, [random.address])
+  const consumerIncomplete = await hre.viem.deployContract(contractName.ConsumerIncomplete, [random.address])
+  const consumerEmitter = await hre.viem.deployContract(contractName.ConsumerEmitter, [random.address])
   // const { random } = await hre.ignition.deploy(RandomModule)
   // const { reader } = await hre.ignition.deploy(ReaderModule)
   // const { consumer } = await hre.ignition.deploy(ConsumerModule)
@@ -58,10 +57,15 @@ export const deploy = async () => {
   const deployedContracts = {
     random,
     reader,
-    consumer,
+    // multicaller as it is on mainnet
+    multicallerWithSender,
+    // erc20s
     ERC20,
     taxERC20,
-    multicallerWithSender,
+    // consumer types
+    consumer,
+    consumerIncomplete,
+    consumerEmitter,
   }
   for (const [name, contract] of Object.entries(deployedContracts)) {
     console.log('%s:%o', contract.address, name)

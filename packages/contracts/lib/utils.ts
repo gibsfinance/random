@@ -203,6 +203,8 @@ export const sum = (s: PreimageInfo[]) => s.reduce<bigint>((total, { price }) =>
 
 export const contractName = {
   Consumer: 'contracts/Consumer.sol:Consumer',
+  ConsumerIncomplete: 'contracts/test/ConsumerIncomplete.sol:ConsumerIncomplete',
+  ConsumerEmitter: 'contracts/test/ConsumerEmitter.sol:ConsumerEmitter',
   Random: 'contracts/Random.sol:Random',
   Reader: 'contracts/Reader.sol:Reader',
   ERC20: 'contracts/test/ERC20.sol:ERC20',
