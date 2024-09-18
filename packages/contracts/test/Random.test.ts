@@ -501,6 +501,29 @@ describe("Random", () => {
           key: start.args.key!,
         })
       })
+      it('will call defined method upon request', async () => {
+        const ctx = await helpers.loadFixture(function deployWithRandomnessThatCallsAndStart() {
+          return testUtils.deployWithRandomnessAndStart({
+            ...utils.defaultSection,
+            callAtChange: true,
+          }, 'consumerEmitter')
+        })
+        const { selections, signers, starts } = ctx
+        const [start] = starts
+        await helpers.mine(12)
+        const chopResult = ctx.random.write.chop([start.args.key!, selections], { value: oneEther })
+        await expectations.changeEtherBalances(ctx,
+          chopResult,
+          [signers[0].account!.address, ctx.random.address],
+          [-oneEther, oneEther],
+        )
+        await expectations.emit(ctx, chopResult, ctx.random, 'Chop', {
+          key: start.args.key!,
+        })
+        await expectations.emit(ctx, chopResult, ctx.consumerEmitter, 'Chop', {
+          key: start.args.key!,
+        })
+      })
       it('cannot call chop twice', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
         const { selections, signers, starts } = ctx
@@ -557,6 +580,37 @@ describe("Random", () => {
             })
           )
         )
+      })
+      it('notification will occur when reverse is called', async () => {
+        const ctx = await helpers.loadFixture(function deployWithRandomnessThatCallsAndStart() {
+          return testUtils.deployWithRandomnessAndStart({
+            ...utils.defaultSection,
+            callAtChange: true,
+          }, 'consumerEmitter')
+        })
+        const { selections, signers, starts, randomnessProviders } = ctx
+        const [provider] = randomnessProviders
+        const [start] = starts
+        const [, signer2] = signers
+        await helpers.mine(12)
+        const chopResult = ctx.random.write.chop([start.args.key!, selections], {
+          account: signer2.account,
+        })
+        const amountReversed = utils.sum(selections) * 2n
+        await expectations.changeResults(ctx, chopResult,
+          [ctx.consumerEmitter.address, signer2, provider],
+          [amountReversed, 0n, 0n],
+          (opts: expectations.CheckResultOpts) => (
+            ctx.random.read.balanceOf([opts.address, viem.zeroAddress], {
+              blockNumber: opts.blockNumber,
+            })
+          )
+        )
+        await expectations.emit(ctx, chopResult, ctx.consumerEmitter, 'Reverse', {
+          key: start.args.key!,
+          token: viem.zeroAddress,
+          amount: amountReversed,
+        })
       })
       it('will fail if key cannot be reconstructed', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
@@ -637,7 +691,12 @@ describe("Random", () => {
         })
       })
       it('will still call the appropriate handler', async () => {
-        const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
+        const ctx = await helpers.loadFixture(function deployWithRandomnessThatCallsAndStart() {
+          return testUtils.deployWithRandomnessAndStart({
+            ...utils.defaultSection,
+            callAtChange: true,
+          }, 'consumerEmitter')
+        })
         const { selections, signers, starts, secretByPreimage } = ctx
         const [, signer2] = signers
         const [start] = starts
@@ -652,6 +711,10 @@ describe("Random", () => {
         await expectations.emit(ctx, castTx, ctx.random, 'Cast')
         await expectations.emit(ctx, castTx, ctx.random, 'Expired', {
           key: start.args.key!,
+        })
+        await expectations.emit(ctx, castTx, ctx.consumerEmitter, 'Cast', {
+          key: start.args.key!,
+          seed: utils.toSeed(secrets),
         })
       })
     })
@@ -686,7 +749,6 @@ describe("Random", () => {
       ))
       const allUnder = _.filter(all, { provider: provider.account!.address })
       const unused = allUnder.length - consumedUnder.length
-      // console.log('consumed %o', consumedUnder.map(({ index }) => index))
       const bleachTx = ctx.random.write.bleach([{
         ...utils.defaultSection,
         provider: provider.account!.address,

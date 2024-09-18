@@ -316,3 +316,9 @@ export const slot = (slot: Slot, slotInputs: SlotInputs, idx?: number) => {
   }
   return key
 }
+
+export const toSeed = (inputs: viem.Hex[]) => (
+  viem.keccak256(
+    viem.hexToBytes(viem.concatHex(inputs))
+  )
+)

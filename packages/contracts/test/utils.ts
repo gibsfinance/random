@@ -120,7 +120,7 @@ export const deployWithRandomness = async (section = utils.defaultSection) => {
   }
 }
 
-export const deployWithRandomnessAndStart = async (section = utils.defaultSection) => {
+export const deployWithRandomnessAndStart = async (section = utils.defaultSection, prov: string | viem.Hex = viem.zeroAddress) => {
   const ctx = await helpers.loadFixture(async function deployWithRandomnessOneOff() {
     return await deployWithRandomness(section)
   })
@@ -135,9 +135,18 @@ export const deployWithRandomnessAndStart = async (section = utils.defaultSectio
     blockTag: 'latest',
   })
   const { all, selections } = await selectPreimages(ctx, Number(ctx.required), [section])
+  let consumerAddress = consumer.account!.address
+  if (prov !== viem.zeroAddress) {
+    if (viem.isAddress(prov)) {
+      consumerAddress = prov
+    } else {
+      const contract = (ctx as any)[prov] as viem.GetContractReturnType
+      consumerAddress = contract.address
+    }
+  }
   const heatTx = await ctx.random.write.heat([
     ctx.required,
-    { ...section, provider: consumer.account!.address },
+    { ...section, provider: consumerAddress },
     selections,
   ], {
     value: utils.sum(selections),
