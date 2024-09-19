@@ -92,7 +92,6 @@ ponder.on('Random:Heat', async ({ event, context }) => {
     section,
     index,
   } = event.args
-  console.log(event)
   const pointerId = scopedId.pointer(context, section)
 
   const pointer = await context.db.Pointer.findUnique({

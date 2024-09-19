@@ -41,6 +41,7 @@ const randomness = new Map<number, RandomnessConfig>([
         duration: 12,
         durationIsTimestamp: false,
         price: '100',
+        callAtChange: false,
       },
     }],
   }]
