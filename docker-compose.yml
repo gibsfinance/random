@@ -3,6 +3,7 @@ services:
     container_name: gibrandom-indexer-postgres
     image: gibsfinance/postgres
     shm_size: 16g
+    platform: linux/amd64
     command: ['postgres']
     ports:
       - 9151:5432
@@ -19,6 +20,7 @@ services:
     container_name: gibrandom-provider-postgres
     image: gibsfinance/postgres
     shm_size: 16g
+    platform: linux/amd64
     command: ['postgres']
     ports:
       - 9182:5432
