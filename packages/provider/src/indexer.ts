@@ -63,7 +63,7 @@ export const queries = {
   requestsForSecrets: gql`query GetRequestsForSecrets(
     $pointerFilter: PointerFilter!
   ) {
-    pointers (where: $pointerFilter, orderBy: "offset", orderDirection: "asc") {
+    pointers(where: $pointerFilter, orderBy: "offset", orderDirection: "asc") {
       items {
         provider
         price
@@ -71,6 +71,7 @@ export const queries = {
         durationIsTimestamp
         token
         offset
+        callAtChange
         preimages(where: {
           accessed: true,
           revealId: null,
