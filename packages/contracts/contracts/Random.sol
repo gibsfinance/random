@@ -198,14 +198,21 @@ contract Random is IRandom {
             // this event is the same one used during cast
             // but it should not be used as a signal that the randomness has been cast
             // only the cast event should be used for that
-            _revealedSecret[info.provider][info.encodeToken()][info.price][
-                info.offset + info.index
-            ] = formerSecret;
-            emit Reveal({
-                provider: info.provider,
-                location: info.location(),
-                formerSecret: formerSecret
-            });
+            uint256 tkn = info.encodeToken();
+            if (
+                _revealedSecret[info.provider][tkn][info.price][
+                    info.offset + info.index
+                ] == bytes32(ZERO)
+            ) {
+                _revealedSecret[info.provider][tkn][info.price][
+                    info.offset + info.index
+                ] = formerSecret;
+                emit Reveal({
+                    provider: info.provider,
+                    location: info.location(),
+                    formerSecret: formerSecret
+                });
+            }
         }
     }
 
