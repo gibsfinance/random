@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@gibs/random':
-        specifier: ^0.0.15
-        version: 0.0.15(chai@5.1.1)(zod@3.23.8)
+        specifier: ^0.0.16
+        version: 0.0.16(chai@5.1.1)(zod@3.23.8)
       '@ponder/utils':
         specifier: ^0.1.7
         version: 0.1.7(viem@2.21.1(zod@3.23.8))
@@ -505,8 +505,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@gibs/random@0.0.15':
-    resolution: {integrity: sha512-ivQSH8sZm4Sa0LPOCVub8UgmchLiJ/HnBm55I2bbfBGU/IPvLjvF5/Sk5uZo7yEvuPXIIwxwq2AKFXI640nPnA==}
+  '@gibs/random@0.0.16':
+    resolution: {integrity: sha512-C/LundFP7FbDR6wXRt5LbfMyOVHOj8kz7uh5iUKKXtRdW+YmXSJ0or4TKFpa6BIE8DIVsZ4auIKXTXIiHlJeQg==}
 
   '@graphql-codegen/add@5.0.3':
     resolution: {integrity: sha512-SxXPmramkth8XtBlAHu4H4jYcYXM/o3p01+psU+0NADQowA8jtYkK6MW5rV6T+CxkEaNZItfSmZRPgIuypcqnA==}
@@ -2671,7 +2671,7 @@ snapshots:
   '@esbuild/win32-x64@0.23.1':
     optional: true
 
-  '@gibs/random@0.0.15(chai@5.1.1)(zod@3.23.8)':
+  '@gibs/random@0.0.16(chai@5.1.1)(zod@3.23.8)':
     dependencies:
       '@scure/bip32': 1.4.0
       '@scure/bip39': 1.3.0
