@@ -60,6 +60,7 @@ ponder.on("Random.ink()", async ({ event, context }) => {
         lastOkTransactionId: tx.id,
         provider: inkEvent.args.provider,
         template,
+        callAtChange: sectionInput.callAtChange,
         token: sectionInput.token,
         price: sectionInput.price,
         duration: sectionInput.duration,
@@ -91,6 +92,7 @@ ponder.on('Random:Heat', async ({ event, context }) => {
     section,
     index,
   } = event.args
+  console.log(event)
   const pointerId = scopedId.pointer(context, section)
 
   const pointer = await context.db.Pointer.findUnique({

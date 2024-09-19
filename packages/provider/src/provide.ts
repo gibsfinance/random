@@ -42,6 +42,7 @@ const checkSurplus = async () => {
       ...randomConfig.info,
       provider: provider.account!.address,
       duration: BigInt(randomConfig.info.duration),
+      callAtChange: false,
       price: viem.parseUnits(randomConfig.info.price, decimals),
       // unused during storage check
       offset: 0n,
@@ -501,6 +502,7 @@ const checkHeat = async () => {
     provider,
     token,
     duration,
+    callAtChange,
     durationIsTimestamp,
     price,
     offset,
@@ -511,6 +513,7 @@ const checkHeat = async () => {
         token: token as viem.Hex,
         duration,
         durationIsTimestamp,
+        callAtChange,
         price,
         offset,
         index: BigInt(preimage.index),

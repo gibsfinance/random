@@ -28,6 +28,7 @@ export default createSchema((p) => ({
     price: p.bigint(),
     duration: p.bigint(),
     durationIsTimestamp: p.boolean(),
+    callAtChange: p.boolean(),
     offset: p.bigint(),
     preimages: p.many('Preimage.pointerId'),
     bleachId: p.hex().optional().references('Bleach.id'),

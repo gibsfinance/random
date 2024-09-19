@@ -108,6 +108,7 @@ export const queries = {
       duration
       durationIsTimestamp
       offset
+      callAtChange
       ink {
         transaction {
           index
@@ -135,6 +136,7 @@ export const queries = {
         id
         token
         price
+        callAtChange
         duration
         durationIsTimestamp
       }
@@ -169,6 +171,7 @@ export const queries = {
         template
         count
         offset
+        callAtChange
         ink {
           transaction {
             hash

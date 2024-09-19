@@ -57,6 +57,7 @@ const consumeRandomness = async () => {
             provider: pointer.provider as viem.Hex,
             token: pointer.token as viem.Hex,
             price: BigInt(pointer.price),
+            callAtChange: pointer.callAtChange,
             duration: BigInt(pointer.duration),
             durationIsTimestamp: pointer.durationIsTimestamp,
             offset: BigInt(pointer.offset),
@@ -87,6 +88,7 @@ const consumeRandomness = async () => {
         price,
         duration: BigInt(randomConfig.info.duration) * 2n,
         provider: consumer.account!.address,
+        callAtChange: randomConfig.info.callAtChange,
         offset: 0n,
         index: 0n,
       }, locations], {
@@ -169,6 +171,7 @@ const detectSecrets = async () => {
         provider: pointer.provider as viem.Hex,
         token: pointer.token as viem.Hex,
         price: BigInt(pointer.price),
+        callAtChange: pointer.callAtChange,
         durationIsTimestamp: pointer.durationIsTimestamp,
         duration: BigInt(pointer.duration),
         offset: BigInt(pointer.offset),

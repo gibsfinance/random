@@ -641,6 +641,7 @@ export type Pointer = {
   address: Scalars['String']['output'];
   bleach?: Maybe<Bleach>;
   bleachId?: Maybe<Scalars['String']['output']>;
+  callAtChange: Scalars['Boolean']['output'];
   chainId: Scalars['BigInt']['output'];
   count: Scalars['Int']['output'];
   duration: Scalars['BigInt']['output'];
@@ -690,6 +691,10 @@ export type PointerFilter = {
   bleachId_lte?: InputMaybe<Scalars['String']['input']>;
   bleachId_not?: InputMaybe<Scalars['String']['input']>;
   bleachId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  callAtChange?: InputMaybe<Scalars['Boolean']['input']>;
+  callAtChange_in?: InputMaybe<Array<InputMaybe<Scalars['Boolean']['input']>>>;
+  callAtChange_not?: InputMaybe<Scalars['Boolean']['input']>;
+  callAtChange_not_in?: InputMaybe<Array<InputMaybe<Scalars['Boolean']['input']>>>;
   chainId?: InputMaybe<Scalars['BigInt']['input']>;
   chainId_gt?: InputMaybe<Scalars['BigInt']['input']>;
   chainId_gte?: InputMaybe<Scalars['BigInt']['input']>;
@@ -2201,6 +2206,7 @@ export type Pointer = {
   address: Scalars['String']['output'];
   bleach?: Maybe<Bleach>;
   bleachId?: Maybe<Scalars['String']['output']>;
+  callAtChange: Scalars['Boolean']['output'];
   chainId: Scalars['BigInt']['output'];
   count: Scalars['Int']['output'];
   duration: Scalars['BigInt']['output'];
@@ -2250,6 +2256,10 @@ export type PointerFilter = {
   bleachId_lte?: InputMaybe<Scalars['String']['input']>;
   bleachId_not?: InputMaybe<Scalars['String']['input']>;
   bleachId_not_in?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
+  callAtChange?: InputMaybe<Scalars['Boolean']['input']>;
+  callAtChange_in?: InputMaybe<Array<InputMaybe<Scalars['Boolean']['input']>>>;
+  callAtChange_not?: InputMaybe<Scalars['Boolean']['input']>;
+  callAtChange_not_in?: InputMaybe<Array<InputMaybe<Scalars['Boolean']['input']>>>;
   chainId?: InputMaybe<Scalars['BigInt']['input']>;
   chainId_gt?: InputMaybe<Scalars['BigInt']['input']>;
   chainId_gte?: InputMaybe<Scalars['BigInt']['input']>;

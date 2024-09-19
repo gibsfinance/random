@@ -40,6 +40,8 @@ export type StreamConfig = {
     duration: number;
     /** whether or not the duration above should be read as a timestamp (true) or a block delta (false) */
     durationIsTimestamp: boolean;
+    /** whether or not to call functions at each step */
+    callAtChange: boolean;
   }
 }
 
