@@ -46,6 +46,7 @@ export const queries = {
                   index
                   pointer {
                     duration
+                    callAtChange
                     durationIsTimestamp
                     price
                     token
