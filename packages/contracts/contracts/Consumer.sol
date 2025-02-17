@@ -104,11 +104,7 @@ contract Consumer {
             IRandom.Randomness memory r = IRandom(rand).randomness(_key[id]);
             bytes32 hashed = revealedSecret.hash();
             if (IRandom(rand).expired({timeline: r.timeline})) {
-                _undermineExpired({
-                    id: id,
-                    hashed: hashed,
-                    seed: r.seed
-                });
+                _undermineExpired({id: id, hashed: hashed, seed: r.seed});
             }
             if (hashed != _preimage[id]) {
                 // console.log(id);
@@ -123,21 +119,17 @@ contract Consumer {
         }
     }
 
-    function chain(address owner, bool onlySameTx, bool underminable, bytes32 preimage)
+    function chain(address owner, bool onlySameTx, bool useTSTORE, bool underminable, bytes32 preimage)
         external
         payable
         returns (uint256 id)
     {
-        bytes32 key = IRandom(rand).latest(owner, onlySameTx);
+        bytes32 key = IRandom(rand).latest(owner, onlySameTx, useTSTORE);
         if (key == bytes32(ZERO)) {
             revert Errors.Misconfigured();
         }
-        return _chainTo({
-            owner: LibMulticaller.senderOrSigner(),
-            underminable: underminable,
-            preimage: preimage,
-            key: key
-        });
+        return
+            _chainTo({owner: LibMulticaller.senderOrSigner(), underminable: underminable, preimage: preimage, key: key});
     }
 
     function chainTo(address owner, bool underminable, bytes32 preimage, bytes32 key)
@@ -145,12 +137,7 @@ contract Consumer {
         payable
         returns (uint256)
     {
-        return _chainTo({
-            owner: owner,
-            underminable: underminable,
-            preimage: preimage,
-            key: key
-        });
+        return _chainTo({owner: owner, underminable: underminable, preimage: preimage, key: key});
     }
 
     function latestId() external view returns (uint256) {

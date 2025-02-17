@@ -305,9 +305,10 @@ contract Random is IRandom {
      * utilizes transient storage and provides certain guarantees regarding the relationship between randomness
      * and the its utility to outsiders depending on how the transaction was executed
      */
-    function latest(address owner, bool onlySameTx) external view override returns (bytes32 key) {
-        // key = _NAMESPACE.erc7201Slot().deriveMapping(owner).asBytes32().tload();
-        key = _latestInTx[owner][_txHash()];
+    function latest(address owner, bool onlySameTx, bool useTSTORE) external view override returns (bytes32 key) {
+        key = useTSTORE
+            ? _NAMESPACE.erc7201Slot().deriveMapping(owner).asBytes32().tload()
+            : _latestInTx[owner][_txHash()];
         if (key == bytes32(ZERO)) {
             if (onlySameTx) {
                 revert Errors.UnableToService();
@@ -340,7 +341,8 @@ contract Random is IRandom {
     function heat(
         uint256 required,
         PreimageLocation.Info calldata settings,
-        PreimageLocation.Info[] calldata potentialLocations
+        PreimageLocation.Info[] calldata potentialLocations,
+        bool useTSTORE
     ) external payable override returns (bytes32) {
         unchecked {
             bytes32[] memory locations = new bytes32[](required);
@@ -415,22 +417,21 @@ contract Random is IRandom {
                         ? block.timestamp
                         : block.number
                 });
-                _storeLatest({provider: settings.provider, key: key});
+                _storeLatest({provider: settings.provider, key: key, useTSTORE: useTSTORE});
                 emit Start({owner: settings.provider, key: key});
                 return key;
             }
         }
     }
 
-    function _storeLatest(address provider, bytes32 key) internal {
-        // _NAMESPACE
-        //     .erc7201Slot()
-        //     .deriveMapping(settings.provider)
-        //     .asBytes32()
-        //     .store(key);
+    function _storeLatest(address provider, bool useTSTORE, bytes32 key) internal {
         // this mode is insufficient for randomness due to block builders
         // being able to name their own transaction order
-        _latestInTx[provider][_txHash()] = key;
+        if (useTSTORE) {
+            _NAMESPACE.erc7201Slot().deriveMapping(provider).asBytes32().tstore(key);
+        } else {
+            _latestInTx[provider][_txHash()] = key;
+        }
         _latest[provider] = key;
     }
 

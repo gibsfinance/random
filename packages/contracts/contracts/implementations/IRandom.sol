@@ -37,25 +37,17 @@ abstract contract IRandom {
     function heat(
         uint256 required,
         PreimageLocation.Info calldata settings,
-        PreimageLocation.Info[] calldata info
+        PreimageLocation.Info[] calldata info,
+        bool useTSTORE
     ) external payable virtual returns (bytes32);
 
-    function pointer(
-        PreimageLocation.Info calldata info
-    ) external view virtual returns (address);
+    function pointer(PreimageLocation.Info calldata info) external view virtual returns (address);
 
-    function consumed(
-        PreimageLocation.Info calldata info
-    ) external view virtual returns (bool);
+    function consumed(PreimageLocation.Info calldata info) external view virtual returns (bool);
 
-    function randomness(
-        bytes32 key
-    ) external view virtual returns (Randomness memory);
+    function randomness(bytes32 key) external view virtual returns (Randomness memory);
 
-    function latest(
-        address account,
-        bool onlySameTx
-    ) external view virtual returns (bytes32);
+    function latest(address account, bool onlySameTx, bool useTSTORE) external view virtual returns (bytes32);
 
     function expired(uint256 timeline) external view virtual returns (bool) {
         return _expired(timeline);

@@ -5,6 +5,7 @@ import {ConsumerReceiver as ConsumerReceiverImplementation} from "../implementat
 
 contract ConsumerReceiver is ConsumerReceiverImplementation {
     uint256 internal _shouldRevert;
+    bytes32 internal _reverted;
 
     error AskedToRevert();
 
@@ -12,7 +13,7 @@ contract ConsumerReceiver is ConsumerReceiverImplementation {
         _shouldRevert = shouldRevert;
     }
 
-    function onReverse(bytes32 key, address token, uint256 amount) external override {
+    function onReverse(bytes32, /*key*/ address, /*_token*/ uint256 /*_amount*/ ) external override {
         if (_shouldRevert == 0) {
             return;
         }
@@ -23,5 +24,6 @@ contract ConsumerReceiver is ConsumerReceiverImplementation {
         } else if (_shouldRevert == 3) {
             revert AskedToRevert();
         }
+        _reverted = bytes32(uint256(1));
     }
 }
