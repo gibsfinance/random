@@ -23,6 +23,8 @@ event Cast(bytes32 key, bytes32 seed);
 
 event Chop(bytes32 key);
 
+event UnableToReverse(address account, bytes32 key, address token, uint256 payout);
+
 abstract contract Errors {
     error DeploymentFailed();
     error Misconfigured();

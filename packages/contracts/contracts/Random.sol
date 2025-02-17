@@ -11,7 +11,7 @@ import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {IRandom} from "./implementations/IRandom.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
-import {Errors, Cast, Reveal, Link, Ink, Heat, Start, Expired, Chop, Bleach} from "./Constants.sol";
+import {Errors, Cast, Reveal, Link, Ink, Heat, Start, Expired, Chop, Bleach, UnableToReverse} from "./Constants.sol";
 import {StorageSlot} from "./StorageSlot.sol";
 import {SlotDerivation} from "./SlotDerivation.sol";
 import {ConsumerReceiver} from "./implementations/ConsumerReceiver.sol";
@@ -40,21 +40,24 @@ contract Random is IRandom {
     string private constant _NAMESPACE = "random";
 
     mapping(address account => bytes32 latest) internal _latest;
-    mapping(address account => mapping(address token => uint256 amount))
-        internal _custodied;
-    mapping(address provider => mapping(uint256 token => mapping(uint256 price => uint256 max)))
-        internal _preimageCount;
-    mapping(address provider => mapping(uint256 token => mapping(uint256 price => mapping(uint256 offset => address pointer))))
-        internal _pointers;
-    mapping(address provider => mapping(uint256 token => mapping(uint256 price => LibBitmap.Bitmap bitmap)))
-        internal _accessFlags;
-    mapping(address provider => mapping(uint256 token => mapping(uint256 price => mapping(uint256 index => bytes32 formerSecret))))
-        internal _linkedSecret;
-    mapping(address provider => mapping(uint256 token => mapping(uint256 price => mapping(uint256 index => bytes32 formerSecret))))
-        internal _revealedSecret;
+    mapping(address account => mapping(address token => uint256 amount)) internal _custodied;
+    mapping(address provider => mapping(uint256 token => mapping(uint256 price => uint256 max))) internal _preimageCount;
+    mapping(
+        address provider
+            => mapping(uint256 token => mapping(uint256 price => mapping(uint256 offset => address pointer)))
+    ) internal _pointers;
+    mapping(address provider => mapping(uint256 token => mapping(uint256 price => LibBitmap.Bitmap bitmap))) internal
+        _accessFlags;
+    mapping(
+        address provider
+            => mapping(uint256 token => mapping(uint256 price => mapping(uint256 index => bytes32 formerSecret)))
+    ) internal _linkedSecret;
+    mapping(
+        address provider
+            => mapping(uint256 token => mapping(uint256 price => mapping(uint256 index => bytes32 formerSecret)))
+    ) internal _revealedSecret;
     mapping(bytes32 key => bool chopped) internal _chopped;
-    mapping(address account => mapping(bytes32 txHash => bytes32 latest))
-        internal _latestInTx;
+    mapping(address account => mapping(bytes32 txHash => bytes32 latest)) internal _latestInTx;
 
     /**
      * start the process to reveal the ink that was written (using invisible ink as a visual analogy)
@@ -63,23 +66,14 @@ contract Random is IRandom {
      * and benefit greatly from the gas savings of access the same slot up to 256 times
      * @dev notice that the index is derived from the preimage key by adding [95..16] and [15..1] together
      */
-    function _ignite(
-        PreimageLocation.Info memory info,
-        bytes32 section
-    ) internal returns (bool) {
+    function _ignite(PreimageLocation.Info memory info, bytes32 section) internal returns (bool) {
         unchecked {
             uint256 encodedToken = info.encodeToken();
             if (_consumed({info: info, encodedToken: encodedToken})) {
                 return false;
             }
-            _accessFlags[info.provider][encodedToken][info.price].set(
-                info.offset + info.index
-            );
-            emit Heat({
-                provider: info.provider,
-                section: section,
-                index: info.offset + info.index
-            });
+            _accessFlags[info.provider][encodedToken][info.price].set(info.offset + info.index);
+            emit Heat({provider: info.provider, section: section, index: info.offset + info.index});
             return true;
         }
     }
@@ -89,22 +83,12 @@ contract Random is IRandom {
      * @param info the location of a preimage
      * @param encodedToken the encoded token information (durationIsTimestamp[0,1),duration[56,95),token[96,255])
      */
-    function _consumed(
-        PreimageLocation.Info memory info,
-        uint256 encodedToken
-    ) internal view returns (bool) {
-        if (
-            _pointerSize({info: info, encodedToken: encodedToken}) /
-                THREE_TWO <=
-            info.index
-        ) {
+    function _consumed(PreimageLocation.Info memory info, uint256 encodedToken) internal view returns (bool) {
+        if (_pointerSize({info: info, encodedToken: encodedToken}) / THREE_TWO <= info.index) {
             revert Errors.Misconfigured();
         }
         // returning zero means that the secret has not been requested yet on chain
-        return
-            _accessFlags[info.provider][encodedToken][info.price].get(
-                info.offset + info.index
-            );
+        return _accessFlags[info.provider][encodedToken][info.price].get(info.offset + info.index);
     }
 
     /**
@@ -113,13 +97,12 @@ contract Random is IRandom {
      * @dev the index is not used for this so it can be set to 0
      * @param encodedToken the encoded token information (durationIsTimestamp[0,1),duration[56,95),token[96,255])
      */
-    function _pointerSize(
-        PreimageLocation.Info memory info,
-        uint256 encodedToken
-    ) internal view returns (uint256 size) {
-        address pntr = _pointers[info.provider][encodedToken][info.price][
-            info.offset
-        ];
+    function _pointerSize(PreimageLocation.Info memory info, uint256 encodedToken)
+        internal
+        view
+        returns (uint256 size)
+    {
+        address pntr = _pointers[info.provider][encodedToken][info.price][info.offset];
         if (pntr == address(0)) {
             revert Errors.Misconfigured();
         }
@@ -138,10 +121,10 @@ contract Random is IRandom {
      * @dev this method will fail if an invalid info is passed and there is no pointer (storage to check against)
      * @dev this method will fail if the secret does not match the stored preimage
      */
-    function _flick(
-        PreimageLocation.Info calldata info,
-        bytes32 formerSecret
-    ) internal returns (bytes32 location, bool first) {
+    function _flick(PreimageLocation.Info calldata info, bytes32 formerSecret)
+        internal
+        returns (bytes32 location, bool first)
+    {
         unchecked {
             // length check is skipped because if one goes out of bounds you either err
             // or you end up with zero bytes, which would be quite the feat to find the hash for
@@ -152,27 +135,19 @@ contract Random is IRandom {
             uint256 tkn = info.encodeToken();
             // only ever set once but do not penalize for lack of coordination
             location = info.location();
-            (bytes32 linkedSecret, ) = _secret(info, tkn);
+            (bytes32 linkedSecret,) = _secret(info, tkn);
             if (linkedSecret == bytes32(ZERO)) {
-                _linkedSecret[info.provider][tkn][info.price][
-                    info.offset + info.index
-                ] = formerSecret;
+                _linkedSecret[info.provider][tkn][info.price][info.offset + info.index] = formerSecret;
                 // gives provider access to staked tokens
                 _custodied[info.provider][info.token] += info.price;
-                emit Link({
-                    provider: info.provider,
-                    location: location,
-                    formerSecret: formerSecret
-                });
+                emit Link({provider: info.provider, location: location, formerSecret: formerSecret});
                 return (location, true);
             }
             return (location, false);
         }
     }
 
-    function _toPreimage(
-        PreimageLocation.Info calldata info
-    ) internal view returns (bytes32) {
+    function _toPreimage(PreimageLocation.Info calldata info) internal view returns (bytes32) {
         uint256 tkn = info.encodeToken();
         address pntr = _pointers[info.provider][tkn][info.price][info.offset];
         if (pntr == address(0)) {
@@ -181,38 +156,16 @@ contract Random is IRandom {
         // length check is skipped because if one goes out of bounds you either err
         // or you end up with zero bytes, which would be quite the feat to find the hash for
         // always read 32 bytes
-        return
-            bytes32(
-                pntr.read(
-                    (info.index * THREE_TWO),
-                    ((info.index * THREE_TWO) + THREE_TWO)
-                )
-            );
+        return bytes32(pntr.read((info.index * THREE_TWO), ((info.index * THREE_TWO) + THREE_TWO)));
     }
 
-    function reveal(
-        PreimageLocation.Info calldata info,
-        bytes32 formerSecret
-    ) external payable {
+    function reveal(PreimageLocation.Info calldata info, bytes32 formerSecret) external payable {
         if (_toPreimage(info) == keccak256(abi.encode(formerSecret))) {
             // this event is the same one used during cast
             // but it should not be used as a signal that the randomness has been cast
             // only the cast event should be used for that
-            uint256 tkn = info.encodeToken();
-            if (
-                _revealedSecret[info.provider][tkn][info.price][
-                    info.offset + info.index
-                ] == bytes32(ZERO)
-            ) {
-                _revealedSecret[info.provider][tkn][info.price][
-                    info.offset + info.index
-                ] = formerSecret;
-                emit Reveal({
-                    provider: info.provider,
-                    location: info.location(),
-                    formerSecret: formerSecret
-                });
-            }
+            _revealedSecret[info.provider][info.encodeToken()][info.price][info.offset + info.index] = formerSecret;
+            emit Reveal({provider: info.provider, location: info.location(), formerSecret: formerSecret});
         }
     }
 
@@ -227,17 +180,14 @@ contract Random is IRandom {
      * @param info the info to access the location
      * @param encodedToken encoded token info
      */
-    function _secret(
-        PreimageLocation.Info calldata info,
-        uint256 encodedToken
-    ) internal view returns (bytes32 linkedSecret, bytes32 revealedSecret) {
-        linkedSecret = _linkedSecret[info.provider][encodedToken][info.price][
-            info.offset + info.index
-        ];
+    function _secret(PreimageLocation.Info calldata info, uint256 encodedToken)
+        internal
+        view
+        returns (bytes32 linkedSecret, bytes32 revealedSecret)
+    {
+        linkedSecret = _linkedSecret[info.provider][encodedToken][info.price][info.offset + info.index];
         if (linkedSecret == bytes32(ZERO)) {
-            revealedSecret = _revealedSecret[info.provider][encodedToken][
-                info.price
-            ][info.offset + info.index];
+            revealedSecret = _revealedSecret[info.provider][encodedToken][info.price][info.offset + info.index];
         } else {
             revealedSecret = linkedSecret;
         }
@@ -249,11 +199,7 @@ contract Random is IRandom {
      * @param token the token to send
      * @param amount the number of tokens
      */
-    function _distribute(
-        address recipient,
-        address token,
-        uint256 amount
-    ) internal {
+    function _distribute(address recipient, address token, uint256 amount) internal {
         if (amount == ZERO) return;
         if (token == address(0)) {
             recipient.safeTransferETH(amount);
@@ -270,22 +216,13 @@ contract Random is IRandom {
      * @param token the token being reversed
      * @param payout the amount of the token being reversed
      */
-    function _reverseCharges(
-        uint256 timeline,
-        bytes32 key,
-        address token,
-        uint256 payout
-    ) internal {
-        _custodied[address(uint160(timeline >> NINE_SIX))][token] += payout;
-        if (_shouldCall(timeline)) {
-            address(uint160(timeline >> NINE_SIX)).call(
-                abi.encodeWithSelector(
-                    ConsumerReceiver.onReverse.selector,
-                    key,
-                    token,
-                    payout
-                )
-            );
+    function _reverseCharges(address owner, bytes32 key, address token, uint256 payout) internal {
+        _custodied[owner][token] += payout;
+        // allow owner to take his ball and go home
+        // do not check if the account call was successful
+        (bool success,) = owner.call(abi.encodeWithSelector(ConsumerReceiver.onReverse.selector, key, token, payout));
+        if (!success) {
+            emit UnableToReverse({account: owner, key: key, token: token, payout: payout});
         }
     }
 
@@ -295,11 +232,7 @@ contract Random is IRandom {
      * @param token the tokens being received
      * @param amount the number of tokens being received
      */
-    function _receiveTokens(
-        address account,
-        address token,
-        uint256 amount
-    ) internal returns (uint256) {
+    function _receiveTokens(address account, address token, uint256 amount) internal returns (uint256) {
         unchecked {
             if (token == address(0)) {
                 if (amount > msg.value) {
@@ -325,11 +258,7 @@ contract Random is IRandom {
      * @return delta may be less than the desired. note that the amount
      * actually decremented may be less than the desired input
      */
-    function _decrementTokenAmount(
-        address account,
-        address token,
-        uint256 desired
-    ) internal returns (uint256 delta) {
+    function _decrementTokenAmount(address account, address token, uint256 desired) internal returns (uint256 delta) {
         unchecked {
             uint256 limit = _custodied[account][token];
             delta = desired > limit ? limit : desired;
@@ -345,10 +274,7 @@ contract Random is IRandom {
      * @param account the account in question
      * @param token the token balance being queried
      */
-    function balanceOf(
-        address account,
-        address token
-    ) external view returns (uint256) {
+    function balanceOf(address account, address token) external view returns (uint256) {
         return _custodied[account][token];
     }
 
@@ -357,23 +283,18 @@ contract Random is IRandom {
      * the number of locations that recreates the final hash is equivalent the number of required seed contributions
      * @param key the randomness key
      */
-    function randomness(
-        bytes32 key
-    ) external view override returns (Randomness memory) {
+    function randomness(bytes32 key) external view override returns (Randomness memory) {
         unchecked {
-            return
-                Randomness({
-                    owner: address(uint160(_timeline[key] >> NINE_SIX)), // 160 bits
-                    usesTimestamp: (_timeline[key] >> EIGHT) & ONE == ONE, // 1 bit
-                    callAtChange: _shouldCall(_timeline[key]),
-                    start: uint256(uint48(_timeline[key] >> FOUR_EIGHT)), // 48 bits
-                    duration: uint256(
-                        uint256(uint48(_timeline[key])) >> (EIGHT + TWO)
-                    ), // only 38 bits
-                    contributed: uint256(uint8(_timeline[key])), // 8 bits
-                    timeline: _timeline[key],
-                    seed: _seed[key]
-                });
+            return Randomness({
+                contributed: uint256(uint8(_timeline[key])), // 8 bits
+                callAtChange: _shouldCall(_timeline[key]), // 1 bit
+                owner: address(uint160(_timeline[key] >> NINE_SIX)), // 160 bits
+                start: uint256(uint48(_timeline[key] >> FOUR_EIGHT)), // 48 bits
+                duration: uint256(uint256(uint48(_timeline[key])) >> (EIGHT + ONE)), // only 39 bits
+                usesTimestamp: (_timeline[key] >> EIGHT) & ONE == ONE, // 1 bit
+                timeline: _timeline[key],
+                seed: _seed[key]
+            });
         }
     }
 
@@ -384,10 +305,7 @@ contract Random is IRandom {
      * utilizes transient storage and provides certain guarantees regarding the relationship between randomness
      * and the its utility to outsiders depending on how the transaction was executed
      */
-    function latest(
-        address owner,
-        bool onlySameTx
-    ) external view override returns (bytes32 key) {
+    function latest(address owner, bool onlySameTx) external view override returns (bytes32 key) {
         // key = _NAMESPACE.erc7201Slot().deriveMapping(owner).asBytes32().tload();
         key = _latestInTx[owner][_txHash()];
         if (key == bytes32(ZERO)) {
@@ -403,9 +321,7 @@ contract Random is IRandom {
      * @param info preimage location info to locate the preimage
      * @return consumed a boolean to indicate that the location has or has not been consumed
      */
-    function consumed(
-        PreimageLocation.Info calldata info
-    ) external view override returns (bool) {
+    function consumed(PreimageLocation.Info calldata info) external view override returns (bool) {
         return _consumed({info: info, encodedToken: info.encodeToken()});
     }
 
@@ -436,18 +352,11 @@ contract Random is IRandom {
                 if (settings.provider == address(0)) {
                     revert Errors.UnableToService();
                 }
-                if (
-                    required == ZERO ||
-                    required > TWO_FIVE_FIVE ||
-                    required > potentialLocations.length
-                ) {
+                if (required == ZERO || required > TWO_FIVE_FIVE || required > potentialLocations.length) {
                     // only 255 len or fewer allowed
                     revert Errors.UnableToService();
                 }
-                if (
-                    (uint256(uint40(settings.duration << TWO)) >> TWO) !=
-                    settings.duration
-                ) {
+                if ((uint256(uint40(settings.duration << ONE)) >> ONE) != settings.duration) {
                     revert Errors.Misconfigured();
                 }
                 uint256 len = potentialLocations.length;
@@ -463,10 +372,7 @@ contract Random is IRandom {
                     if (token != target.token) {
                         revert Errors.Misconfigured();
                     }
-                    if (
-                        target.durationIsTimestamp !=
-                        settings.durationIsTimestamp
-                    ) {
+                    if (target.durationIsTimestamp != settings.durationIsTimestamp) {
                         revert Errors.Misconfigured();
                     }
                     // target.minDuration > duration
@@ -475,9 +381,7 @@ contract Random is IRandom {
                     }
                     section = target.section();
                     if (_ignite({info: target, section: section})) {
-                        locations[contributing] = section.location(
-                            target.index
-                        );
+                        locations[contributing] = section.hash(bytes32(target.index));
                         amount += target.price;
                         ++contributing;
                         if (required == contributing) {
@@ -491,15 +395,8 @@ contract Random is IRandom {
                     // let other contracts revert if they must
                     revert Errors.UnableToService();
                 }
-                if (
-                    amount > ZERO &&
-                    amount >
-                    _decrementTokenAmount({
-                        account: account,
-                        token: token,
-                        desired: amount
-                    })
-                ) {
+                if (amount > ZERO && amount > _decrementTokenAmount({account: account, token: token, desired: amount}))
+                {
                     revert Errors.MissingPayment();
                 }
             }
@@ -538,19 +435,18 @@ contract Random is IRandom {
     }
 
     function _txHash() internal view returns (bytes32) {
-        return
-            keccak256(
-                abi.encodePacked(
-                    block.coinbase,
-                    block.basefee,
-                    block.chainid,
-                    block.timestamp,
-                    block.number,
-                    blockhash(block.number),
-                    tx.origin,
-                    tx.gasprice
-                )
-            );
+        return keccak256(
+            abi.encodePacked(
+                block.coinbase,
+                block.basefee,
+                block.chainid,
+                block.timestamp,
+                block.number,
+                blockhash(block.number),
+                tx.origin,
+                tx.gasprice
+            )
+        );
     }
 
     /**
@@ -578,13 +474,8 @@ contract Random is IRandom {
      * @param info access the pointer as defined by the preimage location
      * @return pointer the address that holds preimages
      */
-    function pointer(
-        PreimageLocation.Info calldata info
-    ) external view override returns (address) {
-        return
-            _pointers[info.provider][info.encodeToken()][info.price][
-                info.offset
-            ];
+    function pointer(PreimageLocation.Info calldata info) external view override returns (address) {
+        return _pointers[info.provider][info.encodeToken()][info.price][info.offset];
     }
 
     /**
@@ -595,10 +486,7 @@ contract Random is IRandom {
      * @dev it is best to call this infrequently but to do so with as
      * much calldata as possible to increase gas savings for randomness providers
      */
-    function ink(
-        PreimageLocation.Info memory info,
-        bytes calldata data
-    ) external payable {
+    function ink(PreimageLocation.Info memory info, bytes calldata data) external payable {
         unchecked {
             uint256 count = data.length / THREE_TWO;
             if (data.length == ZERO || data.length % THREE_TWO != ZERO) {
@@ -648,14 +536,10 @@ contract Random is IRandom {
      * @param key the key of the randomness that did not have all of its secrets revealed
      * @param info the set of locations of the randomness that was requested
      */
-    function chop(
-        bytes32 key,
-        PreimageLocation.Info[] calldata info
-    ) external payable {
+    function chop(bytes32 key, PreimageLocation.Info[] calldata info) external payable {
         unchecked {
             if (msg.value > ZERO) {
-                _custodied[LibMulticaller.senderOrSigner()][address(0)] += msg
-                    .value;
+                _custodied[LibMulticaller.senderOrSigner()][address(0)] += msg.value;
             }
             if (_seed[key] != bytes32(ZERO)) {
                 // don't penalize, because a provider could slip in before
@@ -675,10 +559,7 @@ contract Random is IRandom {
             bytes32[] memory locations = new bytes32[](len);
             bytes32 revealedSecret;
             do {
-                (, revealedSecret) = _secret({
-                    info: info[i],
-                    encodedToken: info[i].encodeToken()
-                });
+                (, revealedSecret) = _secret({info: info[i], encodedToken: info[i].encodeToken()});
                 if (revealedSecret == bytes32(ZERO)) {
                     // take the provider's stake
                     remaining += info[i].price;
@@ -717,15 +598,14 @@ contract Random is IRandom {
      * @param info the raw location info of preimages
      * @param revealed the list of secrets that must match the written preimages
      */
-    function cast(
-        bytes32 key,
-        PreimageLocation.Info[] calldata info,
-        bytes32[] memory revealed
-    ) external payable returns (CastState) {
+    function cast(bytes32 key, PreimageLocation.Info[] calldata info, bytes32[] memory revealed)
+        external
+        payable
+        returns (CastState)
+    {
         unchecked {
             if (msg.value > ZERO) {
-                _custodied[LibMulticaller.senderOrSigner()][address(0)] += msg
-                    .value;
+                _custodied[LibMulticaller.senderOrSigner()][address(0)] += msg.value;
             }
             bytes32 seed = _seed[key];
             if (seed != bytes32(ZERO)) {
@@ -746,27 +626,18 @@ contract Random is IRandom {
                 bytes32 linkedSecret;
                 do {
                     if (revealed[i] != bytes32(ZERO)) {
-                        (locations[i], first) = _flick({
-                            info: info[i],
-                            formerSecret: revealed[i]
-                        });
+                        (locations[i], first) = _flick({info: info[i], formerSecret: revealed[i]});
                         if (first) {
                             ++firstFlicks;
                         }
                     } else {
-                        (revealed[i], linkedSecret) = _secret({
-                            info: info[i],
-                            encodedToken: info[i].encodeToken()
-                        });
+                        (revealed[i], linkedSecret) = _secret({info: info[i], encodedToken: info[i].encodeToken()});
                         if (revealed[i] == bytes32(ZERO)) {
                             if (linkedSecret == bytes32(ZERO)) {
                                 missing = true;
                                 locations[i] = info[i].location();
                             } else {
-                                (locations[i], first) = _flick({
-                                    info: info[i],
-                                    formerSecret: linkedSecret
-                                });
+                                (locations[i], first) = _flick({info: info[i], formerSecret: linkedSecret});
                                 revealed[i] = linkedSecret;
                                 if (first) {
                                     ++firstFlicks;
@@ -799,10 +670,8 @@ contract Random is IRandom {
                 // knows which one of them is going to get the bonus
                 // only the last validator to reveal their secret has an edge in that they can choose to
                 // omit their secret, they will however, forfeit their staked tokens to whoever calls chop
-                PreimageLocation.Info calldata item = info[
-                    _random({key: seed, upper: len})
-                ];
-                if (_expired({timeline: timeline})) {
+                PreimageLocation.Info calldata item = info[_random({key: seed, upper: len})];
+                if (_expired({timeline: _timeline[key]})) {
                     // if secrets are submitted late, then the owner gets half of their payment back
                     uint256 payout = total / 2;
                     total -= payout;
@@ -843,10 +712,7 @@ contract Random is IRandom {
      * @param key the randomness key
      * @param upper the upper limit of the uniform range
      */
-    function _random(
-        bytes32 key,
-        uint256 upper
-    ) internal view returns (uint256) {
+    function _random(bytes32 key, uint256 upper) internal view returns (uint256) {
         return LibPRNG.PRNG({state: uint256(_seed[key])}).uniform(upper);
     }
 
@@ -856,28 +722,16 @@ contract Random is IRandom {
      * @param token the token address to transfer - use zero address for native tokens
      * @param amount a number of tokens to transfer
      */
-    function handoff(
-        address recipient,
-        address token,
-        int256 amount
-    ) external payable {
+    function handoff(address recipient, address token, int256 amount) external payable {
         unchecked {
             address account = LibMulticaller.senderOrSigner();
             recipient = recipient == address(0) ? account : recipient;
             if (amount < 0) {
                 // move take tokens from signer to recipient custodied by signer
-                _custodied[recipient][token] += _receiveTokens(
-                    account,
-                    token,
-                    uint256(-amount)
-                );
+                _custodied[recipient][token] += _receiveTokens(account, token, uint256(-amount));
             } else {
                 // move tokens from signer to recipient custodied by contract
-                _distribute(
-                    recipient,
-                    token,
-                    _decrementTokenAmount(account, token, uint256(amount))
-                );
+                _distribute(recipient, token, _decrementTokenAmount(account, token, uint256(amount)));
             }
         }
     }
@@ -898,10 +752,7 @@ contract Random is IRandom {
                 revert Errors.SignerMismatch();
             }
             uint256 encodedToken = info.encodeToken();
-            uint256 size = _pointerSize({
-                info: info,
-                encodedToken: encodedToken
-            }) / THREE_TWO;
+            uint256 size = _pointerSize({info: info, encodedToken: encodedToken}) / THREE_TWO;
             bytes32 section = info.section();
             // consumes a whole pointer
             uint256 amount;
@@ -911,9 +762,7 @@ contract Random is IRandom {
             uint256 len;
             uint256 f;
             uint256 i;
-            LibBitmap.Bitmap storage bitmap = _accessFlags[info.provider][
-                encodedToken
-            ][info.price];
+            LibBitmap.Bitmap storage bitmap = _accessFlags[info.provider][encodedToken][info.price];
             uint256 flags;
             uint256 targetedFlags;
             uint256 max = type(uint256).max;
@@ -926,8 +775,7 @@ contract Random is IRandom {
                 }
                 mask = (max >> (TWO_FIVE_SIX - len)); // at root (all f's to the right)
                 flags = bitmap.map[start / TWO_FIVE_SIX];
-                targetedFlags = ((flags << (TWO_FIVE_SIX - (start + len))) >>
-                    (TWO_FIVE_SIX - len)); // at root (all bits to the right)
+                targetedFlags = ((flags << (TWO_FIVE_SIX - (start + len))) >> (TWO_FIVE_SIX - len)); // at root (all bits to the right)
                 if (targetedFlags < mask) {
                     bitmap.setBatch(start, len);
                     i = start % TWO_FIVE_SIX;

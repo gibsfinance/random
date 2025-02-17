@@ -14,13 +14,10 @@ const deployMulticaller = async (name: Names[keyof Names], address: viem.Hex) =>
   })
   if (!code || code == '0x') {
     const tmpMulticaller = await hre.viem.deployContract(name as any)
-    const code = await provider.getCode({ address: tmpMulticaller.address }) as any
+    const code = (await provider.getBytecode({ address: tmpMulticaller.address })) as any
     await provider.request({
       method: 'hardhat_setCode' as any,
-      params: [
-        address,
-        code,
-      ],
+      params: [address, code],
     })
   }
   return await hre.viem.getContractAt(name as any, address)
@@ -42,7 +39,7 @@ export const deploy = async () => {
   const taxERC20 = await hre.viem.getContractAt(contractName.ERC20Solady, _taxERC20.address)
   const multicallerWithSender = await deployMulticaller(
     contractName.MulticallerWithSender,
-    '0x00000000002Fd5Aeb385D324B580FCa7c83823A0',
+    '0x00000000002Fd5Aeb385D324B580FCa7c83823A0'
   )
   await hre.network.provider.send('hardhat_setStorageAt', [
     multicallerWithSender.address,
@@ -73,17 +70,19 @@ export const deploy = async () => {
   const randomnessProviders = await getRandomnessProviders(hre)
   console.log('providers=%o', randomnessProviders.length)
   const signers = await hre.viem.getWalletClients()
-  const oneThousandEther = (10n ** 18n) * 1_000n
-  await Promise.all([_ERC20, _taxERC20].map(async (erc20) => {
-    await Promise.all(signers.map((signer) => (
-      erc20.write.mint([signer.account!.address, oneThousandEther])
-    )))
-    await Promise.all(signers.map((signer) => (
-      erc20.write.approve([random.address, oneThousandEther], {
-        account: signer.account!,
-      })
-    )))
-  }))
+  const oneThousandEther = 10n ** 18n * 1_000n
+  await Promise.all(
+    [_ERC20, _taxERC20].map(async (erc20) => {
+      await Promise.all(signers.map((signer) => erc20.write.mint([signer.account!.address, oneThousandEther])))
+      await Promise.all(
+        signers.map((signer) =>
+          erc20.write.approve([random.address, oneThousandEther], {
+            account: signer.account!,
+          })
+        )
+      )
+    })
+  )
   const required = 5n
   const defaultExpiryOffsetInput = 12n << 1n
   return {
@@ -107,7 +106,7 @@ export const deployWithRandomness = async (section = utils.defaultSection) => {
     _(generatedPreimages)
       .map((generated) => generated.secretBatches)
       .flattenDeep()
-      .map(({ preimage, secret }) => ([preimage, secret] as const))
+      .map(({ preimage, secret }) => [preimage, secret] as const)
       .value()
   )
   return {
@@ -135,26 +134,19 @@ export const deployWithRandomnessAndStart = async (section = utils.defaultSectio
     blockTag: 'latest',
   })
   const { all, selections } = await selectPreimages(ctx, Number(ctx.required), [section])
-  let consumerAddress = consumer.account!.address
-  if (prov !== viem.zeroAddress) {
-    if (viem.isAddress(prov)) {
-      consumerAddress = prov
-    } else {
-      const contract = (ctx as any)[prov] as viem.GetContractReturnType
-      consumerAddress = contract.address
+  const heatTx = await ctx.random.write.heat(
+    [ctx.required, { ...section, provider: consumer.account!.address }, selections],
+    {
+      value: utils.sum(selections),
     }
-  }
-  const heatTx = await ctx.random.write.heat([
-    ctx.required,
-    { ...section, provider: consumerAddress },
-    selections,
-  ], {
-    value: utils.sum(selections),
-  })
+  )
   const receipt = await confirmTx(ctx, heatTx)
-  const starts = await ctx.random.getEvents.Start({}, {
-    blockHash: receipt.blockHash,
-  })
+  const starts = await ctx.random.getEvents.Start(
+    {},
+    {
+      blockHash: receipt.blockHash,
+    }
+  )
   return {
     ...ctx,
     all,
@@ -167,11 +159,7 @@ export const deployWithRandomnessAndStart = async (section = utils.defaultSectio
 
 export const deployWithRandomnessAndConsume = async (section = utils.defaultSection) => {
   const ctx = await helpers.loadFixture(deployWithRandomness)
-  const {
-    signers,
-    required,
-    randomnessProviders,
-  } = ctx
+  const { signers, required, randomnessProviders } = ctx
   const { selections } = await selectPreimages(ctx)
   const [signer] = signers
   const [provider] = randomnessProviders
@@ -189,11 +177,7 @@ export const deployWithRandomnessAndConsume = async (section = utils.defaultSect
     section: utils.section(parts),
     index: parts.index,
   }))
-  const targets = [
-    ctx.random.address,
-    ctx.random.address,
-    ctx.consumer.address,
-  ]
+  const targets = [ctx.random.address, ctx.random.address, ctx.consumer.address]
   const existingBalance = 0n
   const values = new Array(targets.length).fill(0n) as bigint[]
   const selectionsSum = utils.sum(selections)
@@ -216,11 +200,7 @@ export const deployWithRandomnessAndConsume = async (section = utils.defaultSect
       args: [signer.account!.address, true, false, s.preimage],
     }),
   ]
-  const multicallTx = ctx.multicallerWithSender.write.aggregateWithSender([
-    targets,
-    data,
-    values,
-  ], {
+  const multicallTx = ctx.multicallerWithSender.write.aggregateWithSender([targets, data, values], {
     value: values.reduce((total, v) => total + v),
   })
   await confirmTx(ctx, multicallTx)
@@ -239,7 +219,10 @@ export const deployWithRandomnessAndConsume = async (section = utils.defaultSect
 
 export type Context = Awaited<ReturnType<typeof deploy>>
 
-export const confirmTx = async (ctx: Context, hash: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType) => {
+export const confirmTx = async (
+  ctx: Context,
+  hash: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType
+) => {
   const provider = await ctx.hre.viem.getPublicClient()
   const receipt = await provider.waitForTransactionReceipt({
     hash: await hash,
@@ -260,20 +243,25 @@ export const writePreimages = async (ctx: Context, section = utils.defaultSectio
       ...section,
       provider: signer.account!.address,
     })
-    const preimageLocations = await Promise.all(secretBatches.map(async (secrets) => {
-      const preimages = _.map(secrets, 'preimage')
-      const preimageLocations = preimages.map((preimage, index) => ({
-        ...section,
-        provider: signer.account!.address,
-        index: BigInt(index),
-        preimage,
-      }))
-      await confirmTx(ctx, rand.write.ink([preimageLocations[0], viem.concatHex(preimages)], {
-        account: signer.account,
-        value: _.isNil(value) ? utils.sum(preimageLocations) : value,
-      }))
-      return preimageLocations
-    }))
+    const preimageLocations = await Promise.all(
+      secretBatches.map(async (secrets) => {
+        const preimages = _.map(secrets, 'preimage')
+        const preimageLocations = preimages.map((preimage, index) => ({
+          ...section,
+          provider: signer.account!.address,
+          index: BigInt(index),
+          preimage,
+        }))
+        await confirmTx(
+          ctx,
+          rand.write.ink([preimageLocations[0], viem.concatHex(preimages)], {
+            account: signer.account,
+            value: _.isNil(value) ? utils.sum(preimageLocations) : value,
+          })
+        )
+        return preimageLocations
+      })
+    )
     return {
       preimageLocations,
       secretBatches,
@@ -295,7 +283,11 @@ export const readPreimages = async (ctx: Context, options = utils.defaultSection
   })
 }
 
-export const selectPreimages = async (ctx: Context, count = 5, offsets: utils.PreimageInfoOptions[] = [utils.defaultSection]) => {
+export const selectPreimages = async (
+  ctx: Context,
+  count = 5,
+  offsets: utils.PreimageInfoOptions[] = [utils.defaultSection]
+) => {
   const producers = await getRandomnessProviders(ctx.hre)
   const preimageGroups = await utils.limiters.signers.map(producers, async (producer) => {
     const iterations = offsets.map((options) => ({
@@ -303,22 +295,28 @@ export const selectPreimages = async (ctx: Context, count = 5, offsets: utils.Pr
       ...options,
       provider: producer.account!.address,
     }))
-    const dataSets = await Promise.all(iterations.map((options) => (
-      ctx.reader.read.pointer([options])
-    )))
-    return _(dataSets).map(utils.dataToPreimages).map((set, i) => {
-      const offset = iterations[i]
-      return _.map(set, (preimage, index) => ({
-        ...utils.defaultSection,
-        ...offset,
-        signer: producer,
-        preimage,
-        index: BigInt(index),
-      } as utils.PreimageInfo & {
-        signer: viem.WalletClient;
-        preimage: viem.Hex;
-      }))
-    }).flatten().value()
+    const dataSets = await Promise.all(iterations.map((options) => ctx.reader.read.pointer([options])))
+    return _(dataSets)
+      .map(utils.dataToPreimages)
+      .map((set, i) => {
+        const offset = iterations[i]
+        return _.map(
+          set,
+          (preimage, index) =>
+            ({
+              ...utils.defaultSection,
+              ...offset,
+              signer: producer,
+              preimage,
+              index: BigInt(index),
+            } as utils.PreimageInfo & {
+              signer: viem.WalletClient
+              preimage: viem.Hex
+            })
+        )
+      })
+      .flatten()
+      .value()
   })
   const _flattened = _(preimageGroups).flatten()
   return {
