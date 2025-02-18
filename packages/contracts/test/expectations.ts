@@ -60,7 +60,7 @@ const _emit = async (
   contract: viem.GetContractReturnType,
   eventName: string,
   args?: Filter | Filter[]
-): Promise<[(null | Filter)[], viem.Log[], viem.Log[]]> => {
+): Promise<[(null | Filter)[], viem.Hex, viem.Log[], viem.Log[]]> => {
   const hash = await _hash
   const client = await ctx.hre.viem.getPublicClient()
   const receipt = await client.getTransactionReceipt({
@@ -80,6 +80,7 @@ const _emit = async (
   }
   return [
     a,
+    contract.address,
     _(a)
       .map((fltr) => {
         let objectArgs!: Record<string, any>
@@ -106,7 +107,6 @@ const _emit = async (
           // is an object
           ;(filter as any).args = fltr
         } // otherwise don't set the args property so that lodash doesn't filter against it
-        // console.log(allEvents, filter)
         return _.find(allEvents, filter) as viem.Log
       })
       .compact()
@@ -116,19 +116,19 @@ const _emit = async (
 }
 
 export const emit = async (...args: Parameters<typeof _emit>) => {
-  const [filters, events, all] = await _emit(...args)
+  const [filters, address, events, all] = await _emit(...args)
   if (filters.length === events.length) {
     return
   }
-  console.log('filters=%o events=%o all=%o', filters, events, all)
+  console.log('address=%o filters=%o events=%o all=%o', address, filters, events, all)
   throw new Error('unable to find event')
 }
 
 export const not = {
   emit: async (...args: Parameters<typeof _emit>) => {
-    const [filters, events, all] = await _emit(...args)
+    const [filters, address, events, all] = await _emit(...args)
     if (filters.length === events.length) {
-      console.log('filters=%o events=%o all=%o', filters, events, all)
+      console.log('address=%o filters=%o events=%o all=%o', address, filters, events, all)
       throw new Error('found event!')
     }
   },

@@ -13,7 +13,19 @@ contract ConsumerReceiver is ConsumerReceiverImplementation {
         _shouldRevert = shouldRevert;
     }
 
+    function onCast(bytes32, /*key*/ bytes32 /*seed*/ ) external override {
+        _doRevert();
+    }
+
+    function onChop(bytes32 /*key*/ ) external override {
+        _doRevert();
+    }
+
     function onReverse(bytes32, /*key*/ address, /*_token*/ uint256 /*_amount*/ ) external override {
+        _doRevert();
+    }
+
+    function _doRevert() internal {
         if (_shouldRevert == 0) {
             return;
         }

@@ -11,7 +11,7 @@ import {EfficientHashLib} from "solady/src/utils/EfficientHashLib.sol";
 import {LibMulticaller} from "multicaller/src/LibMulticaller.sol";
 import {IRandom} from "./implementations/IRandom.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
-import {Errors, Cast, Reveal, Link, Ink, Heat, Start, Expired, Chop, Bleach, UnableToReverse} from "./Constants.sol";
+import {Errors, Cast, Reveal, Link, Ink, Heat, Start, Expired, Chop, Bleach, FailedToCall} from "./Constants.sol";
 import {StorageSlot} from "./StorageSlot.sol";
 import {SlotDerivation} from "./SlotDerivation.sol";
 import {ConsumerReceiver} from "./implementations/ConsumerReceiver.sol";
@@ -216,14 +216,20 @@ contract Random is IRandom {
      * @param token the token being reversed
      * @param payout the amount of the token being reversed
      */
-    function _reverseCharges(address owner, bytes32 key, address token, uint256 payout) internal {
+    function _reverseCharges(uint256 timeline, bytes32 key, address token, uint256 payout) internal returns (bool) {
+        address owner = address(uint160(timeline >> NINE_SIX));
         _custodied[owner][token] += payout;
-        // allow owner to take his ball and go home
-        // do not check if the account call was successful
-        (bool success,) = owner.call(abi.encodeWithSelector(ConsumerReceiver.onReverse.selector, key, token, payout));
-        if (!success) {
-            emit UnableToReverse({account: owner, key: key, token: token, payout: payout});
+        if (_shouldCall(timeline)) {
+            // allow owner to take his ball and go home
+            // do not check if the account call was successful
+            _call({
+                to: owner,
+                b: abi.encodeWithSelector(ConsumerReceiver.onReverse.selector, key, token, payout),
+                key: key
+            });
+            return true;
         }
+        return false;
     }
 
     /**
@@ -411,11 +417,8 @@ contract Random is IRandom {
                     owner: settings.provider,
                     callAtChange: settings.callAtChange,
                     // we already checked expiry offset above is constrained to 38 bits
-                    expiryOffset: (settings.duration << ONE) |
-                        (settings.durationIsTimestamp ? ONE : ZERO),
-                    start: settings.durationIsTimestamp
-                        ? block.timestamp
-                        : block.number
+                    expiryOffset: (settings.duration << ONE) | (settings.durationIsTimestamp ? ONE : ZERO),
+                    start: settings.durationIsTimestamp ? block.timestamp : block.number
                 });
                 _storeLatest({provider: settings.provider, key: key, useTSTORE: useTSTORE});
                 emit Start({owner: settings.provider, key: key});
@@ -457,17 +460,13 @@ contract Random is IRandom {
      * @param start the start time or block number
      * @return timeline an encoded number with relevant owner, and timing data
      */
-    function _timelineFromInputs(
-        address owner,
-        bool callAtChange,
-        uint256 expiryOffset,
-        uint256 start
-    ) internal pure returns (uint256) {
-        return
-            (uint256(uint160(owner)) << NINE_SIX) |
-            (uint256((uint48(start))) << FOUR_EIGHT) |
-            (uint256(uint40(expiryOffset << TWO)) << (EIGHT - ONE)) |
-            (uint256(callAtChange ? ONE : ZERO) << EIGHT); // last 8 bits left blank for counting as secrets are revealed
+    function _timelineFromInputs(address owner, bool callAtChange, uint256 expiryOffset, uint256 start)
+        internal
+        pure
+        returns (uint256)
+    {
+        return (uint256(uint160(owner)) << NINE_SIX) | (uint256((uint48(start))) << FOUR_EIGHT)
+            | (uint256(uint40(expiryOffset << TWO)) << (EIGHT - ONE)) | (uint256(callAtChange ? ONE : ZERO) << EIGHT); // last 8 bits left blank for counting as secrets are revealed
     }
 
     /**
@@ -575,21 +574,22 @@ contract Random is IRandom {
             // for any secrets that do not reach the chain, the payment
             // AND the staked amount is released to the owner
             _chopped[key] = true;
-            _reverseCharges({
-                timeline: timeline,
-                key: key,
-                token: info[ZERO].token,
-                payout: remaining + original
-            });
-            if (_shouldCall(timeline)) {
-                address(uint160(timeline >> NINE_SIX)).call(
-                    abi.encodeWithSelector(
-                        ConsumerReceiver.onChop.selector,
-                        key
-                    )
-                );
+            if (_reverseCharges({timeline: timeline, key: key, token: info[ZERO].token, payout: remaining + original}))
+            {
+                _call({
+                    to: address(uint160(timeline >> NINE_SIX)),
+                    b: abi.encodeWithSelector(ConsumerReceiver.onChop.selector, key),
+                    key: key
+                });
             }
             emit Chop({key: key});
+        }
+    }
+
+    function _call(address to, bytes memory b, bytes32 key) internal {
+        (bool success,) = to.call(b);
+        if (!success) {
+            emit FailedToCall({to: to, key: key});
         }
     }
 
@@ -676,25 +676,18 @@ contract Random is IRandom {
                     // if secrets are submitted late, then the owner gets half of their payment back
                     uint256 payout = total / 2;
                     total -= payout;
-                    _reverseCharges({
-                        timeline: timeline,
-                        key: key,
-                        token: item.token,
-                        payout: payout
-                    });
+                    _reverseCharges({timeline: timeline, key: key, token: item.token, payout: payout});
                     // can be used as reputation
                     emit Expired({key: key});
                 }
                 _custodied[item.provider][item.token] += total;
             }
             if (_shouldCall(timeline)) {
-                address(uint160(timeline >> NINE_SIX)).call(
-                    abi.encodeWithSelector(
-                        ConsumerReceiver.onCast.selector,
-                        key,
-                        seed
-                    )
-                );
+                _call({
+                    to: address(uint160(timeline >> NINE_SIX)),
+                    b: abi.encodeWithSelector(ConsumerReceiver.onCast.selector, key, seed),
+                    key: key
+                });
             }
             return CastState.SCATTERED;
         }

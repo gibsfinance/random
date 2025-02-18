@@ -2,10 +2,10 @@ import promiseLimit from 'promise-limit'
 import { indexer } from "./indexer"
 import * as viem from 'viem'
 import config from '../config'
-import { chain, name, publicClient } from "./chain"
+import { chain, publicClient } from './chain'
 import * as threads from './threads'
-import { contracts, getLatestBaseFee } from "./contracts"
-import { signers } from "./signers"
+import { contracts, getLatestBaseFee } from './contracts'
+import { signers } from './signers'
 import * as randomUtils from '@gibs/random/lib/utils'
 import { log } from "./logger"
 import _ from "lodash"

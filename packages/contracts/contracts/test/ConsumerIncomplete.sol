@@ -14,7 +14,8 @@ contract ConsumerIncomplete {
     function heat(
         uint256 required,
         PreimageLocation.Info calldata settings,
-        PreimageLocation.Info[] calldata potentialLocations
+        PreimageLocation.Info[] calldata potentialLocations,
+        bool useTSTORE
     ) external {
         IRandom(rand).heat(
             required,
@@ -28,7 +29,8 @@ contract ConsumerIncomplete {
                 offset: settings.offset,
                 index: settings.index
             }),
-            potentialLocations
+            potentialLocations,
+            useTSTORE
         );
     }
 

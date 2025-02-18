@@ -126,7 +126,7 @@ describe('Random', () => {
       }
       await expectations.emit(
         ctx,
-        ctx.random.write.heat([required, section, selections], { value: utils.sum(selections) }),
+        ctx.random.write.heat([required, section, selections, true], { value: utils.sum(selections) }),
         ctx.random,
         'Heat',
         expectedEmitArgs
@@ -154,7 +154,7 @@ describe('Random', () => {
       await expectations.emit(
         ctx,
         ctx.random.write.heat(
-          [required, section, selections]
+          [required, section, selections, true]
           /* { value: utils.sum(selections) }, */
         ),
         ctx.random,
@@ -172,7 +172,7 @@ describe('Random', () => {
       }
       await expectations.revertedWithCustomError(
         ctx.errors,
-        ctx.random.write.heat([required, section, selections], { value: utils.sum(selections) - 1n }),
+        ctx.random.write.heat([required, section, selections, true], { value: utils.sum(selections) - 1n }),
         'MissingPayment'
       )
     })
@@ -184,7 +184,7 @@ describe('Random', () => {
       }
       await expectations.revertedWithCustomError(
         ctx.errors,
-        ctx.random.write.heat([ctx.required, section, ctx.selections], { value: utils.sum(ctx.selections) }),
+        ctx.random.write.heat([ctx.required, section, ctx.selections, true], { value: utils.sum(ctx.selections) }),
         'UnableToService'
       )
     })
@@ -197,7 +197,7 @@ describe('Random', () => {
         }
         await expectations.revertedWithCustomError(
           ctx.errors,
-          ctx.random.write.heat([0n, section, []]),
+          ctx.random.write.heat([0n, section, [], true]),
           'UnableToService'
         )
       })
@@ -210,7 +210,7 @@ describe('Random', () => {
         expect(section.provider).to.equal(viem.zeroAddress)
         await expectations.revertedWithCustomError(
           ctx.errors,
-          ctx.random.write.heat([5n, section, selections], { value: utils.sum(selections) }),
+          ctx.random.write.heat([5n, section, selections, true], { value: utils.sum(selections) }),
           'UnableToService'
         )
       })
@@ -223,7 +223,7 @@ describe('Random', () => {
         }
         await expectations.revertedWithCustomError(
           ctx.errors,
-          ctx.random.write.heat([256n, section, selections], { value: utils.sum(selections) }),
+          ctx.random.write.heat([256n, section, selections, true], { value: utils.sum(selections) }),
           'UnableToService'
         )
       })
@@ -236,7 +236,9 @@ describe('Random', () => {
         }
         await expectations.revertedWithCustomError(
           ctx.errors,
-          ctx.random.write.heat([BigInt(selections.length + 1), section, selections], { value: utils.sum(selections) }),
+          ctx.random.write.heat([BigInt(selections.length + 1), section, selections, true], {
+            value: utils.sum(selections),
+          }),
           'UnableToService'
         )
       })
@@ -252,7 +254,9 @@ describe('Random', () => {
         }
         await expectations.revertedWithCustomError(
           ctx.errors,
-          ctx.random.write.heat([BigInt(selections.length), section, selections], { value: utils.sum(selections) }),
+          ctx.random.write.heat([BigInt(selections.length), section, selections, true], {
+            value: utils.sum(selections),
+          }),
           'Misconfigured'
         )
       })
@@ -267,7 +271,9 @@ describe('Random', () => {
         }
         await expectations.revertedWithCustomError(
           ctx.errors,
-          ctx.random.write.heat([BigInt(selections.length), section, selections], { value: utils.sum(selections) }),
+          ctx.random.write.heat([BigInt(selections.length), section, selections, true], {
+            value: utils.sum(selections),
+          }),
           'Misconfigured'
         )
       })
@@ -304,6 +310,7 @@ describe('Random', () => {
               2n,
               sec,
               [{ ...section }, { ...section, index: 9n }], // 0th location
+              true,
             ],
             {
               value: section.price * 2n,
@@ -537,9 +544,14 @@ describe('Random', () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
         const consumer = await ctx.hre.viem.deployContract('contracts/test/ConsumerReceiver.sol:ConsumerReceiver')
         await consumer.write.setShouldRevert([3n])
-        const { all, selections } = await selectPreimages(ctx, Number(ctx.required), [utils.defaultSection])
+        const { selections } = await selectPreimages(ctx, Number(ctx.required), [utils.defaultSection])
         const heatTx = await ctx.random.write.heat(
-          [ctx.required, { ...utils.defaultSection, provider: consumer!.address }, selections, true],
+          [
+            ctx.required,
+            { ...utils.defaultSection, provider: consumer!.address, callAtChange: true },
+            selections,
+            true,
+          ],
           {
             value: utils.sum(selections),
           }
@@ -564,7 +576,7 @@ describe('Random', () => {
             })
           }
         )
-        await expectations.emit(ctx, chopResult, ctx.random, 'UnableToReverse', {
+        await expectations.emit(ctx, chopResult, ctx.random, 'FailedToCall', {
           key: start.args.key!,
         })
         await expectations.emit(ctx, chopResult, ctx.random, 'Chop', {
@@ -635,10 +647,13 @@ describe('Random', () => {
       })
       it('notification will occur when reverse is called', async () => {
         const ctx = await helpers.loadFixture(function deployWithRandomnessThatCallsAndStart() {
-          return testUtils.deployWithRandomnessAndStart({
-            ...utils.defaultSection,
-            callAtChange: true,
-          }, 'consumerEmitter')
+          return testUtils.deployWithRandomnessAndStart(
+            {
+              ...utils.defaultSection,
+              callAtChange: true,
+            },
+            'consumerEmitter'
+          )
         })
         const { selections, signers, starts, randomnessProviders } = ctx
         const [provider] = randomnessProviders
@@ -649,14 +664,15 @@ describe('Random', () => {
           account: signer2.account,
         })
         const amountReversed = utils.sum(selections) * 2n
-        await expectations.changeResults(ctx, chopResult,
+        await expectations.changeResults(
+          ctx,
+          chopResult,
           [ctx.consumerEmitter.address, signer2, provider],
           [amountReversed, 0n, 0n],
-          (opts: expectations.CheckResultOpts) => (
+          (opts: expectations.CheckResultOpts) =>
             ctx.random.read.balanceOf([opts.address, viem.zeroAddress], {
               blockNumber: opts.blockNumber,
             })
-          )
         )
         await expectations.emit(ctx, chopResult, ctx.consumerEmitter, 'Reverse', {
           key: start.args.key!,
@@ -741,22 +757,20 @@ describe('Random', () => {
       })
       it('will still call the appropriate handler', async () => {
         const ctx = await helpers.loadFixture(function deployWithRandomnessThatCallsAndStart() {
-          return testUtils.deployWithRandomnessAndStart({
-            ...utils.defaultSection,
-            callAtChange: true,
-          }, 'consumerEmitter')
+          return testUtils.deployWithRandomnessAndStart(
+            {
+              ...utils.defaultSection,
+              callAtChange: true,
+            },
+            'consumerEmitter'
+          )
         })
         const { selections, signers, starts, secretByPreimage } = ctx
         const [, signer2] = signers
         const [start] = starts
         await helpers.mine(13)
-        const secrets = selections.map((selection) => (
-          secretByPreimage.get(selection.preimage) as viem.Hex
-        ))
-        const castTx = ctx.random.write.cast(
-          [start.args.key!, selections, secrets],
-          { account: signer2.account! },
-        )
+        const secrets = selections.map((selection) => secretByPreimage.get(selection.preimage) as viem.Hex)
+        const castTx = ctx.random.write.cast([start.args.key!, selections, secrets], { account: signer2.account! })
         await expectations.emit(ctx, castTx, ctx.random, 'Cast')
         await expectations.emit(ctx, castTx, ctx.random, 'Expired', {
           key: start.args.key!,
@@ -944,7 +958,7 @@ describe('Random', () => {
           offset,
           index: sec.index,
         }))
-        await ctx.random.write.heat([BigInt(required), template, locations], {
+        await ctx.random.write.heat([BigInt(required), template, locations, true], {
           value: utils.defaultSection.price * BigInt(required),
         })
       })
@@ -1063,7 +1077,7 @@ describe('Random', () => {
         }
         await expectations.emit(
           ctx,
-          ctx.random.write.heat([5n, section, selections], {
+          ctx.random.write.heat([5n, section, selections, true], {
             value: utils.sum(selections) + oneEther,
           }),
           ctx.random,
@@ -1109,7 +1123,9 @@ describe('Random', () => {
           duration: 120n,
           provider: signer.account!.address,
         }
-        const heatTx = await ctx.random.write.heat([required, section, selections], { value: utils.sum(selections) })
+        const heatTx = await ctx.random.write.heat([required, section, selections, true], {
+          value: utils.sum(selections),
+        })
         const receipt = await testUtils.confirmTx(ctx, heatTx)
         const starts = await ctx.random.getEvents.Start(
           {},
@@ -1197,7 +1213,7 @@ describe('Random', () => {
       }
       await expectations.emit(
         ctx,
-        ctx.random.write.heat([required, section, selections], { value: utils.sum(selections) }),
+        ctx.random.write.heat([required, section, selections, true], { value: utils.sum(selections) }),
         ctx.random,
         'Heat',
         expectedEmitArgs
@@ -1294,8 +1310,40 @@ describe('Random', () => {
       })
       await expectations.revertedWithCustomError(
         ctx.random,
-        ctx.consumer.write.chain([signer2.account!.address, true, false, s.preimage]),
+        ctx.consumer.write.chain([signer2.account!.address, true, true, false, s.preimage]),
         'UnableToService'
+      )
+    })
+    it('will pass if same tx flag is passed and a transaction was previously used', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+      const { signers } = ctx
+      const [, signer2] = signers
+
+      const { selections } = await selectPreimages(ctx, Number(ctx.required), [utils.defaultSection])
+      const [[s]] = await utils.createTestPreimages({
+        ...utils.defaultSection,
+        provider: signer2.account!.address,
+      })
+      await ctx.multicallerWithSender.write.aggregateWithSender(
+        [
+          [ctx.random.address, ctx.consumer.address],
+          [
+            viem.encodeFunctionData({
+              abi: ctx.random.abi,
+              functionName: 'heat',
+              args: [5n, { ...utils.defaultSection, provider: signer2.account!.address }, selections, false],
+            }),
+            viem.encodeFunctionData({
+              abi: ctx.consumer.abi,
+              functionName: 'chain',
+              args: [signer2.account!.address, true, false, false, s.preimage],
+            }),
+          ],
+          [utils.sum(selections), 0n],
+        ],
+        {
+          value: utils.sum(selections),
+        }
       )
     })
     it('will pass if false is passed for sameTx flag', async () => {
@@ -1308,7 +1356,7 @@ describe('Random', () => {
       const latestId = await ctx.consumer.read.latestId()
       await expectations.emit(
         ctx,
-        ctx.consumer.write.chain([signer.account!.address, false, false, multicallSecret.preimage], {
+        ctx.consumer.write.chain([signer.account!.address, false, true, false, multicallSecret.preimage], {
           account: signer2.account!,
         }),
         ctx.consumer,
@@ -1332,7 +1380,7 @@ describe('Random', () => {
       const latestId = await ctx.consumer.read.latestId()
       await expectations.emit(
         ctx,
-        ctx.consumer.write.chain([signer.account!.address, false, false, s.preimage], {
+        ctx.consumer.write.chain([signer.account!.address, false, true, false, s.preimage], {
           account: signer2.account!,
         }),
         ctx.consumer,
@@ -1377,7 +1425,7 @@ describe('Random', () => {
       const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
       await expectations.revertedWithCustomError(
         ctx.consumer,
-        ctx.consumer.write.chain([viem.zeroAddress, false, false, viem.zeroHash]),
+        ctx.consumer.write.chain([viem.zeroAddress, false, true, false, viem.zeroHash]),
         'Misconfigured'
       )
     })
