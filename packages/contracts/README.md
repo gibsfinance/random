@@ -2,7 +2,7 @@
 
 a repo for generating randomness on chain
 
-### deployment notes
+## deployment notes
 
 ```bash
 npx hardhat ignition deploy ignition/modules/Random.ts --network pulsechainV4
@@ -11,13 +11,14 @@ npx hardhat ignition deploy ignition/modules/Consumer.ts --network pulsechainV4
 npx hardhat ignition verify chain-943 --include-unrelated-contracts
 ```
 
-### randomness providing
+## randomness providing
 
 Providing randomness, at the end of the day, is a numbers game (excuse the pun).
 
 You need to be able to ensure that validators have a reason to stay online and keep their stack of preimages up to date, but you want it to happen at as little of a cost and complexity as possible so that providers do not have a high barrier to cross to get you the randomness you request.
 
 This game is achieved using the following mechanics:
+
 - providers stake a number of tokens that they expect to be paid (on average) for providing their seeds this occurs when preimages are written
 - consumers stake an amount to cover the total randomness seeds requested. the prices can be different for each provider's preimages
 - any provider that gets their secret on chain, either via the consumer or by writing it themselves, before the consumer asks for the campaign to end will not be slashed

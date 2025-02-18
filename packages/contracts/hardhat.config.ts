@@ -1,7 +1,7 @@
-import { type HardhatUserConfig } from "hardhat/config";
+import { type HardhatUserConfig } from 'hardhat/config'
 import '@solidstate/hardhat-4byte-uploader'
 import { HARDHAT_NETWORK_MNEMONIC, defaultHdAccountsConfigParams } from 'hardhat/internal/core/config/default-config'
-import "@nomicfoundation/hardhat-toolbox-viem";
+import '@nomicfoundation/hardhat-toolbox-viem'
 import '@nomicfoundation/hardhat-viem'
 import '@nomicfoundation/hardhat-chai-matchers'
 import 'hardhat-tracer'
@@ -15,17 +15,19 @@ const { env } = process
 
 const config: HardhatUserConfig = {
   solidity: {
-    compilers: [{
-      version: "0.8.25",
-      settings: {
-        viaIR: true,
-        evmVersion: 'cancun',
-        optimizer: {
-          enabled: true,
-          runs: 1_000,
+    compilers: [
+      {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'cancun',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
         },
       },
-    }],
+    ],
   },
   paths: {
     sources: './contracts',
@@ -35,7 +37,7 @@ const config: HardhatUserConfig = {
     hardhat: {
       accounts: {
         ...defaultHdAccountsConfigParams,
-        accountsBalance: ((10n ** 18n) * (10n ** 9n)).toString(),
+        accountsBalance: (10n ** 18n * 10n ** 9n).toString(),
         mnemonic: env.MNEMONIC || HARDHAT_NETWORK_MNEMONIC,
         count: 20, // 512
         // path:
@@ -56,7 +58,7 @@ const config: HardhatUserConfig = {
       },
     },
     pulsechain: {
-      url: 'https://rpc.v4.testnet.pulsechain.com',
+      url: 'https://rpc.pulsechain.com',
       accounts: {
         mnemonic: env.MNEMONIC || HARDHAT_NETWORK_MNEMONIC,
       },
@@ -77,21 +79,24 @@ const config: HardhatUserConfig = {
   },
   etherscan: {
     enabled: true,
-    customChains: [{
-      network: 'pulsechain',
-      chainId: 369,
-      urls: {
-        apiURL: 'https://api.scan.pulsechain.com/api',
-        browserURL: 'https://scan.pulsechain.com/#',
+    customChains: [
+      {
+        network: 'pulsechain',
+        chainId: 369,
+        urls: {
+          apiURL: 'https://api.scan.pulsechain.com/api',
+          browserURL: 'https://scan.pulsechain.com/#',
+        },
       },
-    }, {
-      network: 'pulsechainV4',
-      chainId: 943,
-      urls: {
-        apiURL: 'https://api.scan.v4.testnet.pulsechain.com/api',
-        browserURL: 'https://scan.v4.testnet.pulsechain.com/#',
+      {
+        network: 'pulsechainV4',
+        chainId: 943,
+        urls: {
+          apiURL: 'https://api.scan.v4.testnet.pulsechain.com/api',
+          browserURL: 'https://scan.v4.testnet.pulsechain.com/#',
+        },
       },
-    }],
+    ],
     apiKey: {
       mainnet: env.ETHERSCAN_API_KEY!,
       pulsechainV4: 'abc',
@@ -99,7 +104,7 @@ const config: HardhatUserConfig = {
     },
   },
   sourcify: {
-    enabled: true,
+    enabled: false,
   },
   gasReporter: {
     enabled: true,
@@ -116,6 +121,6 @@ const config: HardhatUserConfig = {
     // showMethodSig: true,
     trackGasDeltas: true,
   },
-};
+}
 
-export default config;
+export default config
