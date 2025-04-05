@@ -1,5 +1,5 @@
 {
-  "name": "random-provider",
+  "name": "@gibs/random-provider",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",

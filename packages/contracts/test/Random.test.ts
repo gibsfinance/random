@@ -40,13 +40,13 @@ describe('Random', () => {
         ctx.random.write.ink([section, data], {
           value: section.price * BigInt(secrets.length) - 1n,
         }),
-        'MissingPayment'
+        'MissingPayment',
       )
       await testUtils.confirmTx(
         ctx,
         ctx.random.write.ink([section, data], {
           value: section.price * BigInt(secrets.length),
-        })
+        }),
       )
     })
     it('cannot write if data is missing', async () => {
@@ -54,7 +54,7 @@ describe('Random', () => {
       await expectations.revertedWithCustomError(
         ctx.errors,
         ctx.random.write.ink([utils.defaultSection, '0x']),
-        'Misconfigured'
+        'Misconfigured',
       )
     })
     it('cannot make owner zero address', async () => {
@@ -68,7 +68,7 @@ describe('Random', () => {
         ctx.random.write.ink([section, data], {
           value: section.price * BigInt(secrets.length),
         }),
-        'UnableToService'
+        'UnableToService',
       )
     })
     it('cannot write if data is uneven must write full words (32 bytes)', async () => {
@@ -76,7 +76,7 @@ describe('Random', () => {
       await expectations.revertedWithCustomError(
         ctx.errors,
         ctx.random.write.ink([utils.defaultSection, '0x00']),
-        'Misconfigured'
+        'Misconfigured',
       )
     })
     it('cannot write if data is too large', async function () {
@@ -98,7 +98,7 @@ describe('Random', () => {
           },
           `0x${'00'.repeat(Number(utils.maxContractSize))}`,
         ]),
-        'DeploymentFailed'
+        'DeploymentFailed',
       )
     })
     it('writes them to a known location', async () => {
@@ -129,7 +129,7 @@ describe('Random', () => {
         ctx.random.write.heat([required, section, selections, true], { value: utils.sum(selections) }),
         ctx.random,
         'Heat',
-        expectedEmitArgs
+        expectedEmitArgs,
       )
     })
     it('skips payment check if preimages are free', async function () {
@@ -154,12 +154,12 @@ describe('Random', () => {
       await expectations.emit(
         ctx,
         ctx.random.write.heat(
-          [required, section, selections, true]
+          [required, section, selections, true],
           /* { value: utils.sum(selections) }, */
         ),
         ctx.random,
         'Heat',
-        expectedEmitArgs
+        expectedEmitArgs,
       )
     })
     it('enforces payment requirement', async function () {
@@ -173,7 +173,7 @@ describe('Random', () => {
       await expectations.revertedWithCustomError(
         ctx.errors,
         ctx.random.write.heat([required, section, selections, true], { value: utils.sum(selections) - 1n }),
-        'MissingPayment'
+        'MissingPayment',
       )
     })
     it('does not allow secrets to be requested twice', async () => {
@@ -185,7 +185,7 @@ describe('Random', () => {
       await expectations.revertedWithCustomError(
         ctx.errors,
         ctx.random.write.heat([ctx.required, section, ctx.selections, true], { value: utils.sum(ctx.selections) }),
-        'UnableToService'
+        'UnableToService',
       )
     })
     describe('the required parameter must be', () => {
@@ -198,7 +198,7 @@ describe('Random', () => {
         await expectations.revertedWithCustomError(
           ctx.errors,
           ctx.random.write.heat([0n, section, [], true]),
-          'UnableToService'
+          'UnableToService',
         )
       })
       it('must have a non zero address', async () => {
@@ -211,7 +211,7 @@ describe('Random', () => {
         await expectations.revertedWithCustomError(
           ctx.errors,
           ctx.random.write.heat([5n, section, selections, true], { value: utils.sum(selections) }),
-          'UnableToService'
+          'UnableToService',
         )
       })
       it('no more than 255', async () => {
@@ -224,7 +224,7 @@ describe('Random', () => {
         await expectations.revertedWithCustomError(
           ctx.errors,
           ctx.random.write.heat([256n, section, selections, true], { value: utils.sum(selections) }),
-          'UnableToService'
+          'UnableToService',
         )
       })
       it('greater than or equal to the potential locations', async () => {
@@ -239,7 +239,7 @@ describe('Random', () => {
           ctx.random.write.heat([BigInt(selections.length + 1), section, selections, true], {
             value: utils.sum(selections),
           }),
-          'UnableToService'
+          'UnableToService',
         )
       })
     })
@@ -257,7 +257,7 @@ describe('Random', () => {
           ctx.random.write.heat([BigInt(selections.length), section, selections, true], {
             value: utils.sum(selections),
           }),
-          'Misconfigured'
+          'Misconfigured',
         )
       })
       it('must equal the preimages being requested', async () => {
@@ -274,7 +274,7 @@ describe('Random', () => {
           ctx.random.write.heat([BigInt(selections.length), section, selections, true], {
             value: utils.sum(selections),
           }),
-          'Misconfigured'
+          'Misconfigured',
         )
       })
     })
@@ -301,7 +301,7 @@ describe('Random', () => {
           ctx,
           ctx.random.write.ink([section, data], {
             value: section.price * 100n,
-          })
+          }),
         )
         await testUtils.confirmTx(
           ctx,
@@ -314,15 +314,15 @@ describe('Random', () => {
             ],
             {
               value: section.price * 2n,
-            }
-          )
+            },
+          ),
         )
         const [len, bitmask] = await ctx.reader.read.consumed([section])
         const offset = len % 8n
         // globally shift so that our target ends up at the right most bit
         const adjusted = len - 1n + offset
         const bitList = _.range(0, Number(len)).map(
-          (idx) => BigInt.asUintN(1, BigInt(bitmask) >> (adjusted - BigInt(idx))) === 1n
+          (idx) => BigInt.asUintN(1, BigInt(bitmask) >> (adjusted - BigInt(idx))) === 1n,
         )
         const unusedCompact = _(bitList)
           .map((consumed, index) => ({
@@ -350,9 +350,9 @@ describe('Random', () => {
           {
             fromBlock: ctx.blockBeforeHeat.number,
             toBlock: latest.number,
-          }
+          },
         )
-        expect(events.length).to.be.greaterThanOrEqual(1)
+        expect(events.length >= 1).to.equal(true)
       })
     })
     describe('how to use secrets once received', async () => {
@@ -361,13 +361,13 @@ describe('Random', () => {
         const { selections, starts, secretByPreimage } = ctx
         const [start] = starts
         const partialSecrets = selections.map(({ preimage }, index) =>
-          index === 2 ? viem.zeroHash : (secretByPreimage.get(preimage) as viem.Hex)
+          index === 2 ? viem.zeroHash : (secretByPreimage.get(preimage) as viem.Hex),
         )
         await expectations.not.emit(
           ctx,
           ctx.random.write.cast([start.args.key!, selections, partialSecrets]),
           ctx.random,
-          'Cast'
+          'Cast',
         )
       })
       it('can be written and provided via calldata but will fail if out of order', async () => {
@@ -382,7 +382,7 @@ describe('Random', () => {
         await expectations.revertedWithCustomError(
           ctx.errors,
           ctx.random.write.cast([start.args.key!, selections, shuffled]),
-          'SecretMismatch'
+          'SecretMismatch',
         )
       })
       it('can be written and provided via calldata on chain by anyone', async () => {
@@ -402,7 +402,7 @@ describe('Random', () => {
           ctx,
           ctx.random.write.cast([start.args.key!, selections, secrets]),
           ctx.random,
-          'Cast'
+          'Cast',
         )
       })
       it('does allow cast to be submitted with partial secret set', async () => {
@@ -424,7 +424,7 @@ describe('Random', () => {
               formerSecret: secretByPreimage.get(selection.preimage),
             })
             return true
-          })
+          }),
         )
         expect(_.compact(results).length).to.be.greaterThan(0)
         await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]), ctx.random, 'Cast')
@@ -453,7 +453,7 @@ describe('Random', () => {
           {},
           {
             blockHash: inkReceipt.blockHash,
-          }
+          },
         )
         const wrongLocationSelections = selections.map((selection) => ({
           ...selection,
@@ -462,7 +462,7 @@ describe('Random', () => {
         await expectations.revertedWithCustomError(
           ctx.errors,
           ctx.random.write.cast([start.args.key!, wrongLocationSelections, secrets]),
-          'Misconfigured'
+          'Misconfigured',
         )
       })
 
@@ -485,14 +485,14 @@ describe('Random', () => {
           {
             account: firstProvider.account!,
             value: utils.sum(selections),
-          }
+          },
         )
         const inkReceipt = await testUtils.confirmTx(ctx, inkTx)
         const inkEvents = await ctx.random.getEvents.Ink(
           {},
           {
             blockHash: inkReceipt.blockHash,
-          }
+          },
         )
         const [ink] = inkEvents
         const startOffset = ink.args.offset! >> 128n
@@ -507,7 +507,7 @@ describe('Random', () => {
         await expectations.revertedWithCustomError(
           ctx.errors,
           ctx.random.write.cast([start.args.key!, wrongLocationSelections, secrets]),
-          'NotInCohort'
+          'NotInCohort',
         )
       })
       it('can collect native token at the same time', async () => {
@@ -519,7 +519,7 @@ describe('Random', () => {
           ctx,
           ctx.random.write.cast([start.args.key!, selections, secrets], { value: oneEther }),
           [signers[0].account!.address, ctx.random.address],
-          [-oneEther, oneEther]
+          [-oneEther, oneEther],
         )
       })
     })
@@ -534,7 +534,7 @@ describe('Random', () => {
           ctx,
           chopResult,
           [signers[0].account!.address, ctx.random.address],
-          [-oneEther, oneEther]
+          [-oneEther, oneEther],
         )
         await expectations.emit(ctx, chopResult, ctx.random, 'Chop', {
           key: start.args.key!,
@@ -554,7 +554,7 @@ describe('Random', () => {
           ],
           {
             value: utils.sum(selections),
-          }
+          },
         )
         const receipt = await testUtils.confirmTx(ctx, heatTx)
         await helpers.mine(12)
@@ -562,7 +562,7 @@ describe('Random', () => {
           {},
           {
             blockHash: receipt.blockHash,
-          }
+          },
         )
         const chopResult = ctx.random.write.chop([start.args.key!, selections], { value: oneEther })
         await expectations.changeResults(
@@ -574,7 +574,7 @@ describe('Random', () => {
             return await ctx.random.read.balanceOf([opts.address, viem.zeroAddress], {
               blockNumber: opts.blockNumber,
             })
-          }
+          },
         )
         await expectations.emit(ctx, chopResult, ctx.random, 'FailedToCall', {
           key: start.args.key!,
@@ -593,7 +593,7 @@ describe('Random', () => {
           ctx,
           chopResult,
           [signers[0].account!.address, ctx.random.address],
-          [-oneEther, oneEther]
+          [-oneEther, oneEther],
         )
         await expectations.emit(ctx, chopResult, ctx.random, 'Chop', {
           key: start.args.key!,
@@ -601,7 +601,7 @@ describe('Random', () => {
         await expectations.revertedWithCustomError(
           ctx.random,
           ctx.random.write.chop([start.args.key!, selections]),
-          'UnableToService'
+          'UnableToService',
         )
       })
       it('cannot call cast after chop', async () => {
@@ -614,7 +614,7 @@ describe('Random', () => {
           ctx,
           chopResult,
           [signers[0].account!.address, ctx.random.address],
-          [-oneEther, oneEther]
+          [-oneEther, oneEther],
         )
         await expectations.emit(ctx, chopResult, ctx.random, 'Chop', {
           key: start.args.key!,
@@ -622,7 +622,7 @@ describe('Random', () => {
         await expectations.revertedWithCustomError(
           ctx.random,
           ctx.random.write.cast([start.args.key!, selections, new Array(selections.length).fill(viem.zeroHash)]),
-          'UnableToService'
+          'UnableToService',
         )
       })
       it('refunded tokens go back to randomness owner', async () => {
@@ -642,7 +642,7 @@ describe('Random', () => {
           (opts: expectations.CheckResultOpts) =>
             ctx.random.read.balanceOf([opts.address, viem.zeroAddress], {
               blockNumber: opts.blockNumber,
-            })
+            }),
         )
       })
       it('notification will occur when reverse is called', async () => {
@@ -652,7 +652,7 @@ describe('Random', () => {
               ...utils.defaultSection,
               callAtChange: true,
             },
-            'consumerEmitter'
+            'consumerEmitter',
           )
         })
         const { selections, signers, starts, randomnessProviders } = ctx
@@ -672,7 +672,7 @@ describe('Random', () => {
           (opts: expectations.CheckResultOpts) =>
             ctx.random.read.balanceOf([opts.address, viem.zeroAddress], {
               blockNumber: opts.blockNumber,
-            })
+            }),
         )
         await expectations.emit(ctx, chopResult, ctx.consumerEmitter, 'Reverse', {
           key: start.args.key!,
@@ -692,7 +692,7 @@ describe('Random', () => {
         await expectations.revertedWithCustomError(
           ctx.random,
           ctx.random.write.chop([start.args.key!, reorderedSelections]),
-          'NotInCohort'
+          'NotInCohort',
         )
       })
       it('will not refund is called before randomness has expired', async () => {
@@ -705,7 +705,7 @@ describe('Random', () => {
         await expectations.revertedWithCustomError(
           ctx.random,
           ctx.random.write.chop([start.args.key!, selections]),
-          'UnableToService'
+          'UnableToService',
         )
         // the revert above moved the block count forward by 1
         const chopResult = await ctx.random.write.chop([start.args.key!, selections])
@@ -717,7 +717,7 @@ describe('Random', () => {
           (opts) =>
             ctx.random.read.balanceOf([opts.address, viem.zeroAddress], {
               blockNumber: opts.blockNumber,
-            })
+            }),
         )
         await expectations.emit(ctx, chopResult, ctx.random, 'Chop')
       })
@@ -732,13 +732,13 @@ describe('Random', () => {
         const value = utils.sum(selections)
         const chopResult = ctx.random.write.chop(
           [start.args.key!, selections],
-          { value } // just because we can
+          { value }, // just because we can
         )
         await expectations.changeEtherBalances(
           ctx,
           chopResult,
           [signer.account!.address, ctx.random.address],
-          [-value, value]
+          [-value, value],
         )
         await expectations.not.emit(ctx, chopResult, ctx.random, 'Chop')
       })
@@ -762,7 +762,7 @@ describe('Random', () => {
               ...utils.defaultSection,
               callAtChange: true,
             },
-            'consumerEmitter'
+            'consumerEmitter',
           )
         })
         const { selections, signers, starts, secretByPreimage } = ctx
@@ -792,7 +792,7 @@ describe('Random', () => {
           account: ctx.randomnessProviders.find((provider) => provider.account!.address == selection.provider)!.account,
         }),
         ctx.reader,
-        'Ok'
+        'Ok',
       )
     })
     it('can only call ok for its own sections', async () => {
@@ -800,7 +800,7 @@ describe('Random', () => {
       const [selection] = ctx.selections
       const [[signer], [notsigner]] = _.partition(
         ctx.randomnessProviders,
-        (provider) => provider.account!.address == selection.provider
+        (provider) => provider.account!.address == selection.provider,
       )
       await expectations.revertedWithCustomError(
         ctx.reader,
@@ -816,9 +816,9 @@ describe('Random', () => {
           ],
           {
             account: signer!.account,
-          }
+          },
         ),
-        'SignerMismatch'
+        'SignerMismatch',
       )
     })
     it('can call bleach to shut down a whole section of preimages', async () => {
@@ -826,7 +826,7 @@ describe('Random', () => {
       const { randomnessProviders, selections, all } = ctx
       const [provider] = randomnessProviders
       const consumedUnder = selections.filter(
-        (selection) => selection.signer.account!.address === provider.account!.address
+        (selection) => selection.signer.account!.address === provider.account!.address,
       )
       const allUnder = _.filter(all, { provider: provider.account!.address })
       const unused = allUnder.length - consumedUnder.length
@@ -840,7 +840,7 @@ describe('Random', () => {
         {
           account: provider.account!,
           value: 1n,
-        }
+        },
       )
       await expectations.emit(ctx, bleachTx, ctx.random, 'Bleach')
       await expectations.changeResults(
@@ -851,7 +851,7 @@ describe('Random', () => {
         (opts) =>
           ctx.random.read.balanceOf([opts.address, viem.zeroAddress], {
             blockNumber: opts.blockNumber,
-          })
+          }),
       )
       await expectations.changeEtherBalances(ctx, bleachTx, [provider.account!.address, ctx.random.address], [-1n, 1n])
     })
@@ -872,7 +872,7 @@ describe('Random', () => {
             provider: randomnessProvider.account!.address,
             offset: existing,
           },
-        ])
+        ]),
       ).eventually.to.equal(viem.zeroAddress)
       await expectations.revertedWithCustomError(
         ctx.errors,
@@ -886,9 +886,9 @@ describe('Random', () => {
           ],
           {
             account: randomnessProvider.account!,
-          }
+          },
         ),
-        'Misconfigured'
+        'Misconfigured',
       )
     })
     it('cannot call bleach for other providers', async () => {
@@ -907,7 +907,7 @@ describe('Random', () => {
             ...utils.defaultSection,
             provider: randomnessProvider.account!.address,
           },
-        ])
+        ]),
       ).eventually.not.to.equal(viem.zeroAddress)
       await expectations.revertedWithCustomError(
         ctx.errors,
@@ -921,9 +921,9 @@ describe('Random', () => {
           ],
           {
             account: rp2.account!,
-          }
+          },
         ),
-        'SignerMismatch'
+        'SignerMismatch',
       )
     })
     it('can call bleach for a partialy consumed section', async () => {
@@ -985,7 +985,7 @@ describe('Random', () => {
           (opts) =>
             ctx.random.read.balanceOf([opts.address, template.token], {
               blockNumber: opts.blockNumber,
-            })
+            }),
         )
         if (!i) {
           await expectations.not.emit(
@@ -994,7 +994,7 @@ describe('Random', () => {
               account: provider.account!,
             }),
             ctx.random,
-            'Bleach'
+            'Bleach',
           )
         }
       })
@@ -1033,7 +1033,7 @@ describe('Random', () => {
         ctx.random.write.handoff([viem.zeroAddress, viem.zeroAddress, -oneEther], {
           value: oneEther - 1n,
         }),
-        'MissingPayment'
+        'MissingPayment',
       )
     })
     it('custodies tokens in the contract', async () => {
@@ -1044,14 +1044,14 @@ describe('Random', () => {
           value: oneEther,
         }),
         [ctx.signers[0].account!.address, ctx.random.address],
-        [-oneEther, oneEther]
+        [-oneEther, oneEther],
       )
       // tries to remove 1 ether, succeeds
       await expectations.changeEtherBalances(
         ctx,
         ctx.random.write.handoff([viem.zeroAddress, viem.zeroAddress, oneEther]),
         [ctx.signers[0].account!.address, ctx.random.address],
-        [oneEther, -oneEther]
+        [oneEther, -oneEther],
       )
     })
     it('cannot remove more tokens than allotted', async () => {
@@ -1061,7 +1061,7 @@ describe('Random', () => {
         ctx,
         ctx.random.write.handoff([viem.zeroAddress, viem.zeroAddress, oneEther]),
         [ctx.signers[0].account!.address],
-        [0n]
+        [0n],
       )
     })
   })
@@ -1081,7 +1081,7 @@ describe('Random', () => {
             value: utils.sum(selections) + oneEther,
           }),
           ctx.random,
-          'Heat'
+          'Heat',
         )
         expect(await ctx.random.read.balanceOf([signer.account!.address, viem.zeroAddress])).to.equal(oneEther)
       })
@@ -1131,7 +1131,7 @@ describe('Random', () => {
           {},
           {
             blockHash: receipt.blockHash,
-          }
+          },
         )
         const provider = await ctx.hre.viem.getPublicClient()
         const block = await provider.getBlock({
@@ -1166,7 +1166,7 @@ describe('Random', () => {
               ...selection,
               index: 766n, // uses index, so length - 1
             },
-          ])
+          ]),
         ).eventually.to.equal(false)
         await expectations.revertedWithCustomError(
           ctx.errors,
@@ -1176,7 +1176,7 @@ describe('Random', () => {
               index: 767n,
             },
           ]),
-          'Misconfigured'
+          'Misconfigured',
         )
       })
     })
@@ -1216,7 +1216,7 @@ describe('Random', () => {
         ctx.random.write.heat([required, section, selections, true], { value: utils.sum(selections) }),
         ctx.random,
         'Heat',
-        expectedEmitArgs
+        expectedEmitArgs,
       )
     })
     it('can deposit and withdraw tokens', async () => {
@@ -1227,14 +1227,14 @@ describe('Random', () => {
         ctx.ERC20,
         ctx.random.write.handoff([signer.account!.address, ctx.ERC20.address, -oneEther]),
         [signer.account!.address, ctx.random.address],
-        [-oneEther, oneEther]
+        [-oneEther, oneEther],
       )
       await expectations.changeTokenBalances(
         ctx,
         ctx.ERC20,
         ctx.random.write.handoff([viem.zeroAddress, ctx.ERC20.address, oneEther]),
         [signer.account!.address, ctx.random.address],
-        [oneEther, -oneEther]
+        [oneEther, -oneEther],
       )
     })
     it('passing zero is equivalent to using the whole balance', async () => {
@@ -1245,14 +1245,14 @@ describe('Random', () => {
         ctx.ERC20,
         ctx.random.write.handoff([signer.account!.address, ctx.ERC20.address, -oneEther]),
         [signer.account!.address, ctx.random.address],
-        [-oneEther, oneEther]
+        [-oneEther, oneEther],
       )
       await expectations.changeTokenBalances(
         ctx,
         ctx.ERC20,
         ctx.random.write.handoff([viem.zeroAddress, ctx.ERC20.address, oneEther]),
         [signer.account!.address, ctx.random.address],
-        [oneEther, -oneEther]
+        [oneEther, -oneEther],
       )
     })
     it('can deposit and withdraw tax tokens', async () => {
@@ -1267,7 +1267,7 @@ describe('Random', () => {
         ctx.taxERC20,
         ctx.random.write.handoff([signer.account!.address, ctx.taxERC20.address, -amountIn]),
         [signer.account!.address, ctx.random.address],
-        [-amountIn, afterTax]
+        [-amountIn, afterTax],
       )
       amountIn = afterTax
       afterTax = tax(amountIn)
@@ -1276,7 +1276,7 @@ describe('Random', () => {
         ctx.taxERC20,
         ctx.random.write.handoff([viem.zeroAddress, ctx.taxERC20.address, amountIn]),
         [signer.account!.address, ctx.random.address],
-        [afterTax, -amountIn]
+        [afterTax, -amountIn],
       )
     })
   })
@@ -1292,7 +1292,7 @@ describe('Random', () => {
         ctx,
         multicallTx,
         [signer.account!.address, ctx.multicallerWithSender.address, ctx.random.address],
-        [-handoffValue, 0n, handoffValue]
+        [-handoffValue, 0n, handoffValue],
       )
       await expectations.emit(ctx, multicallTx, ctx.random, 'Heat', ctx.expectedEmitArgs)
       await expectations.emit(ctx, multicallTx, ctx.consumer, 'Chain', {
@@ -1311,7 +1311,7 @@ describe('Random', () => {
       await expectations.revertedWithCustomError(
         ctx.random,
         ctx.consumer.write.chain([signer2.account!.address, true, true, false, s.preimage]),
-        'UnableToService'
+        'UnableToService',
       )
     })
     it('will pass if same tx flag is passed and a transaction was previously used', async () => {
@@ -1343,7 +1343,7 @@ describe('Random', () => {
         ],
         {
           value: utils.sum(selections),
-        }
+        },
       )
     })
     it('will pass if false is passed for sameTx flag', async () => {
@@ -1365,7 +1365,7 @@ describe('Random', () => {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
           id: latestId + 1n,
           key: start.args.key!,
-        }
+        },
       )
     })
     it('will pass if only latest is desired (security implications due to possibility of secret reveals)', async () => {
@@ -1388,7 +1388,7 @@ describe('Random', () => {
         {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
           id: latestId + 1n,
-        }
+        },
       )
     })
     it('can chain onto other keys', async () => {
@@ -1410,7 +1410,7 @@ describe('Random', () => {
         {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
           id: latestId + 1n,
-        }
+        },
       )
     })
     it('errs if zero preimage is provided', async () => {
@@ -1418,7 +1418,7 @@ describe('Random', () => {
       await expectations.revertedWithCustomError(
         ctx.consumer,
         ctx.consumer.write.chainTo([viem.zeroAddress, false, viem.zeroHash, viem.zeroHash]),
-        'Misconfigured'
+        'Misconfigured',
       )
     })
     it('errs if zero key is provided', async () => {
@@ -1426,7 +1426,7 @@ describe('Random', () => {
       await expectations.revertedWithCustomError(
         ctx.consumer,
         ctx.consumer.write.chain([viem.zeroAddress, false, true, false, viem.zeroHash]),
-        'Misconfigured'
+        'Misconfigured',
       )
     })
     it('errs if zero secret is provided', async () => {
@@ -1434,7 +1434,7 @@ describe('Random', () => {
       await expectations.revertedWithCustomError(
         ctx.consumer,
         ctx.consumer.write.chainTo([viem.zeroAddress, false, viem.keccak256(viem.zeroHash), viem.zeroHash]),
-        'Misconfigured'
+        'Misconfigured',
       )
     })
     it('errs if zero secret is provided', async () => {
@@ -1442,7 +1442,7 @@ describe('Random', () => {
       await expectations.revertedWithCustomError(
         ctx.consumer,
         ctx.consumer.write.chainTo([viem.zeroAddress, false, viem.keccak256(viem.zeroHash), viem.zeroHash]),
-        'Misconfigured'
+        'Misconfigured',
       )
     })
     it('gets the "link" info created by the chain methods', async () => {
@@ -1472,7 +1472,7 @@ describe('Random', () => {
         {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
           id: latestId,
-        }
+        },
       )
       await expect(ctx.consumer.read.link([latestId])).eventually.to.deep.equal({
         id: latestId,
@@ -1501,7 +1501,7 @@ describe('Random', () => {
         {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
           id: latestId + 1n,
-        }
+        },
       )
       await expectations.not.emit(
         ctx,
@@ -1510,7 +1510,7 @@ describe('Random', () => {
         'Chain',
         {
           owner: viem.padHex(signer2.account!.address, { size: 32 }),
-        }
+        },
       )
     })
   })
