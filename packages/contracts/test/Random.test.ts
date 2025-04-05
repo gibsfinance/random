@@ -1044,7 +1044,7 @@ describe('Random', () => {
           value: oneEther,
         }),
         [ctx.signers[0].account!.address, ctx.random.address],
-        [-oneEther, oneEther]
+        [-oneEther, oneEther],
       )
       // tries to remove 1 ether, succeeds
       await expectations.changeEtherBalances(
