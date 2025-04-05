@@ -39,7 +39,7 @@ export const deploy = async () => {
   const taxERC20 = await hre.viem.getContractAt(contractName.ERC20Solady, _taxERC20.address)
   const multicallerWithSender = await deployMulticaller(
     contractName.MulticallerWithSender,
-    '0x00000000002Fd5Aeb385D324B580FCa7c83823A0'
+    '0x00000000002Fd5Aeb385D324B580FCa7c83823A0',
   )
   await hre.network.provider.send('hardhat_setStorageAt', [
     multicallerWithSender.address,
@@ -78,10 +78,10 @@ export const deploy = async () => {
         signers.map((signer) =>
           erc20.write.approve([random.address, oneThousandEther], {
             account: signer.account!,
-          })
-        )
+          }),
+        ),
       )
-    })
+    }),
   )
   const required = 5n
   const defaultExpiryOffsetInput = 12n << 1n
@@ -107,7 +107,7 @@ export const deployWithRandomness = async (section = utils.defaultSection) => {
       .map((generated) => generated.secretBatches)
       .flattenDeep()
       .map(({ preimage, secret }) => [preimage, secret] as const)
-      .value()
+      .value(),
   )
   return {
     ...ctx,
@@ -121,7 +121,7 @@ export const deployWithRandomness = async (section = utils.defaultSection) => {
 
 export const deployWithRandomnessAndStart = async (
   section = utils.defaultSection,
-  prov: string | viem.Hex = viem.zeroAddress
+  prov: string | viem.Hex = viem.zeroAddress,
 ) => {
   const ctx = await helpers.loadFixture(async function deployWithRandomnessOneOff() {
     return await deployWithRandomness(section)
@@ -150,14 +150,14 @@ export const deployWithRandomnessAndStart = async (
     [ctx.required, { ...section, provider: consumerAddress }, selections, true],
     {
       value: utils.sum(selections),
-    }
+    },
   )
   const receipt = await confirmTx(ctx, heatTx)
   const starts = await ctx.random.getEvents.Start(
     {},
     {
       blockHash: receipt.blockHash,
-    }
+    },
   )
   return {
     ...ctx,
@@ -233,7 +233,7 @@ export type Context = Awaited<ReturnType<typeof deploy>>
 
 export const confirmTx = async (
   ctx: Context,
-  hash: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType
+  hash: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType,
 ) => {
   const provider = await ctx.hre.viem.getPublicClient()
   const receipt = await provider.waitForTransactionReceipt({
@@ -269,10 +269,10 @@ export const writePreimages = async (ctx: Context, section = utils.defaultSectio
           rand.write.ink([preimageLocations[0], viem.concatHex(preimages)], {
             account: signer.account,
             value: _.isNil(value) ? utils.sum(preimageLocations) : value,
-          })
+          }),
         )
         return preimageLocations
-      })
+      }),
     )
     return {
       preimageLocations,
@@ -298,7 +298,7 @@ export const readPreimages = async (ctx: Context, options = utils.defaultSection
 export const selectPreimages = async (
   ctx: Context,
   count = 5,
-  offsets: utils.PreimageInfoOptions[] = [utils.defaultSection]
+  offsets: utils.PreimageInfoOptions[] = [utils.defaultSection],
 ) => {
   const producers = await getRandomnessProviders(ctx.hre)
   const preimageGroups = await utils.limiters.signers.map(producers, async (producer) => {
@@ -324,7 +324,7 @@ export const selectPreimages = async (
             } as utils.PreimageInfo & {
               signer: viem.WalletClient
               preimage: viem.Hex
-            })
+            }),
         )
       })
       .flatten()

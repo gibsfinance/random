@@ -7,7 +7,7 @@ export const revertedWithCustomError = async (
   contract: viem.GetContractReturnType,
   p: Promise<any>,
   errorName: string,
-  args?: any[]
+  args?: any[],
 ) => {
   let threw = false
   let e!: Error
@@ -59,7 +59,7 @@ const _emit = async (
   _hash: viem.Hex | Promise<viem.Hex>,
   contract: viem.GetContractReturnType,
   eventName: string,
-  args?: Filter | Filter[]
+  args?: Filter | Filter[],
 ): Promise<[(null | Filter)[], viem.Hex, viem.Log[], viem.Log[]]> => {
   const hash = await _hash
   const client = await ctx.hre.viem.getPublicClient()
@@ -100,7 +100,7 @@ const _emit = async (
               a[arg.name!] = fltr[i]
               return a
             },
-            {} as Record<string, any>
+            {} as Record<string, any>,
           )
           ;(filter as any).args = objectArgs
         } else if (fltr) {
@@ -137,7 +137,7 @@ export const not = {
 const changeBalances = async (
   accounts: (viem.WalletClient | viem.Hex)[],
   deltas: bigint[],
-  getter: (addr: viem.Hex) => Promise<bigint>
+  getter: (addr: viem.Hex) => Promise<bigint>,
 ) => {
   const addresses = accounts.map((acc) => (_.isString(acc) ? acc : acc.account!.address))
   const actualDeltas = await Promise.all(addresses.map(getter))
@@ -160,7 +160,7 @@ export const changeEtherBalances = async (
   _receipt: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType,
   accounts: (viem.WalletClient | viem.Hex)[],
   deltas: bigint[],
-  excludeGasConsumption = true
+  excludeGasConsumption = true,
 ) => {
   const provider = await ctx.hre.viem.getPublicClient()
   const receipt = await confirmTx(ctx, _receipt)
@@ -195,7 +195,7 @@ export const changeResults = async (
   _receipt: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType,
   accounts: (viem.WalletClient | viem.Hex)[],
   deltas: bigint[],
-  checker: (opts: CheckResultOpts) => Promise<bigint>
+  checker: (opts: CheckResultOpts) => Promise<bigint>,
 ) => {
   const provider = await ctx.hre.viem.getPublicClient()
   const receipt = await confirmTx(ctx, _receipt)
@@ -212,7 +212,7 @@ export const changeTokenBalances = async (
   contract: viem.GetContractReturnType<ERC20$Type['abi']>,
   _receipt: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType,
   accounts: (viem.WalletClient | viem.Hex)[],
-  deltas: bigint[]
+  deltas: bigint[],
 ) => {
   const provider = await ctx.hre.viem.getPublicClient()
   const receipt = await confirmTx(ctx, _receipt)
