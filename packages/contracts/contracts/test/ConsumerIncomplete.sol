@@ -23,7 +23,7 @@ contract ConsumerIncomplete {
                 provider: settings.provider,
                 callAtChange: settings.callAtChange,
                 duration: settings.duration,
-                durationIsTimestamp: settings.durationIsTimestamp,
+                usesTimestamp: settings.usesTimestamp,
                 token: settings.token,
                 price: settings.price,
                 offset: settings.offset,

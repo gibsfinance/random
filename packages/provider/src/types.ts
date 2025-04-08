@@ -39,7 +39,7 @@ export type StreamConfig = {
     /** the minimum duration that you are willing to consent to (default 12) */
     duration: number;
     /** whether or not the duration above should be read as a timestamp (true) or a block delta (false) */
-    durationIsTimestamp: boolean;
+    usesTimestamp: boolean;
     /** whether or not to call functions at each step */
     callAtChange: boolean;
   }

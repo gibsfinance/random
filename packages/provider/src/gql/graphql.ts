@@ -645,7 +645,7 @@ export type Pointer = {
   chainId: Scalars['BigInt']['output'];
   count: Scalars['Int']['output'];
   duration: Scalars['BigInt']['output'];
-  durationIsTimestamp: Scalars['Boolean']['output'];
+  usesTimestamp: Scalars['Boolean']['output'];
   id: Scalars['String']['output'];
   ink: Ink;
   inkId: Scalars['String']['output'];
@@ -712,10 +712,10 @@ export type PointerFilter = {
   count_not?: InputMaybe<Scalars['Int']['input']>;
   count_not_in?: InputMaybe<Array<InputMaybe<Scalars['Int']['input']>>>;
   duration?: InputMaybe<Scalars['BigInt']['input']>;
-  durationIsTimestamp?: InputMaybe<Scalars['Boolean']['input']>;
-  durationIsTimestamp_in?: InputMaybe<Array<InputMaybe<Scalars['Boolean']['input']>>>;
-  durationIsTimestamp_not?: InputMaybe<Scalars['Boolean']['input']>;
-  durationIsTimestamp_not_in?: InputMaybe<Array<InputMaybe<Scalars['Boolean']['input']>>>;
+  usesTimestamp?: InputMaybe<Scalars['Boolean']['input']>;
+  usesTimestamp_in?: InputMaybe<Array<InputMaybe<Scalars['Boolean']['input']>>>;
+  usesTimestamp_not?: InputMaybe<Scalars['Boolean']['input']>;
+  usesTimestamp_not_in?: InputMaybe<Array<InputMaybe<Scalars['Boolean']['input']>>>;
   duration_gt?: InputMaybe<Scalars['BigInt']['input']>;
   duration_gte?: InputMaybe<Scalars['BigInt']['input']>;
   duration_in?: InputMaybe<Array<InputMaybe<Scalars['BigInt']['input']>>>;
@@ -2210,7 +2210,7 @@ export type Pointer = {
   chainId: Scalars['BigInt']['output'];
   count: Scalars['Int']['output'];
   duration: Scalars['BigInt']['output'];
-  durationIsTimestamp: Scalars['Boolean']['output'];
+  usesTimestamp: Scalars['Boolean']['output'];
   id: Scalars['String']['output'];
   ink: Ink;
   inkId: Scalars['String']['output'];
@@ -2277,10 +2277,10 @@ export type PointerFilter = {
   count_not?: InputMaybe<Scalars['Int']['input']>;
   count_not_in?: InputMaybe<Array<InputMaybe<Scalars['Int']['input']>>>;
   duration?: InputMaybe<Scalars['BigInt']['input']>;
-  durationIsTimestamp?: InputMaybe<Scalars['Boolean']['input']>;
-  durationIsTimestamp_in?: InputMaybe<Array<InputMaybe<Scalars['Boolean']['input']>>>;
-  durationIsTimestamp_not?: InputMaybe<Scalars['Boolean']['input']>;
-  durationIsTimestamp_not_in?: InputMaybe<Array<InputMaybe<Scalars['Boolean']['input']>>>;
+  usesTimestamp?: InputMaybe<Scalars['Boolean']['input']>;
+  usesTimestamp_in?: InputMaybe<Array<InputMaybe<Scalars['Boolean']['input']>>>;
+  usesTimestamp_not?: InputMaybe<Scalars['Boolean']['input']>;
+  usesTimestamp_not_in?: InputMaybe<Array<InputMaybe<Scalars['Boolean']['input']>>>;
   duration_gt?: InputMaybe<Scalars['BigInt']['input']>;
   duration_gte?: InputMaybe<Scalars['BigInt']['input']>;
   duration_in?: InputMaybe<Array<InputMaybe<Scalars['BigInt']['input']>>>;

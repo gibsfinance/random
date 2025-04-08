@@ -25,24 +25,19 @@ jobs:
         os: [ubuntu-latest]
 
     steps:
-      - uses: actions/checkout@v4
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.7.0
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
+          cache: 'npm'
       - name: Install dependencies
-        run: pnpm install
+        run: npm install
 
       - name: Run compile (+lint)
-        run: cd packages/contracts && pnpm build && cd ../..
+        run: cd packages/contracts && npm run build && cd ../..
 
       - name: Run tests
-        run: pnpm -r coverage
+        run: npm run coverage
 
       - name: Coveralls
         uses: coverallsapp/github-action@master

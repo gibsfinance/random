@@ -1,4 +1,6 @@
-import { createConfig } from "@ponder/core";
+import { createConfig } from "ponder";
+import { http } from "viem";
+
 import deployedAddresses from '@gibs/random/ignition/deployments/chain-943/deployed_addresses.json'
 import { abi as randomAbi } from '@gibs/random/artifacts/contracts/Random.sol/Random.json'
 import { abi as readerAbi } from '@gibs/random/artifacts/contracts/Reader.sol/Reader.json'
@@ -11,13 +13,11 @@ const addresses = deployedAddresses as {
 }
 
 export default createConfig({
-  database: {
-    kind: 'postgres',
-  },
+  ordering: "omnichain",
   networks: {
     pulsechainV4: {
       chainId: 943,
-      transport: viem.http(process.env.PONDER_RPC_URL_943),
+      transport: http(process.env.PONDER_RPC_URL_943),
     },
   },
   contracts: {
@@ -26,7 +26,7 @@ export default createConfig({
       abi: randomAbi as Random$Type["abi"],
       address: addresses["RandomModule#Random"],
       startBlock: 20_103_315,
-      includeCallTraces: true,
+      // includeCallTraces: true,
       includeTransactionReceipts: true,
     },
     Reader: {
@@ -41,7 +41,7 @@ export default createConfig({
       abi: readerAbi as Reader$Type["abi"],
       address: addresses["ConsumerModule#Consumer"],
       startBlock: 20_103_315,
-      includeCallTraces: true,
+      // includeCallTraces: true,
       includeTransactionReceipts: true,
     },
   },

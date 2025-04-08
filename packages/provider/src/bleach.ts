@@ -14,7 +14,7 @@ export const main = async () => {
     const bleachTx = await contracts().random.write.bleach([{
       provider: provider.account!.address,
       duration: BigInt(pointer.duration),
-      durationIsTimestamp: pointer.durationIsTimestamp,
+      usesTimestamp: pointer.usesTimestamp,
       token: pointer.token as viem.Hex,
       price: BigInt(pointer.price),
       offset: BigInt(pointer.offset),

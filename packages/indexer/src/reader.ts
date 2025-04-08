@@ -1,13 +1,15 @@
-import { ponder } from "@/generated";
-import { scopedId, upsertBlock, upsertTransaction } from "./utils";
+import { ponder } from 'ponder:registry'
+import * as schema from 'ponder:schema'
+import { scopedId, upsertBlock, upsertTransaction } from './utils'
 
 ponder.on('Reader:Ok', async ({ event, context }) => {
   await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
-  await context.db.Pointer.update({
-    id: scopedId.pointer(context, event.args.section),
-    data: {
-      lastOkTransactionId: tx.id,
-    },
-  })
+  await context.db
+    .update(schema.Pointer, {
+      orderId: scopedId.pointer(context, event.args.section),
+    })
+    .set({
+      lastOkTransactionId: tx.orderId,
+    })
 })

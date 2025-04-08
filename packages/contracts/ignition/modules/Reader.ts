@@ -1,5 +1,5 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules"
-import RandomModule from "./Random"
+import RandomModule from "./Random.js"
 
 const ReaderModule = buildModule("ReaderModule", (m) => {
   const { random } = m.useModule(RandomModule)

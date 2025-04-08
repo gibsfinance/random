@@ -17,7 +17,7 @@ export const queries = {
           provider
           token
           duration
-          durationIsTimestamp
+          usesTimestamp
           price
           offset
         }
@@ -47,7 +47,7 @@ export const queries = {
                   pointer {
                     duration
                     callAtChange
-                    durationIsTimestamp
+                    usesTimestamp
                     price
                     token
                     provider
@@ -69,7 +69,7 @@ export const queries = {
         provider
         price
         duration
-        durationIsTimestamp
+        usesTimestamp
         token
         offset
         callAtChange
@@ -108,7 +108,7 @@ export const queries = {
       token
       price
       duration
-      durationIsTimestamp
+      usesTimestamp
       offset
       callAtChange
       ink {
@@ -140,7 +140,7 @@ export const queries = {
         price
         callAtChange
         duration
-        durationIsTimestamp
+        usesTimestamp
       }
     }
   }`,
@@ -167,7 +167,7 @@ export const queries = {
         token
         price
         duration
-        durationIsTimestamp
+        usesTimestamp
         offset
         section
         template

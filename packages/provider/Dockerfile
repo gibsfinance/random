@@ -1,17 +1,17 @@
-FROM oven/bun:latest
+FROM node:lts
 
 ARG INDEXER_URL
 ENV INDEXER_URL=$INDEXER_URL
 
 COPY ./package.json /app/package.json
 COPY ./src /app/src
-COPY ./pnpm-lock.yaml /app/pnpm-lock.yaml
+COPY ./package-lock.json /app/package-lock.json
 COPY ./tsconfig.json /app/tsconfig.json
 COPY ./codegen.config.cjs /app/codegen.config.cjs
 COPY ./config.ts /app/config.ts
 COPY ./knexfile.ts /app/knexfile.ts
 WORKDIR /app
 
-RUN bun install
+RUN npm install
 
-CMD [ "bash", "-c", "bun provide" ]
+CMD [ "bash", "-c", "npm run provide" ]

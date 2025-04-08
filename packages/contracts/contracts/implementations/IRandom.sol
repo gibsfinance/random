@@ -56,18 +56,13 @@ abstract contract IRandom {
     function _expired(uint256 timeline) internal view virtual returns (bool) {
         unchecked {
             // end
-            return
-                (
-                    (timeline << (TWO_FIVE_FIVE - (EIGHT + ONE))) >>
-                        TWO_FIVE_FIVE ==
-                        ZERO
-                        ? block.number
-                        : block.timestamp
-                ) -
-                    // start
-                    (uint256(uint48(timeline >> FOUR_EIGHT))) >
-                // expiration delta
-                (uint256(uint40(timeline) >> (EIGHT + TWO)));
+            return (
+                (timeline << (TWO_FIVE_FIVE - (EIGHT + ONE))) >> TWO_FIVE_FIVE == ZERO ? block.number : block.timestamp
+            )
+            // start
+            - (uint256(uint48(timeline >> FOUR_EIGHT)))
+            // expiration delta
+            > (uint256(uint48(timeline)) >> (EIGHT + TWO));
         }
     }
 }
