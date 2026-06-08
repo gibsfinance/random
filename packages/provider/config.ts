@@ -39,7 +39,7 @@ const randomness = new Map<number, RandomnessConfig>([
       info: {
         token: viem.zeroAddress,
         duration: 12,
-        durationIsTimestamp: false,
+        usesTimestamp: false,
         price: '100',
         callAtChange: false,
       },

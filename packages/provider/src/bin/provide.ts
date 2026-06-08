@@ -1,4 +1,4 @@
-import { main } from '../provide'
-import { main as common } from './common'
+import { main } from '../provide.js'
+import { main as common } from './common.js'
 
 common(main)

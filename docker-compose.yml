@@ -1,7 +1,7 @@
 services:
   gibrandom-indexer-postgres:
     container_name: gibrandom-indexer-postgres
-    image: gibsfinance/postgres
+    image: postgres:16
     shm_size: 16g
     platform: linux/amd64
     command: ['postgres']
@@ -18,7 +18,7 @@ services:
 
   gibrandom-provider-postgres:
     container_name: gibrandom-provider-postgres
-    image: gibsfinance/postgres
+    image: postgres:16
     shm_size: 16g
     platform: linux/amd64
     command: ['postgres']
@@ -36,7 +36,7 @@ services:
   gibrandom-indexer:
     container_name: gibrandom-indexer
     shm_size: 16g
-    command: bash -c "pnpm run build && pnpm dev"
+    command: bash -c "npm run build && npm run dev"
     build:
       context: ./packages/indexer
     ports:
@@ -50,7 +50,7 @@ services:
       - ./packages/indexer/generated:/app/generated
       - ./packages/indexer/src:/app/src
       - ./packages/indexer/.eslintrc.json:/app/.eslintrc.json
-      - ./packages/indexer/pnpm-lock.yaml:/app/pnpm-lock.yaml
+      - ./packages/indexer/package-lock.json:/app/package-lock.json
       - ./packages/indexer/ponder-env.d.ts:/app/ponder-env.d.ts
       - ./packages/indexer/ponder.config.ts:/app/ponder.config.ts
       - ./packages/indexer/ponder.schema.ts:/app/ponder.schema.ts
@@ -68,7 +68,7 @@ services:
         echo 'Waiting for 1 minute before starting the provider...'
         sleep 60
         echo 'Starting consumer now'
-        bun run provide:dev
+        npm run provide:dev
       "
     build:
       context: ./packages/provider
@@ -84,7 +84,7 @@ services:
       - ./packages/provider/config.ts:/app/config.ts
       - ./packages/provider/knexfile.ts:/app/knexfile.ts
       - ./packages/provider/package.json:/app/package.json
-      - ./packages/provider/pnpm-lock.yaml:/app/pnpm-lock.yaml
+      - ./packages/provider/package-lock.json:/app/package-lock.json
       - ./packages/provider/tsconfig.json:/app/tsconfig.json
     env_file:
       - .env
@@ -104,7 +104,7 @@ services:
         echo 'Waiting for 1 minute before starting the consumer...'
         sleep 60
         echo 'Starting consumer now'
-        bun run consumer-bot
+        npm run consumer-bot
       "
     build:
       context: ./packages/provider
@@ -120,7 +120,7 @@ services:
       - ./packages/provider/config.ts:/app/config.ts
       - ./packages/provider/knexfile.ts:/app/knexfile.ts
       - ./packages/provider/package.json:/app/package.json
-      - ./packages/provider/pnpm-lock.yaml:/app/pnpm-lock.yaml
+      - ./packages/provider/package-lock.json:/app/package-lock.json
       - ./packages/provider/tsconfig.json:/app/tsconfig.json
     env_file:
       - .env

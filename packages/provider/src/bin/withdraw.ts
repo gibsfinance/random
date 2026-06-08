@@ -1,4 +1,4 @@
-import { main } from '../withdraw'
-import { main as common } from './common'
+import { main } from '../withdraw.js'
+import { main as common } from './common.js'
 
 common(main)

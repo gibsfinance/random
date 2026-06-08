@@ -1,87 +1,111 @@
-import { ponder } from "@/generated";
+import { ponder } from 'ponder:registry'
+import * as schema from 'ponder:schema'
+import { and, eq, lt } from 'ponder'
 import * as viem from 'viem'
-import { scopedId, upsertBlock, upsertTransaction } from "./utils";
 import * as randomUtils from '@gibs/random/lib/utils'
 import { abi as randomAbi } from '@gibs/random/artifacts/contracts/Random.sol/Random.json'
-import { Random$Type } from "@gibs/random/artifacts/contracts/Random.sol/Random";
+import { scopedId, upsertBlock, upsertTransaction } from './utils'
 
-ponder.on("Random.ink()", async ({ event, context }) => {
-  const [sectionInput, bytecode] = event.args
-  const preimages = randomUtils.dataToPreimages(bytecode)
-  if (!event.transactionReceipt) {
-    event.transactionReceipt = await context.client.request({
-      method: 'eth_getTransactionReceipt',
-      params: [
-        event.transaction.hash,
-      ],
-    })
+/** The decoded shape of an `ink(info, data)` call's first argument. */
+type InkSectionInput = {
+  provider: viem.Hex
+  callAtChange: boolean
+  usesTimestamp: boolean
+  duration: bigint
+  token: viem.Hex
+  price: bigint
+  offset: bigint
+  index: bigint
+}
+
+// Index provider preimage commitments from the Ink event. The event carries
+// {sender, provider, section, offset, pointer}; the section parameters (token, price,
+// duration, ...) and the raw preimage bytes are NOT in the event — but they are in the
+// transaction's calldata, `ink(info, data)`. Decoding event.transaction.input recovers
+// everything the original call-trace handler did, with no call traces and no trace-capable
+// RPC, so it indexes full history on an ordinary archive endpoint.
+//
+// On chain 943 every ink is a direct top-level ink() call. If ink is ever invoked
+// indirectly (e.g. wrapped in a multicaller aggregate), event.transaction.input decodes to
+// the wrapper instead; such inks are skipped with a warning rather than mis-indexed.
+ponder.on('Random:Ink', async ({ event, context }) => {
+  const { sender, provider, section, offset: packedOffset, pointer } = event.args
+
+  const decoded = (() => {
+    try {
+      return viem.decodeFunctionData({ abi: randomAbi as viem.Abi, data: event.transaction.input })
+    } catch {
+      return null
+    }
+  })()
+  if (!decoded) {
+    console.warn(`Random:Ink ${section}: transaction input did not decode; skipping`)
+    return
   }
-  const events = viem.parseEventLogs({
-    abi: randomAbi as Random$Type["abi"],
-    logs: event.transactionReceipt.logs,
-    eventName: 'Ink',
-  })
+  if (decoded.functionName !== 'ink') {
+    console.warn(`Random:Ink ${section}: ink invoked via ${decoded.functionName}, not a direct call; skipping`)
+    return
+  }
+  const [sectionInput, data] = decoded.args as unknown as [InkSectionInput, viem.Hex]
+
+  // The contract assigns the real storage offset: the high 128 bits of the packed event
+  // offset hold `start`, the low 128 bits hold `start + count`.
+  const offset = BigInt.asUintN(128, packedOffset >> 128n)
+  const info = { ...sectionInput, provider, offset }
+  // The section we reconstruct from the call inputs must match the one the contract emitted.
+  if (randomUtils.section(info) !== section) {
+    console.warn(`Random:Ink ${section}: reconstructed section mismatch; skipping`)
+    return
+  }
+
+  const preimages = randomUtils.dataToPreimages(data)
+  const template = randomUtils.template(info)
+  const pointerId = scopedId.pointer(context, section)
+  const inkId = scopedId.ink(context, section)
+
   await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
-  await Promise.all(events.map(async (inkEvent) => {
-    const offset = BigInt.asUintN(128, inkEvent.args.offset >> 128n)
-    const info = {
-      ...sectionInput,
-      provider: inkEvent.args.provider,
-      offset,
-    }
-    const section = randomUtils.section(info)
-    if (section !== inkEvent.args.section) {
-      return
-    }
-    const template = randomUtils.template(info)
-    // pointer id uses section because it is a readily available
-    // abstraction. pointer storage is a reference to an
-    // on chain contract holding preimages in bytecode data
-    const pointerId = scopedId.pointer(context, section)
-    const preimageEntities = preimages.map((preimage, index) => ({
-      index,
+
+  await context.db.insert(schema.Pointer).values({
+    orderId: pointerId,
+    section,
+    template,
+    remaining: BigInt(preimages.length),
+    count: BigInt(preimages.length),
+    storage: pointer,
+    lastOkTransactionId: tx.orderId,
+    provider,
+    token: sectionInput.token,
+    price: sectionInput.price,
+    duration: sectionInput.duration,
+    usesTimestamp: sectionInput.usesTimestamp,
+    callAtChange: sectionInput.callAtChange,
+    offset,
+    chainId: BigInt(context.chain.id),
+    address: context.contracts.Random.address,
+    inkId,
+  })
+
+  await context.db.insert(schema.Preimage).values(
+    preimages.map((preimage, index) => ({
+      orderId: scopedId.preimage(context, randomUtils.location(section, index)),
       pointerId,
-      data: preimage,
+      index: BigInt(index),
       template,
       section,
       accessed: false,
-      id: scopedId.preimage(context, randomUtils.location(section, index)),
-    }))
-    const inkId = scopedId.ink(context, section)
-    await context.db.Pointer.create({
-      id: pointerId,
-      data: {
-        remaining: preimages.length,
-        inkId,
-        section,
-        count: preimages.length,
-        storage: inkEvent.args.pointer,
-        lastOkTransactionId: tx.id,
-        provider: inkEvent.args.provider,
-        template,
-        callAtChange: sectionInput.callAtChange,
-        token: sectionInput.token,
-        price: sectionInput.price,
-        duration: sectionInput.duration,
-        durationIsTimestamp: sectionInput.durationIsTimestamp,
-        offset,
-        chainId: BigInt(context.network.chainId),
-        address: context.contracts.Random.address,
-      },
-    })
-    await context.db.Preimage.createMany({ data: preimageEntities })
-    await context.db.Ink.create({
-      id: inkId,
-      data: {
-        section,
-        index: event.transaction.transactionIndex,
-        pointerId: pointerId,
-        sender: inkEvent.args.sender,
-        transactionId: tx.id,
-      },
-    })
-  }))
+      data: preimage,
+    })),
+  )
+
+  await context.db.insert(schema.Ink).values({
+    orderId: inkId,
+    transactionId: tx.orderId,
+    pointerId,
+    section,
+    sender,
+    index: BigInt(event.transaction.transactionIndex),
+  })
 })
 
 ponder.on('Random:Heat', async ({ event, context }) => {
@@ -94,43 +118,43 @@ ponder.on('Random:Heat', async ({ event, context }) => {
   } = event.args
   const pointerId = scopedId.pointer(context, section)
 
-  const pointer = await context.db.Pointer.findUnique({
-    id: pointerId,
+  const pointer = await context.db.find(schema.Pointer, {
+    orderId: pointerId,
   })
   const localIndex = index - pointer!.offset
   const heatId = scopedId.heat(context, randomUtils.location(section, localIndex))
   const preimageId = scopedId.preimage(context, randomUtils.location(section, localIndex))
   await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
-  const preimage = await context.db.Preimage.findUnique({
-    id: preimageId,
+  const preimage = await context.db.find(schema.Preimage, {
+    orderId: preimageId,
   })
   if (!preimage) {
     console.log(preimageId, event.block, event.transaction, event.transactionReceipt)
   }
-  await context.db.Preimage.update({
-    id: preimageId,
-    data: {
+  await context.db
+    .update(schema.Preimage, {
+      orderId: preimageId,
+    })
+    .set({
       accessed: true,
       heatId,
       timestamp: event.block.timestamp,
-    },
-  })
-  await context.db.Pointer.update({
-    id: pointerId,
-    data: ({ current, }) => ({
+    })
+  await context.db
+    .update(schema.Pointer, {
+      orderId: pointerId,
+    })
+    .set(({ remaining, ...current }) => ({
       ...current,
-      remaining: current.remaining - 1,
-    }),
-  })
-  await context.db.Heat.create({
-    id: heatId,
-    data: {
-      transactionId: tx.id,
-      index: event.log.logIndex,
-      startId: undefined,
-      preimageId,
-    },
+      remaining: remaining - 1n,
+    }))
+  await context.db.insert(schema.Heat).values({
+    transactionId: tx.orderId,
+    index: BigInt(event.log.logIndex),
+    startId: undefined,
+    preimageId,
+    orderId: heatId,
   })
 })
 
@@ -139,80 +163,78 @@ ponder.on('Random:Start', async ({ event, context }) => {
   await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
   const startId = scopedId.start(context, key)
-  await context.db.Start.create({
-    id: startId,
-    data: {
-      chopped: false,
-      transactionId: tx.id,
-      owner,
-      key,
-      index: event.log.logIndex,
-    },
+  await context.db.insert(schema.Start).values({
+    orderId: startId,
+    chopped: false,
+    transactionId: tx.orderId,
+    owner,
+    key,
+    index: BigInt(event.log.logIndex),
   })
-  const heats = await context.db.Heat.findMany({
-    where: {
-      transactionId: tx.id,
-      index: { lt: event.log.logIndex },
-      // startId: { equals: undefined },
-    },
-  })
-  const heatIds = heats.items.filter((item) => (
-    !item.startId
-  )).map((item) => (
-    item.id
-  ))
+  const heats = await context.db.sql
+    .select()
+    .from(schema.Heat)
+    .where(and(eq(schema.Heat.transactionId, tx.orderId), lt(schema.Heat.index, BigInt(event.log.logIndex))))
+    .execute()
+  // .where('index', '<', BigInt(event.log.logIndex)).execute()
+  // const heats = await context.db.findMany(schema.Heat, {
+  //   where: {
+  //     transactionId: tx.orderId,
+  //     index: { lt: BigInt(event.log.logIndex) },
+  //     // startId: { equals: undefined },
+  //   },
+  // })
+  const heatIds = heats.filter((item) => !item.startId).map((item) => item.orderId)
   if (!heatIds.length) {
     return
   }
-  const preimageIds = heats.items.map((item) => (
-    item.preimageId
-  ))
-  await context.db.Preimage.updateMany({
-    where: { id: { in: preimageIds } },
-    data: { startId }
-  })
-  await context.db.Heat.updateMany({
-    where: {
-      id: {
-        in: heatIds,
-      },
-    },
-    data: {
-      startId: startId,
-    },
-  })
+  const preimageIds = heats.map((item) => item.preimageId)
+  for (const preimageId of preimageIds) {
+    await context.db
+      .update(schema.Preimage, {
+        orderId: preimageId,
+      })
+      .set({
+        startId,
+      })
+  }
+  for (const heatId of heatIds) {
+    await context.db
+      .update(schema.Heat, {
+        orderId: heatId,
+      })
+      .set({
+        startId,
+      })
+  }
 })
 
 ponder.on('Random:Link', async ({ event, context }) => {
-  const {
-    // provider,
-    location,
-    formerSecret,
-  } = event.args
+  const { location, formerSecret } = event.args
   const linkId = scopedId.link(context, location)
   const preimageId = scopedId.preimage(context, location)
   await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
-  const preimage = await context.db.Preimage.update({
-    id: preimageId,
-    data: {
+  const preimage = await context.db
+    .update(schema.Preimage, {
+      orderId: preimageId,
+    })
+    .set({
       secret: formerSecret,
       linkId,
-    },
-  })
-  await context.db.Pointer.update({
-    id: preimage.pointerId,
-    data: {
-      lastOkTransactionId: tx.id,
-    },
-  })
-  await context.db.Link.create({
-    id: linkId,
-    data: {
-      index: event.log.logIndex,
-      preimageId,
-      transactionId: tx.id,
-    },
+    })
+  await context.db
+    .update(schema.Pointer, {
+      orderId: preimage.pointerId,
+    })
+    .set({
+      lastOkTransactionId: tx.orderId,
+    })
+  await context.db.insert(schema.Link).values({
+    orderId: linkId,
+    index: BigInt(event.log.logIndex),
+    preimageId,
+    transactionId: tx.orderId,
   })
 })
 
@@ -222,38 +244,38 @@ ponder.on('Random:Cast', async ({ event, context }) => {
   const startId = scopedId.start(context, key)
   await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
-  const preimageIdsUnderStart = await context.db.Preimage.findMany({
-    where: {
-      startId,
-    }
-  })
-  const preimageIds = preimageIdsUnderStart.items.map((i) => i.id)
+  const preimageIdsUnderStart = await context.db.sql
+    .select()
+    .from(schema.Preimage)
+    .where(eq(schema.Preimage.startId, startId))
+    .execute()
+  const preimageIds = preimageIdsUnderStart.map((i) => i.orderId)
   if (!preimageIds.length) {
     throw new Error('no preimages found!')
   }
-  await context.db.Preimage.updateMany({
-    data: { castId },
-    where: {
-      id: {
-        in: preimageIds,
-      },
-    }
-  })
-  await context.db.Start.update({
-    id: startId,
-    data: {
+  for (const preimageId of preimageIds) {
+    await context.db
+      .update(schema.Preimage, {
+        orderId: preimageId,
+      })
+      .set({
+        castId,
+      })
+  }
+  await context.db
+    .update(schema.Start, {
+      orderId: startId,
+    })
+    .set({
       castId,
-    },
-  })
-  await context.db.Cast.create({
-    id: castId,
-    data: {
-      index: event.log.logIndex,
-      transactionId: tx.id,
-      key,
-      startId,
-      seed,
-    },
+    })
+  await context.db.insert(schema.Cast).values({
+    orderId: castId,
+    index: BigInt(event.log.logIndex),
+    transactionId: tx.orderId,
+    key,
+    startId,
+    seed,
   })
 })
 
@@ -261,29 +283,28 @@ ponder.on('Random:Reveal', async ({ event, context }) => {
   await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
   const preimageId = scopedId.preimage(context, event.args.location)
-  const revealCreate = {
-    index: event.log.logIndex,
-    transactionId: tx.id,
+  const revealId = scopedId.reveal(context, event.args.location)
+  await context.db.insert(schema.Reveal).values({
+    index: BigInt(event.log.logIndex),
+    transactionId: tx.orderId,
     preimageId,
-  }
-  const reveal = await context.db.Reveal.upsert({
-    id: scopedId.reveal(context, event.args.location),
-    create: revealCreate,
-    update: revealCreate,
+    orderId: revealId,
   })
-  const preimage = await context.db.Preimage.update({
-    id: preimageId,
-    data: {
+  const preimage = await context.db
+    .update(schema.Preimage, {
+      orderId: preimageId,
+    })
+    .set({
       secret: event.args.formerSecret,
-      revealId: reveal.id,
-    },
-  })
-  await context.db.Pointer.update({
-    id: preimage.pointerId,
-    data: {
-      lastOkTransactionId: tx.id,
-    },
-  })
+      revealId,
+    })
+  await context.db
+    .update(schema.Pointer, {
+      orderId: preimage.pointerId,
+    })
+    .set({
+      lastOkTransactionId: tx.orderId,
+    })
 })
 
 ponder.on('Random:Expired', async ({ event, context }) => {
@@ -293,43 +314,39 @@ ponder.on('Random:Expired', async ({ event, context }) => {
   const expiredId = scopedId.expired(context, key)
   await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
-  await context.db.Expired.create({
-    id: expiredId,
-    data: {
-      index: event.log.logIndex,
-      transactionId: tx.id,
-      startId,
-      castId,
-    },
+  await context.db.insert(schema.Expired).values({
+    orderId: expiredId,
+    index: BigInt(event.log.logIndex),
+    transactionId: tx.orderId,
+    startId,
+    castId,
   })
-  await context.db.Cast.update({
-    id: castId,
-    data: { expiredId },
-  })
+  await context.db
+    .update(schema.Cast, {
+      orderId: castId,
+    })
+    .set({
+      expiredId,
+    })
 })
 
 ponder.on('Random:Bleach', async ({ event, context }) => {
-  const { provider, section } = event.args
-  if (event.transactionReceipt.status !== 'success') {
-    return
-  }
+  const { section } = event.args
   const bleachId = scopedId.bleach(context, section)
   const pointerId = scopedId.pointer(context, section)
   await upsertBlock(context, event)
   const tx = await upsertTransaction(context, event)
-  await context.db.Bleach.create({
-    id: bleachId,
-    data: {
-      transactionId: tx.id,
-      index: event.log.logIndex,
-      pointerId,
-    },
+  await context.db.insert(schema.Bleach).values({
+    orderId: bleachId,
+    index: BigInt(event.log.logIndex),
+    transactionId: tx.orderId,
+    pointerId,
   })
-  // const pointer =
-  await context.db.Pointer.update({
-    id: pointerId,
-    data: {
+  await context.db
+    .update(schema.Pointer, {
+      orderId: pointerId,
+    })
+    .set({
       bleachId,
-    },
-  })
+    })
 })

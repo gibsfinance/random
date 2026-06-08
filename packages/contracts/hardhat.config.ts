@@ -1,23 +1,43 @@
-import { type HardhatUserConfig } from 'hardhat/config'
-import '@solidstate/hardhat-4byte-uploader'
-import { HARDHAT_NETWORK_MNEMONIC, defaultHdAccountsConfigParams } from 'hardhat/internal/core/config/default-config'
-import '@nomicfoundation/hardhat-toolbox-viem'
-import '@nomicfoundation/hardhat-viem'
-import '@nomicfoundation/hardhat-chai-matchers'
-import 'hardhat-tracer'
-import 'solidity-coverage'
-import 'hardhat-gas-reporter'
-import 'hardhat-dependency-compiler'
+import { HardhatUserConfig } from "hardhat/config";
 
-Error.stackTraceLimit = Infinity
+import HardhatNodeTestRunner from "@nomicfoundation/hardhat-node-test-runner";
+import HardhatViem from "@nomicfoundation/hardhat-viem";
+import HardhatNetworkHelpers from "@nomicfoundation/hardhat-network-helpers";
+import HardhatKeystore from "@nomicfoundation/hardhat-keystore";
+import HardhatIgnitionViem from "@nomicfoundation/hardhat-ignition-viem";
 
-const { env } = process
+const mnemonic = process.env.MNEMONIC || 'test test test test test test test test test test test junk'
 
 const config: HardhatUserConfig = {
+  /*
+   * In Hardhat 3, plugins are defined as part of the Hardhat config instead of
+   * being based on the side-effect of imports.
+   *
+   * Note: A `hardhat-toolbox` like plugin for Hardhat 3 hasn't been defined yet,
+   * so this list is larger than what you would normally have.
+   */
+  plugins: [
+    HardhatNodeTestRunner,
+    HardhatViem,
+    HardhatNetworkHelpers,
+    HardhatKeystore,
+    HardhatIgnitionViem,
+  ],
   solidity: {
-    compilers: [
-      {
-        version: '0.8.25',
+    /*
+     * Hardhat 3 supports different build profiles, allowing you to configure
+     * different versions of `solc` and its settings for various use cases.
+     *
+     * Note: Using profiles is optional, and any Hardhat 2 `solidity` config
+     * is still valid in Hardhat 3.
+     */
+    profiles: {
+      /*
+       * The default profile is used when no profile is defined or specified
+       * in the CLI or by the tasks you are running.
+       */
+      default: {
+        version: "0.8.28",
         settings: {
           viaIR: true,
           evmVersion: 'cancun',
@@ -27,100 +47,81 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      /*
+       * The production profile is meant to be used for deployments, providing
+       * more control over settings for production builds and taking some extra
+       * steps to simplify the process of verifying your contracts.
+       */
+      production: {
+        version: "0.8.28",
+      },
+    },
+    /*
+     * Hardhat 3 natively supports remappings and makes extensive use of them
+     * internally to fully support npm resolution rules (i.e., it supports
+     * transitive dependencies, multiple versions of the same package,
+     * monorepos, etc.).
+     */
+    // remappings: [
+    //   /*
+    //    * This remapping is added to the example because most people import
+    //    * forge-std/Test.sol, not forge-std/src/Test.sol.
+    //    *
+    //    * Note: The config currently leaks internal IDs, but this will be fixed
+    //    * in the future.
+    //    */
+    //   "forge-std/=npm/forge-std@1.9.4/src/",
+    // ],
+    dependenciesToCompile: [
+      'solady/src/tokens/ERC20.sol',
+      'multicaller/src/MulticallerWithSender.sol',
     ],
   },
-  paths: {
-    sources: './contracts',
-    artifacts: './artifacts',
-  },
+  /*
+   * The `networks` configuration is mostly compatible with Hardhat 2.
+   * The key differences right now are:
+   *
+   * - You must set a `type` for each network, which is either `edr` or `http`,
+   *   allowing you to have multiple simulated networks.
+   *
+   * - You can set a `chainType` for each network, which is either `generic`,
+   *   `l1`, or `optimism`. This has two uses. It ensures that you always
+   *   connect to the network with the right Chain Type. And, on `edr`
+   *   networks, it makes sure that the simulated chain behaves exactly like the
+   *   real one. More information about this can be found in the test files.
+   *
+   * - The `accounts` field of `http` networks can also receive Configuration
+   *   Variables, which are values that only get loaded when needed. This allows
+   *   Hardhat to still run despite some of its config not being available
+   *   (e.g., a missing private key or API key). More info about this can be
+   *   found in the "Sending a Transaction to Optimism Sepolia" of the README.
+   */
   networks: {
     hardhat: {
+      type: 'edr',
+      chainType: 'l1',
       accounts: {
-        ...defaultHdAccountsConfigParams,
+        mnemonic,
+        count: 20,
+        initialIndex: 0,
         accountsBalance: (10n ** 18n * 10n ** 9n).toString(),
-        mnemonic: env.MNEMONIC || HARDHAT_NETWORK_MNEMONIC,
-        count: 20, // 512
-        // path:
       },
-      enableTransientStorage: true,
-      allowUnlimitedContractSize: false,
-      // forking: {
-      //   url: 'https://rpc-pulsechain.g4mm4.io',
-      //   blockNumber: 21_074_800,
-      // },
-      hardfork: 'cancun',
-      chainId: 1,
     },
     pulsechainV4: {
+      type: 'http',
       url: 'https://rpc.v4.testnet.pulsechain.com',
       accounts: {
-        mnemonic: env.MNEMONIC || HARDHAT_NETWORK_MNEMONIC,
+        mnemonic,
       },
     },
     pulsechain: {
+      type: 'http',
       url: 'https://rpc.pulsechain.com',
       accounts: {
-        mnemonic: env.MNEMONIC || HARDHAT_NETWORK_MNEMONIC,
+        mnemonic,
       },
     },
   },
-  mocha: {
-    timeout: 180_000,
-  },
-  fourByteUploader: {
-    runOnCompile: process.env.BYTE4 === 'true',
-  },
-  dependencyCompiler: {
-    paths: [
-      'multicaller/src/MulticallerEtcher.sol',
-      'multicaller/src/MulticallerWithSender.sol',
-      'multicaller/src/MulticallerWithSigner.sol',
-    ],
-  },
-  etherscan: {
-    enabled: true,
-    customChains: [
-      {
-        network: 'pulsechain',
-        chainId: 369,
-        urls: {
-          apiURL: 'https://api.scan.pulsechain.com/api',
-          browserURL: 'https://scan.pulsechain.com/#',
-        },
-      },
-      {
-        network: 'pulsechainV4',
-        chainId: 943,
-        urls: {
-          apiURL: 'https://api.scan.v4.testnet.pulsechain.com/api',
-          browserURL: 'https://scan.v4.testnet.pulsechain.com/#',
-        },
-      },
-    ],
-    apiKey: {
-      mainnet: env.ETHERSCAN_API_KEY!,
-      pulsechainV4: 'abc',
-      pulsechain: 'abc',
-    },
-  },
-  sourcify: {
-    enabled: false,
-  },
-  gasReporter: {
-    enabled: true,
-    currency: 'USD',
-    L1: 'ethereum',
-    coinmarketcap: env.GAS_COINMARKETCAP,
-    L1Etherscan: env.ETHERSCAN_API_KEY,
-    L2Etherscan: env.ETHERSCAN_API_KEY,
-    gasPrice: 100_000,
-    baseFee: 100_000,
-    tokenPrice: '0.00004',
-    currencyDisplayPrecision: 8,
-    reportFormat: 'terminal',
-    // showMethodSig: true,
-    trackGasDeltas: true,
-  },
-}
+};
 
-export default config
+export default config;

@@ -1,189 +1,259 @@
-import { createSchema } from "@ponder/core";
+import { onchainTable, relations } from 'ponder'
 
-export default createSchema((p) => ({
-  Block: p.createTable({
-    id: p.hex(),
-    hash: p.hex(),
-    timestamp: p.bigint(),
-    number: p.bigint(),
+export const Block = onchainTable('Block', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  hash: t.hex().notNull(),
+  timestamp: t.bigint().notNull(),
+  number: t.bigint().notNull(),
+}))
+
+export const Transaction = onchainTable('Transaction', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  hash: t.hex().notNull(),
+  index: t.bigint().notNull(),
+  blockId: t.hex().notNull(),
+}))
+
+export const TransactionRelations = relations(Transaction, ({ one }) => ({
+  block: one(Block, { fields: [Transaction.blockId], references: [Block.orderId] }),
+}))
+
+export const Pointer = onchainTable('Pointer', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  section: t.hex().notNull(),
+  template: t.hex().notNull(),
+  remaining: t.bigint().notNull(),
+  count: t.bigint().notNull(),
+  storage: t.hex().notNull(),
+  lastOkTransactionId: t.hex().notNull(),
+  provider: t.hex().notNull(),
+  token: t.hex().notNull(),
+  price: t.bigint().notNull(),
+  duration: t.bigint().notNull(),
+  usesTimestamp: t.boolean().notNull(),
+  callAtChange: t.boolean().notNull(),
+  offset: t.bigint().notNull(),
+  bleachId: t.hex(),
+  chainId: t.bigint().notNull(),
+  address: t.hex().notNull(),
+  inkId: t.hex().notNull(),
+}))
+
+export const PointerRelations = relations(Pointer, ({ one, many }) => ({
+  lastOkTransaction: one(Transaction, { fields: [Pointer.lastOkTransactionId], references: [Transaction.orderId] }),
+  bleach: one(Bleach, { fields: [Pointer.bleachId], references: [Bleach.orderId] }),
+  ink: one(Ink, { fields: [Pointer.inkId], references: [Ink.orderId] }),
+  preimages: many(Preimage),
+}))
+
+export const Bleach = onchainTable('Bleach', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  index: t.bigint().notNull(),
+  transactionId: t.hex().notNull(),
+  pointerId: t.hex().notNull(),
+}))
+
+export const BleachRelations = relations(Bleach, ({ one }) => ({
+  pointer: one(Pointer, { fields: [Bleach.pointerId], references: [Pointer.orderId] }),
+  transaction: one(Transaction, { fields: [Bleach.transactionId], references: [Transaction.orderId] }),
+}))
+
+export const Ink = onchainTable('Ink', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  transactionId: t.hex().notNull(),
+  pointerId: t.hex().notNull(),
+  section: t.hex().notNull(),
+  sender: t.hex().notNull(),
+  index: t.bigint().notNull(),
+}))
+
+export const InkRelations = relations(Ink, ({ one }) => ({
+  pointer: one(Pointer, { fields: [Ink.orderId], references: [Pointer.inkId] }),
+  transaction: one(Transaction, { fields: [Ink.transactionId], references: [Transaction.orderId] }),
+}))
+
+export const Start = onchainTable('Start', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  owner: t.hex().notNull(),
+  key: t.hex().notNull(),
+  index: t.bigint().notNull(),
+  chopped: t.boolean().notNull(),
+  transactionId: t.hex().notNull(),
+  expiredId: t.hex(),
+  castId: t.hex(),
+}))
+
+export const StartRelations = relations(Start, ({ one, many }) => ({
+  pointer: one(Pointer, { fields: [Start.orderId], references: [Pointer.inkId] }),
+  transaction: one(Transaction, { fields: [Start.transactionId], references: [Transaction.orderId] }),
+  heat: many(Heat),
+  cast: one(Cast, { fields: [Start.castId], references: [Cast.orderId] }),
+  expired: one(Expired, { fields: [Start.expiredId], references: [Expired.orderId] }),
+}))
+
+export const Heat = onchainTable('Heat', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  transactionId: t.hex().notNull(),
+  index: t.bigint().notNull(),
+  preimageId: t.hex().notNull(),
+  startId: t.hex(),
+}))
+
+export const HeatRelations = relations(Heat, ({ one }) => ({
+  preimage: one(Preimage, { fields: [Heat.preimageId], references: [Preimage.orderId] }),
+  start: one(Start, { fields: [Heat.startId], references: [Start.orderId] }),
+  transaction: one(Transaction, { fields: [Heat.transactionId], references: [Transaction.orderId] }),
+}))
+
+export const Preimage = onchainTable('Preimage', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  pointerId: t.hex().notNull(),
+  index: t.bigint().notNull(),
+  template: t.hex().notNull(),
+  section: t.hex().notNull(),
+  accessed: t.boolean().notNull(),
+  data: t.hex().notNull(),
+  secret: t.hex(),
+  timestamp: t.bigint(),
+  heatId: t.hex(),
+  startId: t.hex(),
+  castId: t.hex(),
+  revealId: t.hex(),
+  linkId: t.hex(),
+}))
+
+export const PreimageRelations = relations(Preimage, ({ one }) => ({
+  pointer: one(Pointer, { fields: [Preimage.pointerId], references: [Pointer.orderId] }),
+  heat: one(Heat, { fields: [Preimage.heatId], references: [Heat.orderId] }),
+  start: one(Start, { fields: [Preimage.startId], references: [Start.orderId] }),
+  cast: one(Cast, { fields: [Preimage.castId], references: [Cast.orderId] }),
+  reveal: one(Reveal, { fields: [Preimage.revealId], references: [Reveal.orderId] }),
+  link: one(Link, { fields: [Preimage.linkId], references: [Link.orderId] }),
+}))
+
+export const Cast = onchainTable('Cast', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  index: t.bigint().notNull(),
+  key: t.hex().notNull(),
+  transactionId: t.hex().notNull(),
+  startId: t.hex().notNull(),
+  expiredId: t.hex(),
+  seed: t.hex(),
+}))
+
+export const CastRelations = relations(Cast, ({ one, many }) => ({
+  start: one(Start, { fields: [Cast.startId], references: [Start.orderId] }),
+  expired: one(Expired, { fields: [Cast.expiredId], references: [Expired.orderId] }),
+  // reveal: many(Reveal),
+  link: many(Link),
+}))
+
+export const Expired = onchainTable('Expired', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  startId: t.hex().notNull(),
+  castId: t.hex().notNull(),
+  index: t.bigint().notNull(),
+  transactionId: t.hex().notNull(),
+}))
+
+export const ExpiredRelations = relations(Expired, ({ one }) => ({
+  start: one(Start, { fields: [Expired.startId], references: [Start.orderId] }),
+  cast: one(Cast, { fields: [Expired.castId], references: [Cast.orderId] }),
+  transaction: one(Transaction, { fields: [Expired.transactionId], references: [Transaction.orderId] }),
+}))
+
+export const Reveal = onchainTable('Reveal', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  index: t.bigint().notNull(),
+  transactionId: t.hex().notNull(),
+  preimageId: t.hex().notNull(),
+}))
+
+export const RevealRelations = relations(Reveal, ({ one }) => ({
+  preimage: one(Preimage, { fields: [Reveal.preimageId], references: [Preimage.orderId] }),
+  transaction: one(Transaction, { fields: [Reveal.transactionId], references: [Transaction.orderId] }),
+}))
+
+export const Unveil = onchainTable('Unveil', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  index: t.bigint().notNull(),
+  transactionId: t.hex().notNull(),
+  consumerPreimageId: t.hex().notNull(),
+}))
+
+export const UnveilRelations = relations(Unveil, ({ one }) => ({
+  consumerPreimage: one(ConsumerPreimage, {
+    fields: [Unveil.consumerPreimageId],
+    references: [ConsumerPreimage.orderId],
   }),
-  Transaction: p.createTable({
-    id: p.hex(),
-    hash: p.hex(),
-    index: p.int(),
-    blockId: p.hex().references('Block.id'),
-    block: p.one('blockId'),
+  transaction: one(Transaction, { fields: [Unveil.transactionId], references: [Transaction.orderId] }),
+}))
+
+export const ConsumerPreimage = onchainTable('ConsumerPreimage', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  owner: t.hex().notNull(),
+  identifier: t.bigint().notNull(),
+  transactionId: t.hex().notNull(),
+  startId: t.hex().notNull(),
+  undermineId: t.hex().notNull(),
+  consumerPreimageId: t.hex().notNull(),
+}))
+
+export const ConsumerPreimageRelations = relations(ConsumerPreimage, ({ one }) => ({
+  transaction: one(Transaction, { fields: [ConsumerPreimage.transactionId], references: [Transaction.orderId] }),
+  start: one(Start, { fields: [ConsumerPreimage.startId], references: [Start.orderId] }),
+  undermine: one(Undermine, { fields: [ConsumerPreimage.undermineId], references: [Undermine.orderId] }),
+}))
+
+export const Undermine = onchainTable('Undermine', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  index: t.bigint().notNull(),
+  transactionId: t.hex().notNull(),
+  consumerPreimageId: t.hex().notNull(),
+  owner: t.hex().notNull(),
+  chainId: t.hex().notNull(),
+}))
+
+export const UndermineRelations = relations(Undermine, ({ one }) => ({
+  consumerPreimage: one(ConsumerPreimage, {
+    fields: [Undermine.consumerPreimageId],
+    references: [ConsumerPreimage.orderId],
   }),
-  Pointer: p.createTable({
-    id: p.hex(),
-    section: p.hex(),
-    template: p.hex(),
-    remaining: p.int(),
-    count: p.int(),
-    storage: p.hex(),
-    lastOkTransactionId: p.hex().references('Transaction.id'),
-    lastOkTransaction: p.one('lastOkTransactionId'),
-    provider: p.hex(),
-    token: p.hex(),
-    price: p.bigint(),
-    duration: p.bigint(),
-    durationIsTimestamp: p.boolean(),
-    callAtChange: p.boolean(),
-    offset: p.bigint(),
-    preimages: p.many('Preimage.pointerId'),
-    bleachId: p.hex().optional().references('Bleach.id'),
-    bleach: p.one('bleachId'),
-    chainId: p.bigint(),
-    address: p.hex(),
-    inkId: p.hex().references('Ink.id'),
-    ink: p.one('inkId'),
+  chain: one(Chain, { fields: [Undermine.chainId], references: [Chain.orderId] }),
+  transaction: one(Transaction, { fields: [Undermine.transactionId], references: [Transaction.orderId] }),
+}))
+
+export const Chain = onchainTable('Chain', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  owner: t.hex().notNull(),
+  identifier: t.bigint().notNull(),
+  consumerPreimageId: t.hex().notNull(),
+  undermineId: t.hex().notNull(),
+  startId: t.hex().notNull(),
+  transactionId: t.hex().notNull(),
+}))
+
+export const ChainRelations = relations(Chain, ({ one }) => ({
+  consumerPreimage: one(ConsumerPreimage, {
+    fields: [Chain.consumerPreimageId],
+    references: [ConsumerPreimage.orderId],
   }),
-  Bleach: p.createTable({
-    id: p.hex(),
-    index: p.int(),
-    transactionId: p.hex().references('Transaction.id'),
-    transaction: p.one('transactionId'),
-    pointerId: p.hex().references('Pointer.id'),
-    pointer: p.one('pointerId'),
-  }),
-  Ink: p.createTable({
-    id: p.hex(), // section
-    index: p.int(),
-    transactionId: p.hex().references('Transaction.id'),
-    transaction: p.one('transactionId'),
-    section: p.hex(),
-    sender: p.hex(),
-    pointerId: p.hex().references('Pointer.id'),
-    pointer: p.one('pointerId'),
-  }),
-  Start: p.createTable({
-    id: p.hex(),
-    owner: p.hex(),
-    key: p.hex(),
-    index: p.int(),
-    chopped: p.boolean(),
-    transactionId: p.hex().references('Transaction.id'),
-    transaction: p.one('transactionId'),
-    heat: p.many('Heat.startId'),
-    castId: p.hex().optional().references('Cast.id'),
-    cast: p.one('castId'),
-    expiredId: p.hex().optional().references('Expired.id'),
-    expired: p.one('expiredId'),
-  }),
-  Heat: p.createTable({
-    id: p.hex(),
-    transactionId: p.hex().references('Transaction.id'),
-    transaction: p.one('transactionId'),
-    index: p.int(),
-    preimageId: p.hex().references('Preimage.id'),
-    preimage: p.one('preimageId'),
-    startId: p.hex().optional().references('Start.id'),
-    start: p.one('startId'),
-  }),
-  Preimage: p.createTable({
-    id: p.hex(),
-    index: p.int(),
-    pointerId: p.hex().references('Pointer.id'),
-    pointer: p.one('pointerId'),
-    template: p.hex(),
-    section: p.hex(),
-    accessed: p.boolean(),
-    data: p.hex(),
-    secret: p.hex().optional(),
-    timestamp: p.bigint().optional(),
-    heatId: p.hex().optional().references('Heat.id'),
-    heat: p.one('heatId'),
-    startId: p.hex().optional().references('Start.id'),
-    start: p.one('startId'),
-    castId: p.hex().optional().references('Cast.id'),
-    cast: p.one('castId'),
-    revealId: p.hex().optional().references('Reveal.id'),
-    reveal: p.one('revealId'),
-    linkId: p.hex().optional().references('Link.id'),
-    link: p.one('linkId'),
-  }),
-  Link: p.createTable({
-    id: p.hex(),
-    index: p.int(),
-    preimageId: p.hex().references('Preimage.id'),
-    preimage: p.one('preimageId'),
-    transactionId: p.hex().references('Transaction.id'),
-    transaction: p.one('transactionId'),
-    castId: p.hex().optional().references('Cast.id'),
-    cast: p.one('castId'),
-  }),
-  Reveal: p.createTable({
-    id: p.hex(),
-    index: p.int(),
-    preimageId: p.hex().references('Preimage.id'),
-    preimage: p.one('preimageId'),
-    transactionId: p.hex().references('Transaction.id'),
-    transaction: p.one('transactionId'),
-  }),
-  Cast: p.createTable({
-    id: p.hex(),
-    index: p.int(),
-    key: p.hex(),
-    transactionId: p.hex().references('Transaction.id'),
-    transaction: p.one('transactionId'),
-    startId: p.hex().references('Start.id'),
-    start: p.one('startId'),
-    reveal: p.many('Link.castId'),
-    expiredId: p.hex().optional().references('Expired.id'),
-    expired: p.one('expiredId'),
-    seed: p.hex().optional(),
-  }),
-  Expired: p.createTable({
-    id: p.hex(),
-    startId: p.hex().references('Start.id'),
-    start: p.one('startId'),
-    castId: p.hex().references('Cast.id'),
-    cast: p.one('castId'),
-    index: p.int(),
-    transactionId: p.hex().references('Transaction.id'),
-    transaction: p.one('transactionId'),
-  }),
-  Unveil: p.createTable({
-    id: p.hex(),
-    index: p.int(),
-    transactionId: p.hex().references('Transaction.id'),
-    transaction: p.one('transactionId'),
-    consumerPreimageId: p.hex().references('ConsumerPreimage.id'),
-    consumerPreimage: p.one('consumerPreimageId'),
-  }),
-  Chain: p.createTable({
-    id: p.hex(),
-    owner: p.hex(),
-    identifier: p.bigint(),
-    consumerPreimageId: p.hex().references('ConsumerPreimage.id'),
-    consumerPreimage: p.one('consumerPreimageId'),
-    undermineId: p.hex().references('Undermine.id'),
-    undermine: p.one('undermineId'),
-    startId: p.hex().references('Start.id'),
-    start: p.one('startId'),
-    transactionId: p.hex().references('Transaction.id'),
-    transaction: p.one('transactionId'),
-  }),
-  Undermine: p.createTable({
-    id: p.hex(),
-    index: p.int(),
-    transactionId: p.hex().references('Transaction.id'),
-    transaction: p.one('transactionId'),
-    consumerPreimageId: p.hex().references('ConsumerPreimage.id'),
-    consumerPreimage: p.one('consumerPreimageId'),
-    owner: p.hex(),
-    chainId: p.hex().references('Chain.id'),
-    chain: p.one('chainId'),
-  }),
-  ConsumerPreimage: p.createTable({
-    id: p.hex(),
-    data: p.hex(),
-    secret: p.hex().optional(),
-    chainId: p.hex().optional().references('Chain.consumerPreimage') as any,
-    chain: p.one('chainId'),
-    unveilId: p.hex().optional().references('Unveil.consumerPreimage') as any,
-    unveil: p.one('unveilId'),
-    undermineId: p.hex().optional().references('Undermine.consumerPreimage') as any,
-    undermine: p.one('undermineId'),
-  }),
+  undermine: one(Undermine, { fields: [Chain.undermineId], references: [Undermine.orderId] }),
+  start: one(Start, { fields: [Chain.startId], references: [Start.orderId] }),
+  transaction: one(Transaction, { fields: [Chain.transactionId], references: [Transaction.orderId] }),
+}))
+
+export const Link = onchainTable('Link', (t) => ({
+  orderId: t.hex().notNull().primaryKey(),
+  index: t.bigint().notNull(),
+  transactionId: t.hex().notNull(),
+  preimageId: t.hex().notNull(),
+  castId: t.hex(),
+}))
+
+export const LinkRelations = relations(Link, ({ one }) => ({
+  preimage: one(Preimage, { fields: [Link.preimageId], references: [Preimage.orderId] }),
+  cast: one(Cast, { fields: [Link.castId], references: [Cast.orderId] }),
+  transaction: one(Transaction, { fields: [Link.transactionId], references: [Transaction.orderId] }),
+  reveal: one(Reveal, { fields: [Link.castId], references: [Reveal.orderId] }),
 }))

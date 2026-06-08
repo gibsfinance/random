@@ -1,7 +1,7 @@
 import * as viem from 'viem'
 import _ from 'lodash'
-import { confirmTx, type Context } from './utils'
-import type { ERC20$Type } from '../artifacts/solady/src/tokens/ERC20.sol/ERC20'
+import { confirmTx, type Context } from './utils.js'
+import type { ERC20$Type } from '../artifacts/solady/src/tokens/ERC20.sol/artifacts.js'
 
 export const revertedWithCustomError = async (
   contract: viem.GetContractReturnType,
@@ -62,7 +62,7 @@ const _emit = async (
   args?: Filter | Filter[],
 ): Promise<[(null | Filter)[], viem.Hex, viem.Log[], viem.Log[]]> => {
   const hash = await _hash
-  const client = await ctx.hre.viem.getPublicClient()
+  const client = await ctx.viem.getPublicClient()
   const receipt = await client.getTransactionReceipt({
     hash,
   })
@@ -162,7 +162,7 @@ export const changeEtherBalances = async (
   deltas: bigint[],
   excludeGasConsumption = true,
 ) => {
-  const provider = await ctx.hre.viem.getPublicClient()
+  const provider = await ctx.viem.getPublicClient()
   const receipt = await confirmTx(ctx, _receipt)
   const consumed = receipt.gasUsed * receipt.effectiveGasPrice
   return await changeBalances(accounts, deltas, async (address) => {
@@ -197,7 +197,7 @@ export const changeResults = async (
   deltas: bigint[],
   checker: (opts: CheckResultOpts) => Promise<bigint>,
 ) => {
-  const provider = await ctx.hre.viem.getPublicClient()
+  const provider = await ctx.viem.getPublicClient()
   const receipt = await confirmTx(ctx, _receipt)
   return await changeBalances(accounts, deltas, async (address) => {
     const before = checker({ provider, address, blockNumber: receipt.blockNumber - 1n })
@@ -214,7 +214,7 @@ export const changeTokenBalances = async (
   accounts: (viem.WalletClient | viem.Hex)[],
   deltas: bigint[],
 ) => {
-  const provider = await ctx.hre.viem.getPublicClient()
+  const provider = await ctx.viem.getPublicClient()
   const receipt = await confirmTx(ctx, _receipt)
   const c = viem.getContract({
     ...contract,

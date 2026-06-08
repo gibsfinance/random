@@ -2,27 +2,32 @@ import * as path from 'path'
 import * as fs from 'fs'
 import _ from 'lodash'
 import promiseLimit from 'promise-limit'
-import * as viem from 'viem'
+import { getAddress, type WalletClient, type Hex, type ByteArray, type HDKey as ViemHDKey, keccak256, numberToHex, concatHex, padHex, toHex, hexToBytes, numberToBytes, concatBytes, parseEther, zeroAddress, bytesToHex, toBytes, pad } from 'viem'
 import { hdKeyToAccount } from 'viem/accounts'
 import { HDKey } from '@scure/bip32'
 import { mnemonicToSeedSync } from '@scure/bip39'
+import { fileURLToPath } from 'url';
 
 export const limiters = {
-  range: promiseLimit<number>(16),
-  signers: promiseLimit<viem.WalletClient>(1),
+  range: promiseLimit<number>(1),
+  signers: promiseLimit<WalletClient>(1),
 }
 
 export const byteword = 32n
 export const maxContractSize = 24576n
 export const maxBytes = maxContractSize - byteword
 export const max = maxBytes / byteword
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 export const folders = {
   data: path.join(__dirname, '..', 'data'),
 }
 
 export type Secret = {
-  secret: viem.Hex;
-  preimage: viem.Hex;
+  secret: Hex;
+  preimage: Hex;
   index: bigint;
 }
 
@@ -32,20 +37,20 @@ export const masterKey = () => {
   return HDKey.fromMasterSeed(seed)
 }
 // corresponds to the private key that you wish to derive
-export const generateSecret = (k: viem.HDKey, accountIndex: bigint) => (
+export const generateSecret = (k: ViemHDKey, accountIndex: bigint) => (
   hdKeyToAccount(k, {
     accountIndex: Number(accountIndex),
-  }).getHdKey().privateKey! as viem.ByteArray
+  }).getHdKey().privateKey! as ByteArray
 )
 
-export const originId = (k: viem.HDKey) => {
-  return viem.keccak256(k.privateKey!, 'hex')
+export const originId = (k: ViemHDKey) => {
+  return keccak256(k.privateKey!, 'hex')
 }
 
 // const preimageIndices =
 
 export const createPreimages = async (
-  generate: (i: bigint) => viem.ByteArray,
+  generate: (i: bigint) => ByteArray,
   offset = 0n, count = max,
 ) => {
   const range: bigint[] = []
@@ -55,16 +60,16 @@ export const createPreimages = async (
   return range.map((index) => {
     const secretBytes = generate(index)
     return {
-      secret: viem.toHex(secretBytes),
-      preimage: viem.keccak256(secretBytes, 'hex'),
+      secret: toHex(secretBytes),
+      preimage: keccak256(secretBytes, 'hex'),
       index,
     }
   })
 }
 
 type SecretInfo = {
-  secret: viem.Hex;
-  preimage: viem.Hex;
+  secret: Hex;
+  preimage: Hex;
   index: bigint;
 }
 
@@ -91,9 +96,9 @@ export const createTestPreimages = async (section = defaultSection, count = max)
     }
     const generated = await createPreimages((index) => {
       // a not so secret secret
-      return viem.keccak256(viem.concatBytes([
-        viem.hexToBytes(section.provider),
-        viem.numberToBytes(index),
+      return keccak256(concatBytes([
+        hexToBytes(section.provider),
+        numberToBytes(index),
       ]), 'bytes')
     }, start, exclusiveEnd)
     // stash for next test
@@ -115,33 +120,33 @@ export const createTestPreimages = async (section = defaultSection, count = max)
   //   }
   //   console.log('generating randomness %o %o-%o', address, start, end)
   //   const secretsAsBytes = _.range(0, Number(end - start)).map((idx) => {
-  //     return viem.keccak256(viem.concatBytes([
-  //       viem.hexToBytes(address),
-  //       viem.numberToBytes(start + BigInt(idx)),
+  //     return keccak256(concatBytes([
+  //       hexToBytes(address),
+  //       numberToBytes(start + BigInt(idx)),
   //     ]), 'bytes')
   //   })
   //   const generated = _.map(secretsAsBytes, (secretBytes) => ({
-  //     secret: viem.toHex(secretBytes),
-  //     preimage: viem.keccak256(secretBytes, 'hex'),
+  //     secret: toHex(secretBytes),
+  //     preimage: keccak256(secretBytes, 'hex'),
   //   }))
   //   await fs.promises.writeFile(filePath, JSON.stringify(generated))
   //   return generated
   // })
 }
 
-export const dataToPreimages = (data: viem.Hex) => {
-  return _(viem.hexToBytes(data))
+export const dataToPreimages = (data: Hex) => {
+  return _(hexToBytes(data))
     .chunk(32)
-    .map((chunk) => viem.bytesToHex(Uint8Array.from(chunk)))
+    .map((chunk) => bytesToHex(Uint8Array.from(chunk)))
     .value()
 }
 
 export type PreimageInfo = {
-  provider: viem.Hex;
+  provider: Hex;
   callAtChange: boolean;
-  durationIsTimestamp: boolean;
+  usesTimestamp: boolean;
   duration: bigint;
-  token: viem.Hex;
+  token: Hex;
   price: bigint;
   offset: bigint;
   index: bigint;
@@ -150,19 +155,19 @@ export type PreimageInfo = {
 export type PreimageInfoOptions = Partial<PreimageInfo>
 
 export const defaultSection: PreimageInfo = {
-  provider: viem.zeroAddress,
+  provider: zeroAddress,
   callAtChange: false,
-  durationIsTimestamp: false,
+  usesTimestamp: false,
   duration: 12n,
-  token: viem.zeroAddress,
-  price: viem.parseEther('100'),
+  token: zeroAddress,
+  price: parseEther('100'),
   offset: 0n,
   index: 0n,
 }
 
 export const encodeToken = (inputs: Partial<PreimageInfo>) => {
-  return viem.numberToHex(
-    (inputs.durationIsTimestamp ? 1n : 0n) << 255n
+  return numberToHex(
+    (inputs.usesTimestamp ? 1n : 0n) << 255n
     | (inputs.callAtChange ? 1n : 0n) << 254n
     | BigInt.asUintN(38, inputs.duration!) << 160n
     | BigInt(inputs.token!),
@@ -170,21 +175,52 @@ export const encodeToken = (inputs: Partial<PreimageInfo>) => {
   )
 }
 
-export const parseTimeline = (timeline: bigint) => ({
-  owner: viem.numberToHex(BigInt.asUintN(160, timeline >> 96n), { size: 20 }),
-  callAtChange: BigInt.asUintN(1, timeline >> 8n) === 1n,
-  usesTimestamp: BigInt.asUintN(1, timeline >> 9n) === 1n,
-  duration: BigInt.asUintN(38, timeline >> 9n),
-  start: BigInt.asUintN(48, timeline >> 48n),
-  contributed: BigInt.asUintN(8, timeline),
-})
+/**
+ * contributed: [0-7]
+ * callAtChange: [8]
+ * usesTimestamp: [9]
+ * duration: [10-47]
+ * start: [48-95]
+ * owner: [96-255]
+ */
+
+type Timeline = {
+  owner: Hex;
+  callAtChange: boolean;
+  usesTimestamp: boolean;
+  duration: bigint;
+  start: bigint;
+  contributed: bigint;
+}
+
+export const timeline = {
+  parse: (timeline: bigint) => ({
+    owner: getAddress(numberToHex(BigInt.asUintN(160, timeline >> 96n), { size: 20 })),
+    callAtChange: BigInt.asUintN(1, timeline >> 8n) === 1n,
+    usesTimestamp: BigInt.asUintN(1, timeline >> 9n) === 1n,
+    duration: BigInt.asUintN(38, timeline >> 9n),
+    start: BigInt.asUintN(48, timeline >> 48n),
+    contributed: BigInt.asUintN(8, timeline),
+  }),
+  encode: (inputs: Timeline & { contributed?: bigint }) => {
+    const { owner, callAtChange, usesTimestamp, duration, start, contributed = 0n } = inputs
+    return numberToHex((
+      BigInt(owner) << 96n
+      | BigInt.asUintN(48, start) << 48n
+      | BigInt.asUintN(38, duration) << 10n
+      | (usesTimestamp ? 1n : 0n) << 9n
+      | (callAtChange ? 1n : 0n) << 8n
+      | BigInt.asUintN(8, contributed)
+    ), { size: 32 })
+  },
+}
 
 export const section = (inputs: Omit<PreimageInfo, 'index'> = defaultSection) => {
-  return viem.keccak256(viem.concatHex([
-    viem.padHex(inputs.provider, { size: 32 }),
+  return keccak256(concatHex([
+    padHex(inputs.provider, { size: 32 }),
     encodeToken(inputs),
-    viem.numberToHex(inputs.price, { size: 32 }),
-    viem.numberToHex(inputs.offset, { size: 32 }),
+    numberToHex(inputs.price, { size: 32 }),
+    numberToHex(inputs.offset, { size: 32 }),
   ]), 'hex')
 }
 
@@ -192,10 +228,10 @@ export const template = (inputs: Omit<PreimageInfo, 'index' | 'offset'> = defaul
   section({ ...inputs, offset: 0n })
 )
 
-export const location = (section: viem.Hex, index: bigint | number) => {
-  return viem.keccak256(viem.concatHex([
+export const location = (section: Hex, index: bigint | number) => {
+  return keccak256(concatHex([
     section,
-    viem.numberToHex(index, { size: 32 }),
+    numberToHex(index, { size: 32 }),
   ]), 'hex')
 }
 
@@ -216,30 +252,30 @@ export const contractName = {
 
 export type Names = typeof contractName
 
-export const encodeTimeline = ({
-  owner,
-  callAtChange,
-  start,
-  duration,
-  durationIsTimestamp,
-  count = 0n,
-}: {
-  owner: viem.Hex;
-  start: bigint;
-  duration: bigint;
-  durationIsTimestamp: boolean;
-  callAtChange: boolean;
-  count?: bigint;
-}) => {
-  return viem.numberToHex((
-    BigInt(owner) << 96n
-    | BigInt.asUintN(48, start) << 48n
-    | BigInt.asUintN(38, duration) << 10n
-    | (durationIsTimestamp ? 1n : 0n) << 9n
-    | (callAtChange ? 1n : 0n) << 8n
-    | BigInt.asUintN(8, count)
-  ), { size: 32 })
-}
+// export const encodeTimeline = ({
+//   owner,
+//   callAtChange,
+//   start,
+//   duration,
+//   usesTimestamp,
+//   count = 0n,
+// }: {
+//   owner: Hex;
+//   start: bigint;
+//   duration: bigint;
+//   usesTimestamp: boolean;
+//   callAtChange: boolean;
+//   count?: bigint;
+// }) => {
+//   return numberToHex((
+//     BigInt(owner) << 96n
+//     | BigInt.asUintN(48, start) << 48n
+//     | BigInt.asUintN(38, duration) << 10n
+//     | (usesTimestamp ? 1n : 0n) << 9n
+//     | (callAtChange ? 1n : 0n) << 8n
+//     | BigInt.asUintN(8, count)
+//   ), { size: 32 })
+// }
 
 const slots = [
   'timeline',
@@ -253,47 +289,47 @@ const slotList = Object.values(slots)
 
 export type Slot = typeof slotList[number]
 
-export const slotKeyToFormer = new Map<string, (inputs: SlotInputs, slotIndexBytes: Uint8Array) => viem.Hex>([
+export const slotKeyToFormer = new Map<string, (inputs: SlotInputs, slotIndexBytes: Uint8Array) => Hex>([
   ['timeline', (inputs, index) => {
     const key = inputs.key!
-    const keySlot = viem.keccak256(viem.concatBytes([
-      viem.hexToBytes(key, { size: 32 }),
+    const keySlot = keccak256(concatBytes([
+      hexToBytes(key, { size: 32 }),
       index,
     ]))
     return keySlot
   }],
   ['latest', (inputs, index) => {
     const account = inputs.account!
-    const accountSlot = viem.keccak256(viem.concatBytes([
-      viem.pad(viem.hexToBytes(account), { size: 32, dir: 'left' }),
+    const accountSlot = keccak256(concatBytes([
+      pad(hexToBytes(account), { size: 32, dir: 'left' }),
       index,
     ]))
     return accountSlot
   }],
   ['count', (inputs, index) => {
     const location = inputs.location!
-    const providerKeySlot = viem.keccak256(viem.concatBytes([
-      viem.pad(viem.hexToBytes(location.provider!), { size: 32, dir: 'left' }),
+    const providerKeySlot = keccak256(concatBytes([
+      pad(hexToBytes(location.provider!), { size: 32, dir: 'left' }),
       index,
     ]), 'bytes')
-    const locationSlot = viem.keccak256(viem.concatBytes([
-      viem.toBytes(encodeToken(location)),
+    const locationSlot = keccak256(concatBytes([
+      toBytes(encodeToken(location)),
       providerKeySlot,
     ]), 'bytes')
-    const priceSlot = viem.keccak256(viem.concatBytes([
-      viem.numberToBytes(location.price!, { size: 32 }),
+    const priceSlot = keccak256(concatBytes([
+      numberToBytes(location.price!, { size: 32 }),
       locationSlot,
     ]), 'hex')
     return priceSlot
   }],
   ['custodied', (inputs, index) => {
     const { token, account } = inputs
-    const accountSlot = viem.keccak256(viem.concatBytes([
-      viem.pad(viem.hexToBytes(account!), { size: 32, dir: 'left' }),
+    const accountSlot = keccak256(concatBytes([
+      pad(hexToBytes(account!), { size: 32, dir: 'left' }),
       index,
     ]), 'bytes')
-    const tokenSlot = viem.keccak256(viem.concatBytes([
-      viem.pad(viem.hexToBytes(token!), { size: 32, dir: 'left' }),
+    const tokenSlot = keccak256(concatBytes([
+      pad(hexToBytes(token!), { size: 32, dir: 'left' }),
       accountSlot,
     ]))
     return tokenSlot
@@ -301,15 +337,15 @@ export const slotKeyToFormer = new Map<string, (inputs: SlotInputs, slotIndexByt
 ])
 
 export type SlotInputs = Partial<{
-  key: viem.Hex;
+  key: Hex;
   location: Partial<PreimageInfo>
-  account: viem.Hex;
-  token: viem.Hex;
+  account: Hex;
+  token: Hex;
 }>
 
 export const slot = (slot: Slot, slotInputs: SlotInputs, idx?: number) => {
   const index = _.isUndefined(idx) ? slots.indexOf(slot) : idx
-  const indexBytes = viem.numberToBytes(index, { size: 32 })
+  const indexBytes = numberToBytes(index, { size: 32 })
   const key = slotKeyToFormer.get(slot)?.(slotInputs, indexBytes)
   if (!key) {
     throw new Error('slot not defined')
@@ -317,8 +353,8 @@ export const slot = (slot: Slot, slotInputs: SlotInputs, idx?: number) => {
   return key
 }
 
-export const toSeed = (inputs: viem.Hex[]) => (
-  viem.keccak256(
-    viem.hexToBytes(viem.concatHex(inputs))
+export const toSeed = (inputs: Hex[]) => (
+  keccak256(
+    hexToBytes(concatHex(inputs))
   )
 )

@@ -7,7 +7,7 @@ library PreimageLocation {
     struct Info {
         address provider;
         bool callAtChange;
-        bool durationIsTimestamp;
+        bool usesTimestamp;
         uint256 duration;
         address token;
         uint256 price;
@@ -48,7 +48,7 @@ library PreimageLocation {
 
     function encodeToken(Info memory info) internal pure returns (uint256) {
         return
-            (uint256(info.durationIsTimestamp ? 1 : 0) << 255) |
+            (uint256(info.usesTimestamp ? 1 : 0) << 255) |
             (uint256(info.callAtChange ? 1 : 0) << 254) |
             (uint256((uint40(info.duration) << 1) >> 1) << 160) |
             uint256(uint160(info.token));

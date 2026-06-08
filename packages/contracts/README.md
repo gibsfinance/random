@@ -1,37 +1,73 @@
-# Random [![Coverage Status](https://coveralls.io/repos/github/gibsfinance/random/badge.svg?branch=master)](https://coveralls.io/github/gibsfinance/random?branch=master)
+# Hardhat 3 Alpha: `node:test` and `viem` example project
 
-a repo for generating randomness on chain
+> **WARNING**: This example project uses Hardhat 3, which is still in development. Hardhat 3 is not yet intended for production use.
 
-## deployment notes
+Welcome to the Hardhat 3 alpha version! This project showcases some of the changes and new features coming in Hardhat 3.
 
-```bash
-npx hardhat ignition deploy ignition/modules/Random.ts --network pulsechainV4
-npx hardhat ignition deploy ignition/modules/Reader.ts --network pulsechainV4
-npx hardhat ignition deploy ignition/modules/Consumer.ts --network pulsechainV4
-npx hardhat ignition verify chain-943 --include-unrelated-contracts
+To learn more about the Hardhat 3 Alpha, please visit [its tutorial](https://hardhat.org/hardhat3-alpha). To share your feedback, join our [Hardhat 3 Alpha](https://hardhat.org/hardhat3-alpha-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new?template=hardhat-3-alpha.yml) in our GitHub issue tracker.
+
+## Project Overview
+
+This example project includes:
+
+- A simple Hardhat configuration file.
+- Foundry-compatible Solidity unit tests.
+- TypeScript integration tests using [`node:test`](nodejs.org/api/test.html), the new Node.js native test runner, and [`viem`](https://viem.sh/).
+- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+
+## Navigating the Project
+
+To get the most out of this example project, we recommend exploring the files in the following order:
+
+1. Read the `hardhat.config.ts` file, which contains the project configuration and explains multiple changes.
+2. Review the "Running Tests" section and explore the files in the `contracts/` and `test/` directories.
+3. Read the "Make a deployment to Sepolia" section and follow the instructions.
+
+Each file includes inline explanations of its purpose and highlights the changes and new features introduced in Hardhat 3.
+
+## Usage
+
+### Running Tests
+
+To run all the tests in the project, execute the following command:
+
+```shell
+npx hardhat test
 ```
 
-## randomness providing
+You can also selectively run the Solidity or `node:test` tests:
 
-Providing randomness, at the end of the day, is a numbers game (excuse the pun).
+```shell
+npx hardhat test solidity
+npx hardhat test node
+```
 
-You need to be able to ensure that validators have a reason to stay online and keep their stack of preimages up to date, but you want it to happen at as little of a cost and complexity as possible so that providers do not have a high barrier to cross to get you the randomness you request.
+### Make a deployment to Sepolia
 
-This game is achieved using the following mechanics:
+This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
 
-- providers stake a number of tokens that they expect to be paid (on average) for providing their seeds this occurs when preimages are written
-- consumers stake an amount to cover the total randomness seeds requested. the prices can be different for each provider's preimages
-- any provider that gets their secret on chain, either via the consumer or by writing it themselves, before the consumer asks for the campaign to end will not be slashed
-- consumers can "slash" any validator by taking the preimages that they requested and were not delivered
-- failing to get all secrets on chain means that providers will not be rewarded with the funds that the consumer staked
-- providers must either put secrets on chain themselves or come up with mechanism to do so in batches if gas is a consideration
-- consumers must request a number of seeds that make the number that is generated credibly neutral, luckily, only one actor must be honest for the seed to be credibly random
+To run the deployment to a local chain:
 
-consider the following example
+```shell
+npx hardhat ignition deploy ignition/modules/Counter.ts
+```
 
-alice requests randomness from bob, charlie, and david. bob's preimage costs 90 PLS while charlie's costs 125 and david's costs 100. Alice will have to stake 315 PLS (90+125+100) to properly request randomness inputs from the 3 sources. From here, the following results could occur:
+To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
 
-- all 3 providers expose their secrets to the public and alice, who writes the data on chain, distributes the pot to david who was randomly chosen by the resulting seed.
-- all 3 providers expose their secrets to the public, however alice has faulted and does not write the secrets on chain quickly. at some point, david notes that he is the winner of the pot and notes that the timeline is expiring. he decides to write the randomness on chain, distributing tokens to each of the validators and the pot to himself.
-- all 3 providers expose their secrets, alice faults, then all 3 of the providers fault. in this case, any address that has the appropriate data and secrets can submit them on chain. bob is the first to come back online and he decides to submit all 3 secrets. releasing each of the 3 providers staked tokens back to themselves and distributing the pot to david.
-- providers expose, alice and providers fault. bob comes online and only knows his secret. he submits that secret to make sure that he is not slashed. alice comes online next and has all 3 secrets, but chooses to cancel the timeline because it has expired. she is reimbersed with her stake as well as charlie and david's staked tokens.
+You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
+
+To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
+
+```shell
+npx hardhat keystore set SEPOLIA_PRIVATE_KEY
+```
+
+After setting the variable, you can run the deployment with the Sepolia network:
+
+```shell
+npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
+```
+
+---
+
+Feel free to explore the project and provide feedback on your experience with Hardhat 3 Alpha!

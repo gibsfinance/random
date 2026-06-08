@@ -40,7 +40,7 @@ const consumeRandomness = async () => {
           price_lte: price.toString(),
           remaining_gt: 0,
           duration_lte: randomConfig.info.duration,
-          durationIsTimestamp: randomConfig.info.durationIsTimestamp,
+          usesTimestamp: randomConfig.info.usesTimestamp,
         },
         preimageLimit: required,
         preimageFilter: {
@@ -59,7 +59,7 @@ const consumeRandomness = async () => {
             price: BigInt(pointer.price),
             callAtChange: pointer.callAtChange,
             duration: BigInt(pointer.duration),
-            durationIsTimestamp: pointer.durationIsTimestamp,
+            usesTimestamp: pointer.usesTimestamp,
             offset: BigInt(pointer.offset),
             index: BigInt(preimage.index),
           }
@@ -172,7 +172,7 @@ const detectSecrets = async () => {
         token: pointer.token as viem.Hex,
         price: BigInt(pointer.price),
         callAtChange: pointer.callAtChange,
-        durationIsTimestamp: pointer.durationIsTimestamp,
+        usesTimestamp: pointer.usesTimestamp,
         duration: BigInt(pointer.duration),
         offset: BigInt(pointer.offset),
         index: BigInt(index),

@@ -7,6 +7,8 @@ import {IRandom} from "./implementations/IRandom.sol";
 import {Errors, Ok, Reveal} from "./Constants.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
 
+// import {console} from "hardhat/console.sol";
+
 error Misconfigured();
 error IndexOutOfBounds();
 
@@ -54,9 +56,7 @@ contract Reader {
      * retrieve the address that contains preimage bytes
      * @param info the location of a preimage sstore2 contract on chain
      */
-    function _pointer(
-        PreimageLocation.Info calldata info
-    ) internal view returns (address) {
+    function _pointer(PreimageLocation.Info calldata info) internal view returns (address) {
         address pntr = IRandom(rand).pointer(info);
         if (pntr == address(0)) {
             revert Misconfigured();
@@ -75,9 +75,7 @@ contract Reader {
      * read the bytes held in a preimage section
      * @param info the location of a preimage on chain
      */
-    function pointer(
-        PreimageLocation.Info calldata info
-    ) external view returns (bytes memory) {
+    function pointer(PreimageLocation.Info calldata info) external view returns (bytes memory) {
         return _pointer(info).read();
     }
 
@@ -89,15 +87,15 @@ contract Reader {
      * from left to right, that contain consumed preimages
      * @dev note that this is a very costly function with (at current chain state) up to 767 external calls
      */
-    function consumed(
-        PreimageLocation.Info calldata section
-    ) external view returns (uint256 len, bytes memory indices) {
+    function consumed(PreimageLocation.Info calldata section)
+        external
+        view
+        returns (uint256 len, bytes memory indices)
+    {
         unchecked {
             bytes memory data = _pointer(section).read();
             len = data.length / THREE_TWO;
-            indices = new bytes(
-                (len / EIGHT) + (((len % EIGHT) > ONE) ? ONE : ZERO)
-            );
+            indices = new bytes((len / EIGHT) + (((len % EIGHT) > ONE) ? ONE : ZERO));
             uint256 i;
             uint256 seven = EIGHT - ONE;
             do {
@@ -107,9 +105,9 @@ contract Reader {
                     indices[i / EIGHT] = bytes1(
                         uint8(
                             // take the current block of bits
-                            uint256(uint8(indices[i / EIGHT])) |
-                                // and add a one at the appropriate offset index
-                                (ONE << (seven - (i % EIGHT)))
+                            uint256(uint8(indices[i / EIGHT]))
+                            // and add a one at the appropriate offset index
+                            | (ONE << (seven - (i % EIGHT)))
                         )
                     );
                 }
@@ -122,21 +120,11 @@ contract Reader {
      * read a preimage's 32 bytes
      * @param info the location of the preimage to read
      */
-    function at(
-        PreimageLocation.Info calldata info
-    ) external view returns (bytes32) {
+    function at(PreimageLocation.Info calldata info) external view returns (bytes32) {
         return _at(info);
     }
 
-    function _at(
-        PreimageLocation.Info calldata info
-    ) internal view returns (bytes32) {
-        return
-            bytes32(
-                _pointer(info).read(
-                    info.index * THREE_TWO,
-                    info.index * THREE_TWO + THREE_TWO
-                )
-            );
+    function _at(PreimageLocation.Info calldata info) internal view returns (bytes32) {
+        return bytes32(_pointer(info).read(info.index * THREE_TWO, info.index * THREE_TWO + THREE_TWO));
     }
 }

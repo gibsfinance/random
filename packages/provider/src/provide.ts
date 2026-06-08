@@ -503,7 +503,7 @@ const checkHeat = async () => {
     token,
     duration,
     callAtChange,
-    durationIsTimestamp,
+    usesTimestamp,
     price,
     offset,
   }) => (
@@ -512,7 +512,7 @@ const checkHeat = async () => {
         provider: provider as viem.Hex,
         token: token as viem.Hex,
         duration,
-        durationIsTimestamp,
+        usesTimestamp,
         callAtChange,
         price,
         offset,

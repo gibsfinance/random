@@ -16,5 +16,6 @@ yarn-error.log*
 # Ponder
 /generated/
 /.ponder/
-postgres-data
-.env
+
+# Local data backups (pg_dump, pre-upgrade source) — never commit
+/backups/

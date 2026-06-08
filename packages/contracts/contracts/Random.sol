@@ -81,7 +81,7 @@ contract Random is IRandom {
     /**
      * check if the preimage has been consumed by randomness
      * @param info the location of a preimage
-     * @param encodedToken the encoded token information (durationIsTimestamp[0,1),duration[56,95),token[96,255])
+     * @param encodedToken the encoded token information (usesTimestamp[0,1),duration[56,95),token[96,255])
      */
     function _consumed(PreimageLocation.Info memory info, uint256 encodedToken) internal view returns (bool) {
         if (_pointerSize({info: info, encodedToken: encodedToken}) / THREE_TWO <= info.index) {
@@ -95,7 +95,7 @@ contract Random is IRandom {
      * gets the number of bytes held by the pointer - a contract generated from preimage bytes
      * @param info the preimage location
      * @dev the index is not used for this so it can be set to 0
-     * @param encodedToken the encoded token information (durationIsTimestamp[0,1),duration[56,95),token[96,255])
+     * @param encodedToken the encoded token information (usesTimestamp[0,1),duration[56,95),token[96,255])
      */
     function _pointerSize(PreimageLocation.Info memory info, uint256 encodedToken)
         internal
@@ -380,7 +380,7 @@ contract Random is IRandom {
                     if (token != target.token) {
                         revert Errors.Misconfigured();
                     }
-                    if (target.durationIsTimestamp != settings.durationIsTimestamp) {
+                    if (target.usesTimestamp != settings.usesTimestamp) {
                         revert Errors.Misconfigured();
                     }
                     // target.minDuration > duration
@@ -417,8 +417,8 @@ contract Random is IRandom {
                     owner: settings.provider,
                     callAtChange: settings.callAtChange,
                     // we already checked expiry offset above is constrained to 38 bits
-                    expiryOffset: (settings.duration << ONE) | (settings.durationIsTimestamp ? ONE : ZERO),
-                    start: settings.durationIsTimestamp ? block.timestamp : block.number
+                    expiryOffset: (settings.duration << ONE) | (settings.usesTimestamp ? ONE : ZERO),
+                    start: settings.usesTimestamp ? block.timestamp : block.number
                 });
                 _storeLatest({provider: settings.provider, key: key, useTSTORE: useTSTORE});
                 emit Start({owner: settings.provider, key: key});

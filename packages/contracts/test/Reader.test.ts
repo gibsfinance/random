@@ -1,30 +1,32 @@
-import * as utils from '../lib/utils'
-import * as viem from 'viem'
 import _ from 'lodash'
-import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
-import { expect } from 'chai'
-import * as expectations from './expectations'
-import * as testUtils from './utils'
+import assert from 'node:assert/strict';
 
-describe('Reader', () => {
-  it('can read single preimages', async () => {
-    const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+import * as utils from '../lib/utils.js'
+import * as expectations from './expectations.js'
+import * as testUtils from './utils.js'
+import { describe, it } from 'node:test'
+
+describe('Reader', async () => {
+  const { networkHelpers } = await testUtils.connect()
+  await it('can read single preimages', async () => {
+    const ctx = await networkHelpers.loadFixture(testUtils.deployWithRandomness)
     const [secrets] = ctx.secretBatches
     const [s] = secrets
     const [provider] = ctx.randomnessProviders
 
-    await expect(
-      ctx.reader.read.at([
+    assert.equal(
+      await ctx.reader.read.at([
         {
           ...utils.defaultSection,
           provider: provider.account!.address,
           index: 0n,
         },
       ]),
-    ).eventually.to.equal(s.preimage)
+      s.preimage,
+    )
   })
-  it('cannot read out of bounds', async () => {
-    const ctx = await helpers.loadFixture(testUtils.deployWithRandomness)
+  await it('cannot read out of bounds', async () => {
+    const ctx = await networkHelpers.loadFixture(testUtils.deployWithRandomness)
     const [secrets] = ctx.secretBatches
     const [provider] = ctx.randomnessProviders
     await expectations.revertedWithCustomError(
