@@ -16,3 +16,6 @@ yarn-error.log*
 # Ponder
 /generated/
 /.ponder/
+
+# Local data backups (pg_dump, pre-upgrade source) — never commit
+/backups/

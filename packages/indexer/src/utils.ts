@@ -11,7 +11,7 @@ export const scopeId = (
 ) => {
   return viem.bytesToHex(
     viem.concatBytes([
-      viem.numberToBytes(context.network.chainId, { size: 32 }),
+      viem.numberToBytes(context.chain.id, { size: 32 }),
       viem.toBytes(key),
       viem.hexToBytes(hex),
       viem.isHex(bytes) ? viem.hexToBytes(bytes) : bytes,

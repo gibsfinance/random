@@ -13,14 +13,15 @@
     "typecheck": "tsc"
   },
   "dependencies": {
+    "@gibs/random": "*",
     "hono": "^4.7.5",
-    "ponder": "^0.10.9",
-    "viem": "^2.26.0"
+    "ponder": "^0.16.6",
+    "viem": "^2.48.11"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "eslint": "^9.24.0",
-    "eslint-config-ponder": "^0.10.9",
+    "eslint-config-ponder": "^0.16.6",
     "typescript": "^5.8.3"
   },
   "engines": {
