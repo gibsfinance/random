@@ -54,6 +54,14 @@ contract CoinFlip is ConsumerReceiver {
     uint8 internal constant TAILS = 1;
     uint256 public constant STALE_BLOCKS = 200;
 
+    // The canonical section for every player preimage pointer. Fixed so this contract's single
+    // _playerInkOffset stays in lockstep with Random's per-(provider,encodeToken,price) counter.
+    // Native token only (v1); price 0 (only the escrowed wager moves value). The pointer's own
+    // callAtChange is false — the request-level callback is set on the heat `settings`, not here.
+    address internal constant FLIP_TOKEN = address(0);
+    bool internal constant FLIP_DURATION_IS_TIMESTAMP = false;
+    uint256 public constant FLIP_DURATION = 12; // blocks; matches the validator pool section
+
     /// @notice The publicly-known walk-away secret. A player who does not want to manage a
     /// secret commits WALK_AWAY_PREIMAGE; because the secret is public and NON-ZERO, any
     /// validator can reveal it to finalize the flip on the player's behalf. It must be
@@ -105,7 +113,7 @@ contract CoinFlip is ConsumerReceiver {
     }
 
     /// @notice Validate, record, and emit a new entry, then look for an opposite-side match at the
-    /// same stake. If none waits, the entry is queued. Shared by enter and enterAndMatch.
+    /// same stake. If none waits, the entry is queued. Used by enterAndMatch.
     /// @param side HEADS (0) or TAILS (1)
     /// @param preimage the hash of the player's secret, or WALK_AWAY_PREIMAGE for a walk-away
     /// @return id the new entry id; matchedId the opposite-side entry to pair with, or 0 if queued.
@@ -129,16 +137,6 @@ contract CoinFlip is ConsumerReceiver {
         }
     }
 
-    /// @param side HEADS (0) or TAILS (1)
-    /// @param preimage the hash of the player's secret, or WALK_AWAY_PREIMAGE for a walk-away
-    function enter(uint8 side, bytes32 preimage) external payable returns (uint256 id) {
-        uint256 matchedId;
-        (id, matchedId) = _intake(side, preimage);
-        if (matchedId != 0) {
-            _pair(matchedId, id, msg.value);
-        }
-    }
-
     /// @return id the oldest active entry id waiting on `side` at `stake`, or 0 if none
     function _popQueued(uint256 stake, uint8 side) internal returns (uint256 id) {
         uint256[] storage q = _queue[stake][side];
@@ -157,23 +155,31 @@ contract CoinFlip is ConsumerReceiver {
 
     /// @notice Enter and, if this completes a pair, ink the two players and heat them with the
     /// supplied validator preimage locations, registering this contract as the request owner so
-    /// core Random calls back onCast when the seed finalizes. `template` is the price-0 section
-    /// both player preimages share (its provider/offset/index fields are advisory — the contract
-    /// inks at provider=address(this) and computes its own offset). `validatorLocations` are free
-    /// entropy preimages from the always-on pool, supplied off-chain in this version.
+    /// core Random calls back onCast when the seed finalizes. The player preimages always land in
+    /// the canonical section (native token, price 0, duration FLIP_DURATION) so the single
+    /// _playerInkOffset stays in lockstep with Random's per-encodeToken counter — there is no
+    /// caller control of the player section. `validatorLocations` are free entropy preimages from
+    /// the always-on pool, supplied off-chain in this version. A lone entrant with no opposite-side
+    /// match simply queues (no heat), so passing an empty validator array is valid in that case.
     /// @param side HEADS (0) or TAILS (1)
     /// @param preimage the hash of the player's secret, or WALK_AWAY_PREIMAGE for a walk-away
     function enterAndMatch(
         uint8 side,
         bytes32 preimage,
-        PreimageLocation.Info calldata template,
         PreimageLocation.Info[] calldata validatorLocations
     ) external payable returns (uint256 id) {
         uint256 matchedId;
         (id, matchedId) = _intake(side, preimage);
         if (matchedId != 0) {
-            _pairAndHeat(matchedId, id, msg.value, template, validatorLocations);
+            _pairAndHeat(matchedId, id, msg.value, validatorLocations);
         }
+    }
+
+    /// @notice The canonical section both player preimages of every flip share, at the given
+    /// offset. Off-chain casters rebuild the heat selection as [playerSection(offset)#index0,
+    /// playerSection(offset)#index1, ...validatorLocations].
+    function playerSection(uint256 offset, uint256 index) external view returns (PreimageLocation.Info memory) {
+        return _playerLocation(offset, index);
     }
 
     /// @notice A still-waiting entrant reclaims their stake. The entry stays as an inactive
@@ -197,29 +203,23 @@ contract CoinFlip is ConsumerReceiver {
         flip.tails.safeTransferETH(flip.stake);
     }
 
-    function _pair(uint256 aId, uint256 bId, uint256 stake) internal {
-        (Entry storage heads, Entry storage tails) = _consumePair(aId, bId);
-        _recordFlip(heads, tails, stake, bytes32(0));
-    }
-
     /// @notice The randomness-driving pairing path. Inks both players' preimages in one batch
-    /// at this contract's price-0 section, then heats all (2 players + N validators) with this
-    /// contract as the request owner so Random will call onCast when the seed finalizes.
+    /// at this contract's canonical price-0 section, then heats all (2 players + N validators) with
+    /// this contract as the request owner so Random will call onCast when the seed finalizes.
     function _pairAndHeat(
         uint256 aId,
         uint256 bId,
         uint256 stake,
-        PreimageLocation.Info calldata template,
         PreimageLocation.Info[] calldata validatorLocations
     ) internal {
         (Entry storage heads, Entry storage tails) = _consumePair(aId, bId);
 
-        // The pointer our two players share. provider is forced to this contract; price is 0 so
-        // ink takes zero value; offset is whatever Random has already counted for us. callAtChange /
-        // durationIsTimestamp / duration / token come from the template and define the pointer's
-        // encoded-token slot — the heat locations must reuse them to address this same pointer.
+        // The pointer our two players share. Every field except offset/index is a contract
+        // constant (provider=this, native token, price 0, duration FLIP_DURATION), so the pointer
+        // always lands in ONE Random per-encodeToken counter and _playerInkOffset tracks it
+        // exactly. offset is whatever Random has already counted for us.
         uint256 offset = _playerInkOffset;
-        PreimageLocation.Info memory playerInfo = _playerLocation({offset: offset, index: 0, template: template});
+        PreimageLocation.Info memory playerInfo = _playerLocation({offset: offset, index: 0});
         IRandomInkHeat(random).ink(playerInfo, abi.encodePacked(heads.preimage, tails.preimage));
 
         // Build the heat selection: the two player locations (same pointer, index 0 and 1) followed
@@ -230,19 +230,20 @@ contract CoinFlip is ConsumerReceiver {
         uint256 validatorCount = validatorLocations.length;
         uint256 required = 2 + validatorCount;
         PreimageLocation.Info[] memory locations = new PreimageLocation.Info[](required);
-        locations[0] = _playerLocation({offset: offset, index: 0, template: template});
-        locations[1] = _playerLocation({offset: offset, index: 1, template: template});
+        locations[0] = _playerLocation({offset: offset, index: 0});
+        locations[1] = _playerLocation({offset: offset, index: 1});
         for (uint256 i = 0; i < validatorCount; ++i) {
             locations[2 + i] = validatorLocations[i];
         }
 
-        // settings names the request OWNER (this contract) and turns on the onCast callback.
+        // settings names the request OWNER (this contract) and turns on the onCast callback. Its
+        // token-defining fields are the same canonical constants as the player pointer.
         PreimageLocation.Info memory settings = PreimageLocation.Info({
             provider: address(this),
             callAtChange: true,
-            durationIsTimestamp: template.durationIsTimestamp,
-            duration: template.duration,
-            token: template.token,
+            durationIsTimestamp: FLIP_DURATION_IS_TIMESTAMP,
+            duration: FLIP_DURATION,
+            token: FLIP_TOKEN,
             price: 0,
             offset: 0,
             index: 0
@@ -256,22 +257,24 @@ contract CoinFlip is ConsumerReceiver {
         flipByKey[key] = flipId;
     }
 
-    /// @notice Build a fresh player preimage location. The two player preimages share ONE pointer
-    /// at (provider=this, token, price=0, offset); `index` 0 is heads and 1 is tails. The
-    /// token-defining fields come from `template` and MUST match the values used to ink the pointer,
-    /// otherwise the encoded-token key changes and Random cannot find the pointer. Returning a new
-    /// struct each call avoids the memory-aliasing trap (memory structs assign by reference).
-    function _playerLocation(uint256 offset, uint256 index, PreimageLocation.Info calldata template)
+    /// @notice Build a fresh player preimage location purely from the canonical constants. The two
+    /// player preimages share ONE pointer at (provider=this, FLIP_TOKEN, price=0, offset); `index`
+    /// 0 is heads and 1 is tails. Because none of the token-defining fields depend on caller input,
+    /// the encoded-token key is constant and Random's per-section counter stays in lockstep with
+    /// _playerInkOffset. Returning a new struct each call avoids the memory-aliasing trap (memory
+    /// structs assign by reference). The pointer's own callAtChange is false; the request-level
+    /// callback lives on the heat `settings`.
+    function _playerLocation(uint256 offset, uint256 index)
         internal
         view
         returns (PreimageLocation.Info memory)
     {
         return PreimageLocation.Info({
             provider: address(this),
-            callAtChange: template.callAtChange,
-            durationIsTimestamp: template.durationIsTimestamp,
-            duration: template.duration,
-            token: template.token,
+            callAtChange: false,
+            durationIsTimestamp: FLIP_DURATION_IS_TIMESTAMP,
+            duration: FLIP_DURATION,
+            token: FLIP_TOKEN,
             price: 0,
             offset: offset,
             index: index
@@ -290,8 +293,8 @@ contract CoinFlip is ConsumerReceiver {
         return a.side == HEADS ? (a, b) : (b, a);
     }
 
-    /// @notice Persist a paired flip and emit Paired. `key` is bytes32(0) for the queue-only
-    /// path (enter) and the Random request key for the randomness-driving path (enterAndMatch).
+    /// @notice Persist a paired flip and emit Paired. `key` is the Random request key for the
+    /// randomness-driving path (enterAndMatch).
     function _recordFlip(Entry storage heads, Entry storage tails, uint256 stake, bytes32 key)
         internal
         returns (bytes32 flipId)
