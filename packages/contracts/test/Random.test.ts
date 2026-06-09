@@ -392,6 +392,53 @@ describe('Random', () => {
         const secrets = selections.map((selection) => secretByPreimage.get(selection.preimage) as viem.Hex)
         await expectations.emit(ctx, ctx.random.write.cast([start.args.key!, selections, secrets]), ctx.random, 'Cast')
       })
+      it('pays the pot bonus to the single seed-selected provider (the coin flip)', async () => {
+        // Two things happen to custody at cast. First, every revealed preimage returns its own stake
+        // (info.price) to its provider via _flick — so any provider with a selected preimage gets that
+        // price back regardless of the outcome. Second, ON TOP of those stake returns, the finalized
+        // seed selects ONE participating preimage via LibPRNG (Random._random) and credits that
+        // preimage's provider an extra `total` (the whole pot the consumer paid at heat) — Random.cast's
+        // `_custodied[item.provider][item.token] += total`. So exactly one provider nets the pot beyond
+        // their returned stake. That winner-takes-the-pot bonus is the coin flip the game rides on, so it
+        // is asserted on real balances, isolating the bonus from the universal stake return.
+        const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
+        const { selections, starts, secretByPreimage } = ctx
+        const [start] = starts
+        const secrets = selections.map((selection) => secretByPreimage.get(selection.preimage) as viem.Hex)
+        const pot = utils.sum(selections)
+        // the distinct providers whose preimages were selected — any one of them can win the pot
+        const candidates = _.uniq(selections.map((selection) => viem.getAddress(selection.provider)))
+        // each provider's own staked preimage prices come back to them at cast, win or lose
+        const stakeReturn = (provider: viem.Hex) =>
+          utils.sum(selections.filter((selection) => viem.isAddressEqual(selection.provider, provider)))
+        const custodyOf = (address: viem.Hex) => ctx.random.read.balanceOf([address, viem.zeroAddress])
+        const before = new Map(
+          await Promise.all(candidates.map(async (provider) => [provider, await custodyOf(provider)] as const))
+        )
+        await expectations.emit(
+          ctx,
+          ctx.random.write.cast([start.args.key!, selections, secrets]),
+          ctx.random,
+          'Cast'
+        )
+        // bonus = total custody gained beyond the provider's own returned stake
+        const bonuses = await Promise.all(
+          candidates.map(async (provider) => ({
+            provider,
+            bonus: (await custodyOf(provider)) - (before.get(provider) as bigint) - stakeReturn(provider),
+          }))
+        )
+        const winners = bonuses.filter((entry) => entry.bonus > 0n)
+        // exactly one provider wins the pot bonus, and it is the entire pot
+        expect(winners.length).to.equal(1)
+        expect(winners[0].bonus).to.equal(pot)
+        // every other candidate provider gets only its stake back — no bonus
+        for (const entry of bonuses) {
+          if (entry.provider !== winners[0].provider) {
+            expect(entry.bonus).to.equal(0n)
+          }
+        }
+      })
       it('does not allow cast to return true twice', async () => {
         const ctx = await helpers.loadFixture(testUtils.deployWithRandomnessAndStart)
         const { selections, starts, secretByPreimage } = ctx
