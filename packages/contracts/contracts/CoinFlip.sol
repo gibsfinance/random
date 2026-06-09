@@ -102,9 +102,12 @@ contract CoinFlip is ConsumerReceiver {
         random = _random;
     }
 
+    /// @notice Validate, record, and emit a new entry, then look for an opposite-side match at the
+    /// same stake. If none waits, the entry is queued. Shared by enter and enterAndMatch.
     /// @param side HEADS (0) or TAILS (1)
     /// @param preimage the hash of the player's secret, or WALK_AWAY_PREIMAGE for a walk-away
-    function enter(uint8 side, bytes32 preimage) external payable returns (uint256 id) {
+    /// @return id the new entry id; matchedId the opposite-side entry to pair with, or 0 if queued.
+    function _intake(uint8 side, bytes32 preimage) internal returns (uint256 id, uint256 matchedId) {
         if (side > TAILS) revert WrongSide();
         if (msg.value == 0) revert ZeroStake();
         id = ++nextEntrant;
@@ -118,13 +121,20 @@ contract CoinFlip is ConsumerReceiver {
         });
         emit Entered(id, msg.sender, side, msg.value);
         uint8 opposite = side == HEADS ? TAILS : HEADS;
-        uint256 matchedId = _popQueued(msg.value, opposite);
+        matchedId = _popQueued(msg.value, opposite);
         if (matchedId == 0) {
             _queue[msg.value][side].push(id);
-            return id;
         }
-        _pair(matchedId, id, msg.value);
-        return id;
+    }
+
+    /// @param side HEADS (0) or TAILS (1)
+    /// @param preimage the hash of the player's secret, or WALK_AWAY_PREIMAGE for a walk-away
+    function enter(uint8 side, bytes32 preimage) external payable returns (uint256 id) {
+        uint256 matchedId;
+        (id, matchedId) = _intake(side, preimage);
+        if (matchedId != 0) {
+            _pair(matchedId, id, msg.value);
+        }
     }
 
     /// @return id the oldest active entry id waiting on `side` at `stake`, or 0 if none
@@ -157,26 +167,11 @@ contract CoinFlip is ConsumerReceiver {
         PreimageLocation.Info calldata template,
         PreimageLocation.Info[] calldata validatorLocations
     ) external payable returns (uint256 id) {
-        if (side > TAILS) revert WrongSide();
-        if (msg.value == 0) revert ZeroStake();
-        id = ++nextEntrant;
-        entries[id] = Entry({
-            player: msg.sender,
-            side: side,
-            stake: msg.value,
-            preimage: preimage,
-            enteredAtBlock: block.number,
-            active: true
-        });
-        emit Entered(id, msg.sender, side, msg.value);
-        uint8 opposite = side == HEADS ? TAILS : HEADS;
-        uint256 matchedId = _popQueued(msg.value, opposite);
-        if (matchedId == 0) {
-            _queue[msg.value][side].push(id);
-            return id;
+        uint256 matchedId;
+        (id, matchedId) = _intake(side, preimage);
+        if (matchedId != 0) {
+            _pairAndHeat(matchedId, id, msg.value, template, validatorLocations);
         }
-        _pairAndHeat(matchedId, id, msg.value, template, validatorLocations);
-        return id;
     }
 
     function _pair(uint256 aId, uint256 bId, uint256 stake) internal {
