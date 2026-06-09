@@ -19,6 +19,20 @@ contract CoinFlip is ConsumerReceiver {
 
     event Entered(uint256 indexed id, address indexed player, uint8 side, uint256 stake);
     event Cancelled(uint256 indexed id);
+    event Paired(bytes32 indexed flipId, address heads, address tails, uint256 stake);
+
+    enum Status { None, Pending, Settled, Refunded }
+
+    struct Flip {
+        address heads;
+        address tails;
+        uint256 stake;
+        bytes32 preimageHeads;
+        bytes32 preimageTails;
+        bytes32 key;
+        uint256 pairedAtBlock;
+        Status status;
+    }
 
     uint8 internal constant HEADS = 0;
     uint8 internal constant TAILS = 1;
@@ -48,6 +62,13 @@ contract CoinFlip is ConsumerReceiver {
 
     mapping(uint256 id => Entry entry) public entries;
 
+    // stake => side => first-in-first-out queue of entry ids, with a moving head index
+    mapping(uint256 stake => mapping(uint8 side => uint256[] ids)) internal _queue;
+    mapping(uint256 stake => mapping(uint8 side => uint256 head)) internal _queueHead;
+
+    mapping(bytes32 flipId => Flip flip) public flips;
+    uint256 internal _flipNonce;
+
     constructor(address _random) payable {
         random = _random;
     }
@@ -67,6 +88,50 @@ contract CoinFlip is ConsumerReceiver {
             active: true
         });
         emit Entered(id, msg.sender, side, msg.value);
+        uint8 opposite = side == HEADS ? TAILS : HEADS;
+        uint256 matchedId = _popQueued(msg.value, opposite);
+        if (matchedId == 0) {
+            _queue[msg.value][side].push(id);
+            return id;
+        }
+        _pair(matchedId, id, msg.value);
+        return id;
+    }
+
+    /// @return id the oldest active entry id waiting on `side` at `stake`, or 0 if none
+    function _popQueued(uint256 stake, uint8 side) internal returns (uint256 id) {
+        uint256[] storage q = _queue[stake][side];
+        uint256 head = _queueHead[stake][side];
+        while (head < q.length) {
+            uint256 candidate = q[head];
+            ++head;
+            if (entries[candidate].active) {
+                _queueHead[stake][side] = head;
+                return candidate;
+            }
+        }
+        _queueHead[stake][side] = head;
+        return 0;
+    }
+
+    function _pair(uint256 aId, uint256 bId, uint256 stake) internal {
+        Entry storage a = entries[aId];
+        Entry storage b = entries[bId];
+        a.active = false;
+        b.active = false;
+        (Entry storage heads, Entry storage tails) = a.side == HEADS ? (a, b) : (b, a);
+        bytes32 flipId = keccak256(abi.encode(address(this), ++_flipNonce, heads.player, tails.player));
+        flips[flipId] = Flip({
+            heads: heads.player,
+            tails: tails.player,
+            stake: stake,
+            preimageHeads: heads.preimage,
+            preimageTails: tails.preimage,
+            key: bytes32(0),
+            pairedAtBlock: block.number,
+            status: Status.Pending
+        });
+        emit Paired(flipId, heads.player, tails.player, stake);
     }
 
     // --- ConsumerReceiver callbacks (onCast implemented in Task 5) ---
