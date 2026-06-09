@@ -87,4 +87,34 @@ describe('CoinFlip', () => {
         ctx.random, 'Start')
     })
   })
+
+  describe('settlement', () => {
+    it('pays the whole pot to the parity-selected winner on cast', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const pool = await testUtils.inkValidatorPool(ctx, 3)
+      const [a, b] = ctx.signers
+      const caster = ctx.signers[5]
+      const stake = viem.parseEther('1')
+      const template = { ...pool.section, provider: ctx.coinFlip.address, price: 0n, offset: 0n, index: 0n }
+      // both players use hash(1) walk-away preimages so the public secret (1) is revealable by anyone
+      const walkAwaySecret = viem.padHex('0x01', { size: 32 }) // bytes32(uint256(1))
+      const walkAwayPre = viem.keccak256(walkAwaySecret)
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([0, walkAwayPre, template, []], { value: stake, account: a.account }))
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([1, walkAwayPre, template, pool.locations], { value: stake, account: b.account }))
+      const [start] = await ctx.random.getEvents.Start()
+      const key = start.args.key!
+      // replay the heat selection EXACTLY: [player@index0, player@index1, ...validatorLocations]
+      const playerLocs = [{ ...template, index: 0n }, { ...template, index: 1n }]
+      const selections = [...playerLocs, ...pool.locations]
+      const secrets = [walkAwaySecret, walkAwaySecret, ...pool.secrets.map((s) => s.secret)]
+      const publicClient = await ctx.hre.viem.getPublicClient()
+      const before = { heads: await publicClient.getBalance({ address: a.account!.address }), tails: await publicClient.getBalance({ address: b.account!.address }) }
+      await expectations.emit(ctx, ctx.random.write.cast([key, selections, secrets], { account: caster.account }), ctx.coinFlip, 'Settled')
+      const seed = (await ctx.random.read.randomness([key])).seed
+      const winnerIsHeads = (BigInt(seed) & 1n) === 0n
+      const winnerAddr = winnerIsHeads ? a.account!.address : b.account!.address
+      const after = await publicClient.getBalance({ address: winnerAddr })
+      expect(after - (winnerIsHeads ? before.heads : before.tails)).to.equal(stake * 2n)
+    })
+  })
 })

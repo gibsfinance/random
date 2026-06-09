@@ -31,6 +31,7 @@ contract CoinFlip is ConsumerReceiver {
     error NotEntrant();
     error AlreadyResolved();
     error TooEarly();
+    error OnlyRandom();
 
     event Entered(uint256 indexed id, address indexed player, uint8 side, uint256 stake);
     event Cancelled(uint256 indexed id);
@@ -287,8 +288,25 @@ contract CoinFlip is ConsumerReceiver {
         emit Paired(flipId, heads.player, tails.player, stake);
     }
 
-    // --- ConsumerReceiver callbacks (onCast implemented in Task 5) ---
-    function onCast(bytes32, bytes32) external override {}
+    // --- ConsumerReceiver callbacks ---
+    event Settled(bytes32 indexed flipId, address indexed winner, uint8 winningSide, uint256 payout);
+
+    /// @notice Called by core Random when a request's seed is finalized (we set callAtChange on
+    /// heat). Looks up the flip by key, picks the winner from seed parity, and pays the pot.
+    function onCast(bytes32 key, bytes32 seed) external override {
+        if (msg.sender != random) revert OnlyRandom();
+        bytes32 flipId = flipByKey[key];
+        Flip storage flip = flips[flipId];
+        if (flip.status != Status.Pending) revert AlreadyResolved();
+        flip.status = Status.Settled;
+        // even seed -> heads wins, odd -> tails wins. Provably fair fifty-fifty.
+        uint8 winningSide = uint8(uint256(seed) & 1);
+        address winner = winningSide == HEADS ? flip.heads : flip.tails;
+        uint256 payout = flip.stake * 2;
+        emit Settled(flipId, winner, winningSide, payout);
+        winner.safeTransferETH(payout);
+    }
+
     function onReverse(bytes32, address, uint256) external override {}
     function onChop(bytes32) external override {}
 }
