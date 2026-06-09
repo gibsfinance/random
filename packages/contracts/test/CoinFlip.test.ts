@@ -88,6 +88,63 @@ describe('CoinFlip', () => {
     })
   })
 
+  describe('recovery', () => {
+    it('lets an unmatched entrant cancel for a refund', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const [a] = ctx.signers
+      const stake = viem.parseEther('1')
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enter([0, viem.keccak256(viem.toHex('a'))], { value: stake, account: a.account }))
+      const publicClient = await ctx.hre.viem.getPublicClient()
+      const before = await publicClient.getBalance({ address: ctx.coinFlip.address })
+      expect(before).to.equal(stake)
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.cancel([1n], { account: a.account }))
+      expect(await publicClient.getBalance({ address: ctx.coinFlip.address })).to.equal(0n)
+    })
+
+    it('rejects cancel from a non-owner', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const [a, b] = ctx.signers
+      const stake = viem.parseEther('1')
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enter([0, viem.keccak256(viem.toHex('a'))], { value: stake, account: a.account }))
+      await expectations.revertedWithCustomError(
+        ctx.coinFlip,
+        ctx.coinFlip.write.cancel([1n], { account: b.account }),
+        'NotEntrant',
+      )
+    })
+
+    it('refunds both players when a paired flip goes stale', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const pool = await testUtils.inkValidatorPool(ctx, 3)
+      const [a, b] = ctx.signers
+      const stake = viem.parseEther('1')
+      const template = { ...pool.section, provider: ctx.coinFlip.address, price: 0n, offset: 0n, index: 0n }
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([0, viem.keccak256(viem.toHex('a')), template, []], { value: stake, account: a.account }))
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([1, viem.keccak256(viem.toHex('b')), template, pool.locations], { value: stake, account: b.account }))
+      const [paired] = await ctx.coinFlip.getEvents.Paired()
+      await helpers.mine(201)
+      const publicClient = await ctx.hre.viem.getPublicClient()
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.refundStale([paired.args.flipId!]))
+      expect(await publicClient.getBalance({ address: ctx.coinFlip.address })).to.equal(0n)
+    })
+
+    it('rejects refundStale before the timeout window', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const pool = await testUtils.inkValidatorPool(ctx, 3)
+      const [a, b] = ctx.signers
+      const stake = viem.parseEther('1')
+      const template = { ...pool.section, provider: ctx.coinFlip.address, price: 0n, offset: 0n, index: 0n }
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([0, viem.keccak256(viem.toHex('a')), template, []], { value: stake, account: a.account }))
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([1, viem.keccak256(viem.toHex('b')), template, pool.locations], { value: stake, account: b.account }))
+      const [paired] = await ctx.coinFlip.getEvents.Paired()
+      await expectations.revertedWithCustomError(
+        ctx.coinFlip,
+        ctx.coinFlip.write.refundStale([paired.args.flipId!]),
+        'TooEarly',
+      )
+    })
+  })
+
   describe('settlement', () => {
     it('pays the whole pot to the parity-selected winner on cast', async () => {
       const ctx = await helpers.loadFixture(testUtils.deploy)

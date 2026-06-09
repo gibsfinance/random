@@ -52,6 +52,7 @@ contract CoinFlip is ConsumerReceiver {
 
     uint8 internal constant HEADS = 0;
     uint8 internal constant TAILS = 1;
+    uint256 public constant STALE_BLOCKS = 200;
 
     /// @notice The publicly-known walk-away secret. A player who does not want to manage a
     /// secret commits WALK_AWAY_PREIMAGE; because the secret is public and NON-ZERO, any
@@ -173,6 +174,27 @@ contract CoinFlip is ConsumerReceiver {
         if (matchedId != 0) {
             _pairAndHeat(matchedId, id, msg.value, template, validatorLocations);
         }
+    }
+
+    /// @notice A still-waiting entrant reclaims their stake. The entry stays as an inactive
+    /// tombstone in its side queue; _popQueued already skips inactive entries.
+    function cancel(uint256 id) external {
+        Entry storage e = entries[id];
+        if (e.player != msg.sender) revert NotEntrant();
+        if (!e.active) revert AlreadyResolved();
+        e.active = false;
+        emit Cancelled(id);
+        e.player.safeTransferETH(e.stake);
+    }
+
+    /// @notice Refund both players of a paired flip whose seed never finalized in time.
+    function refundStale(bytes32 flipId) external {
+        Flip storage flip = flips[flipId];
+        if (flip.status != Status.Pending) revert AlreadyResolved();
+        if (block.number < flip.pairedAtBlock + STALE_BLOCKS) revert TooEarly();
+        flip.status = Status.Refunded;
+        flip.heads.safeTransferETH(flip.stake);
+        flip.tails.safeTransferETH(flip.stake);
     }
 
     function _pair(uint256 aId, uint256 bId, uint256 stake) internal {
