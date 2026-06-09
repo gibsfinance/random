@@ -213,6 +213,7 @@ export const contractName = {
   MulticallerWithSender: 'multicaller/src/MulticallerWithSender.sol:MulticallerWithSender',
   MulticallerWithSigner: 'multicaller/src/MulticallerWithSigner.sol:MulticallerWithSigner',
   CoinFlip: 'contracts/CoinFlip.sol:CoinFlip',
+  RejectableReceiver: 'contracts/test/RejectableReceiver.sol:RejectableReceiver',
 } as const
 
 export type Names = typeof contractName

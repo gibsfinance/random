@@ -3,6 +3,7 @@ import { expect } from 'chai'
 import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
 import * as expectations from './expectations'
 import * as testUtils from './utils'
+import { contractName } from '../lib/utils'
 
 describe('CoinFlip', () => {
   describe('enter', () => {
@@ -225,6 +226,204 @@ describe('CoinFlip', () => {
       // failed to advance, flip 2's heat or cast would revert / mis-address.
       await runFlip(a, b, 0n, flip1Validators, flip1Secrets)
       await runFlip(c, d, 2n, flip2Validators, flip2Secrets)
+    })
+  })
+
+  describe('intake guards', () => {
+    it('rejects a zero preimage (its secret would be unrevealable)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const stake = viem.parseEther('1')
+      await expectations.revertedWithCustomError(
+        ctx.coinFlip,
+        ctx.coinFlip.write.enterAndMatch([0, viem.zeroHash, []], { value: stake }),
+        'InvalidPreimage',
+      )
+    })
+  })
+
+  // A flip taken to a finalized seed (cast) and a flip taken to staleness (refundStale) must each
+  // be terminal: no second settlement, no double pay. These exercise the shared _settle/claim guard.
+  describe('double-resolution guards', () => {
+    const walkAwaySecret = viem.padHex('0x01', { size: 32 })
+    const walkAwayPre = viem.keccak256(walkAwaySecret)
+
+    const settleFlip = async (ctx: testUtils.Context, validators: any[], secrets: any[]) => {
+      const [a, b] = ctx.signers
+      const caster = ctx.signers[5]
+      const stake = viem.parseEther('1')
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([0, walkAwayPre, []], { value: stake, account: a.account }))
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([1, walkAwayPre, validators], { value: stake, account: b.account }))
+      const [start] = await ctx.random.getEvents.Start()
+      const key = start.args.key!
+      const [paired] = await ctx.coinFlip.getEvents.Paired()
+      const flipId = paired.args.flipId!
+      const playerLocs = [
+        await ctx.coinFlip.read.playerSection([0n, 0n]),
+        await ctx.coinFlip.read.playerSection([0n, 1n]),
+      ]
+      const selections = [...playerLocs, ...validators]
+      const allSecrets = [walkAwaySecret, walkAwaySecret, ...secrets.map((s: any) => s.secret)]
+      await testUtils.confirmTx(ctx, ctx.random.write.cast([key, selections, allSecrets], { account: caster.account }))
+      return { flipId, stake }
+    }
+
+    it('rejects claim on a flip already settled via onCast', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const pool = await testUtils.inkValidatorPool(ctx, 3)
+      const { flipId } = await settleFlip(ctx, pool.locations, pool.secrets)
+      await expectations.revertedWithCustomError(
+        ctx.coinFlip,
+        ctx.coinFlip.write.claim([flipId]),
+        'AlreadyResolved',
+      )
+    })
+
+    it('rejects cancel of an entry consumed by a pair', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const pool = await testUtils.inkValidatorPool(ctx, 3)
+      const [a, b] = ctx.signers
+      const stake = viem.parseEther('1')
+      // entry 1 (heads) queues, entry 2 (tails) completes the pair -> entry 1 is consumed/inactive
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([0, viem.keccak256(viem.toHex('a')), []], { value: stake, account: a.account }))
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([1, viem.keccak256(viem.toHex('b')), pool.locations], { value: stake, account: b.account }))
+      await expectations.revertedWithCustomError(
+        ctx.coinFlip,
+        ctx.coinFlip.write.cancel([1n], { account: a.account }),
+        'AlreadyResolved',
+      )
+    })
+
+    it('rejects refundStale on an already-settled flip', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const pool = await testUtils.inkValidatorPool(ctx, 3)
+      const { flipId } = await settleFlip(ctx, pool.locations, pool.secrets)
+      await expectations.revertedWithCustomError(
+        ctx.coinFlip,
+        ctx.coinFlip.write.refundStale([flipId]),
+        'AlreadyResolved',
+      )
+    })
+
+    it('rejects claim on a flip already refunded as stale (no double pay)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const pool = await testUtils.inkValidatorPool(ctx, 3)
+      const [a, b] = ctx.signers
+      const stake = viem.parseEther('1')
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([0, walkAwayPre, []], { value: stake, account: a.account }))
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([1, walkAwayPre, pool.locations], { value: stake, account: b.account }))
+      const [paired] = await ctx.coinFlip.getEvents.Paired()
+      const flipId = paired.args.flipId!
+      await helpers.mine(201)
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.refundStale([flipId]))
+      // status is Refunded (not Pending) -> claim must revert AlreadyResolved
+      await expectations.revertedWithCustomError(
+        ctx.coinFlip,
+        ctx.coinFlip.write.claim([flipId]),
+        'AlreadyResolved',
+      )
+    })
+  })
+
+  describe('claim fallback (onCast push failed)', () => {
+    it('reverts TooEarly when the seed is not finalized', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const pool = await testUtils.inkValidatorPool(ctx, 3)
+      const walkAwaySecret = viem.padHex('0x01', { size: 32 })
+      const walkAwayPre = viem.keccak256(walkAwaySecret)
+      const [a, b] = ctx.signers
+      const stake = viem.parseEther('1')
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([0, walkAwayPre, []], { value: stake, account: a.account }))
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([1, walkAwayPre, pool.locations], { value: stake, account: b.account }))
+      const [paired] = await ctx.coinFlip.getEvents.Paired()
+      // paired but never cast -> seed is zero -> claim must revert TooEarly
+      await expectations.revertedWithCustomError(
+        ctx.coinFlip,
+        ctx.coinFlip.write.claim([paired.args.flipId!]),
+        'TooEarly',
+      )
+    })
+
+    it('pays the winner 2*stake after a failed onCast push, leaving no dust', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const pool = await testUtils.inkValidatorPool(ctx, 3)
+      const caster = ctx.signers[5]
+      const funder = ctx.signers[6]
+      const stake = viem.parseEther('1')
+      const walkAwaySecret = viem.padHex('0x01', { size: 32 })
+      const walkAwayPre = viem.keccak256(walkAwaySecret)
+      const publicClient = await ctx.hre.viem.getPublicClient()
+
+      // A contract that rejects ETH while reject==true. It enters BOTH sides so it is the winner
+      // regardless of seed parity; the onCast push to it then fails -> flip stays Pending with the
+      // seed finalized -> after flipping reject off, claim pays it.
+      const receiver = await ctx.hre.viem.deployContract(contractName.RejectableReceiver as any, [])
+      await testUtils.confirmTx(ctx,
+        receiver.write.enter([ctx.coinFlip.address, 0, walkAwayPre, []], { value: stake, account: funder.account }))
+      await testUtils.confirmTx(ctx,
+        receiver.write.enter([ctx.coinFlip.address, 1, walkAwayPre, pool.locations], { value: stake, account: funder.account }))
+
+      const [start] = await ctx.random.getEvents.Start()
+      const key = start.args.key!
+      const [paired] = await ctx.coinFlip.getEvents.Paired()
+      const flipId = paired.args.flipId!
+      const playerLocs = [
+        await ctx.coinFlip.read.playerSection([0n, 0n]),
+        await ctx.coinFlip.read.playerSection([0n, 1n]),
+      ]
+      const selections = [...playerLocs, ...pool.locations]
+      const secrets = [walkAwaySecret, walkAwaySecret, ...pool.secrets.map((s) => s.secret)]
+
+      // cast finalizes the seed; the onCast push to the receiver reverts and Random emits
+      // FailedToCall, so the flip is NOT settled and the pot still sits in the contract.
+      await expectations.emit(ctx,
+        ctx.random.write.cast([key, selections, secrets], { account: caster.account }),
+        ctx.random, 'FailedToCall')
+      const seed = (await ctx.random.read.randomness([key])).seed
+      expect(seed).to.not.equal(viem.zeroHash)
+      // flip stayed Pending (status enum index 1); the whole pot is still escrowed
+      const flip = await ctx.coinFlip.read.flips([flipId])
+      expect(await publicClient.getBalance({ address: ctx.coinFlip.address })).to.equal(stake * 2n)
+
+      // now the receiver accepts ETH; claim pays it the full pot, contract balance returns to 0
+      await testUtils.confirmTx(ctx, receiver.write.setReject([false], { account: funder.account }))
+      const before = await publicClient.getBalance({ address: receiver.address })
+      await expectations.emit(ctx, ctx.coinFlip.write.claim([flipId], { account: caster.account }), ctx.coinFlip, 'Settled')
+      const after = await publicClient.getBalance({ address: receiver.address })
+      expect(after - before).to.equal(stake * 2n)
+      expect(await publicClient.getBalance({ address: ctx.coinFlip.address })).to.equal(0n)
+    })
+  })
+
+  describe('exact payout / no dust', () => {
+    it('leaves zero residue after a normal settlement and pays exactly 2*stake', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const pool = await testUtils.inkValidatorPool(ctx, 3)
+      const [a, b] = ctx.signers
+      const caster = ctx.signers[5]
+      const stake = viem.parseEther('1')
+      const walkAwaySecret = viem.padHex('0x01', { size: 32 })
+      const walkAwayPre = viem.keccak256(walkAwaySecret)
+      const publicClient = await ctx.hre.viem.getPublicClient()
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([0, walkAwayPre, []], { value: stake, account: a.account }))
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([1, walkAwayPre, pool.locations], { value: stake, account: b.account }))
+      expect(await publicClient.getBalance({ address: ctx.coinFlip.address })).to.equal(stake * 2n)
+      const [start] = await ctx.random.getEvents.Start()
+      const key = start.args.key!
+      const playerLocs = [
+        await ctx.coinFlip.read.playerSection([0n, 0n]),
+        await ctx.coinFlip.read.playerSection([0n, 1n]),
+      ]
+      const selections = [...playerLocs, ...pool.locations]
+      const secrets = [walkAwaySecret, walkAwaySecret, ...pool.secrets.map((s) => s.secret)]
+      const before = { heads: await publicClient.getBalance({ address: a.account!.address }), tails: await publicClient.getBalance({ address: b.account!.address }) }
+      await testUtils.confirmTx(ctx, ctx.random.write.cast([key, selections, secrets], { account: caster.account }))
+      const seed = (await ctx.random.read.randomness([key])).seed
+      const winnerIsHeads = (BigInt(seed) & 1n) === 0n
+      const winnerAddr = winnerIsHeads ? a.account!.address : b.account!.address
+      const after = await publicClient.getBalance({ address: winnerAddr })
+      expect(after - (winnerIsHeads ? before.heads : before.tails)).to.equal(stake * 2n)
+      // whole pot left, no residue
+      expect(await publicClient.getBalance({ address: ctx.coinFlip.address })).to.equal(0n)
     })
   })
 })

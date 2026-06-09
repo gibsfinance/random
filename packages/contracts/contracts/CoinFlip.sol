@@ -3,20 +3,14 @@ pragma solidity ^0.8.24;
 
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 import {ConsumerReceiver} from "./implementations/ConsumerReceiver.sol";
+import {IRandom} from "./implementations/IRandom.sol";
 import {PreimageLocation} from "./PreimageLocation.sol";
 
-/// @notice Minimal view of core Random needed to drive the ink->heat lifecycle. The shipped
-/// IRandom abstract contract exposes `heat` but not `ink`, so we declare both here with the
-/// exact signatures verified against contracts/Random.sol.
-interface IRandomInkHeat {
+/// @notice The one method core Random exposes that the shipped IRandom abstract contract omits.
+/// Everything else this contract needs (heat, randomness) is single-sourced from IRandom, so the
+/// only hand-declared signature here is `ink`, verified against contracts/Random.sol.
+interface IRandomInk {
     function ink(PreimageLocation.Info memory info, bytes calldata data) external payable;
-
-    function heat(
-        uint256 required,
-        PreimageLocation.Info calldata settings,
-        PreimageLocation.Info[] calldata potentialLocations,
-        bool useTSTORE
-    ) external payable returns (bytes32);
 }
 
 /// @notice Two-person coin flip. Players escrow a stake and a side; opposite-side
@@ -32,10 +26,13 @@ contract CoinFlip is ConsumerReceiver {
     error AlreadyResolved();
     error TooEarly();
     error OnlyRandom();
+    error InvalidPreimage();
 
     event Entered(uint256 indexed id, address indexed player, uint8 side, uint256 stake);
     event Cancelled(uint256 indexed id);
     event Paired(bytes32 indexed flipId, address heads, address tails, uint256 stake);
+    event Heated(bytes32 indexed flipId, bytes32 indexed key, uint256 playerOffset, uint256 validatorCount);
+    event Settled(bytes32 indexed flipId, address indexed winner, uint8 winningSide, uint256 payout, bytes32 seed);
 
     enum Status { None, Pending, Settled, Refunded }
 
@@ -53,6 +50,12 @@ contract CoinFlip is ConsumerReceiver {
     uint8 internal constant HEADS = 0;
     uint8 internal constant TAILS = 1;
     uint256 public constant STALE_BLOCKS = 200;
+
+    /// @notice Upper bound on how many queue slots _popQueued will skip past in one call. A griefer
+    /// can stack many cancelled (inactive) entries at one (stake, side); without a cap a matcher's
+    /// gas could be exhausted walking tombstones. When the cap is hit with no active entry found,
+    /// the advanced head is persisted and the entrant simply queues (treated as no match).
+    uint256 internal constant MAX_QUEUE_SCAN = 32;
 
     // The canonical section for every player preimage pointer. Fixed so this contract's single
     // _playerInkOffset stays in lockstep with Random's per-(provider,encodeToken,price) counter.
@@ -120,6 +123,9 @@ contract CoinFlip is ConsumerReceiver {
     function _intake(uint8 side, bytes32 preimage) internal returns (uint256 id, uint256 matchedId) {
         if (side > TAILS) revert WrongSide();
         if (msg.value == 0) revert ZeroStake();
+        // A zero preimage's secret is unrevealable: core Random.cast treats a revealed bytes32(0)
+        // as MISSING_SECRET and never finalizes the seed, so such a flip could never be cast.
+        if (preimage == bytes32(0)) revert InvalidPreimage();
         id = ++nextEntrant;
         entries[id] = Entry({
             player: msg.sender,
@@ -141,14 +147,19 @@ contract CoinFlip is ConsumerReceiver {
     function _popQueued(uint256 stake, uint8 side) internal returns (uint256 id) {
         uint256[] storage q = _queue[stake][side];
         uint256 head = _queueHead[stake][side];
-        while (head < q.length) {
+        uint256 scanned = 0;
+        while (head < q.length && scanned < MAX_QUEUE_SCAN) {
             uint256 candidate = q[head];
             ++head;
+            ++scanned;
             if (entries[candidate].active) {
                 _queueHead[stake][side] = head;
                 return candidate;
             }
         }
+        // Persist the tombstones we skipped so a future call resumes past them, then report no
+        // match (the entrant queues). Capping the scan keeps a tombstone griefer from blowing up
+        // the matcher's gas; the skipped head advance is not lost.
         _queueHead[stake][side] = head;
         return 0;
     }
@@ -220,7 +231,7 @@ contract CoinFlip is ConsumerReceiver {
         // exactly. offset is whatever Random has already counted for us.
         uint256 offset = _playerInkOffset;
         PreimageLocation.Info memory playerInfo = _playerLocation({offset: offset, index: 0});
-        IRandomInkHeat(random).ink(playerInfo, abi.encodePacked(heads.preimage, tails.preimage));
+        IRandomInk(random).ink(playerInfo, abi.encodePacked(heads.preimage, tails.preimage));
 
         // Build the heat selection: the two player locations (same pointer, index 0 and 1) followed
         // by the validator locations. Order is load-bearing — cast (Task 5) must replay it exactly.
@@ -248,13 +259,16 @@ contract CoinFlip is ConsumerReceiver {
             offset: 0,
             index: 0
         });
-        bytes32 key = IRandomInkHeat(random).heat(required, settings, locations, false);
+        bytes32 key = IRandom(random).heat(required, settings, locations, false);
 
         // Players consumed two preimages from our pointer; advance so the next flip inks past them.
         _playerInkOffset = offset + 2;
 
         bytes32 flipId = _recordFlip(heads, tails, stake, key);
         flipByKey[key] = flipId;
+        // Lets an indexer reconstruct the exact heat selection: playerSection(offset, 0),
+        // playerSection(offset, 1), then the validatorLocations.
+        emit Heated(flipId, key, offset, validatorCount);
     }
 
     /// @notice Build a fresh player preimage location purely from the canonical constants. The two
@@ -313,14 +327,13 @@ contract CoinFlip is ConsumerReceiver {
         emit Paired(flipId, heads.player, tails.player, stake);
     }
 
-    // --- ConsumerReceiver callbacks ---
-    event Settled(bytes32 indexed flipId, address indexed winner, uint8 winningSide, uint256 payout);
-
-    /// @notice Called by core Random when a request's seed is finalized (we set callAtChange on
-    /// heat). Looks up the flip by key, picks the winner from seed parity, and pays the pot.
-    function onCast(bytes32 key, bytes32 seed) external override {
-        if (msg.sender != random) revert OnlyRandom();
-        bytes32 flipId = flipByKey[key];
+    /// @notice The single settlement code path, shared by onCast (optimistic push) and claim
+    /// (pull fallback). Guards status == Pending BEFORE the transfer (checks-effects-interactions):
+    /// this AlreadyResolved guard is what makes a double payout impossible across the two entries.
+    /// @dev When called from onCast and the transfer reverts, core Random's _call swallows the
+    /// revert and the status = Settled write is rolled back with the frame, leaving the flip Pending
+    /// so claim can retry. Do NOT add a reentrancy guard here — it would block that retry.
+    function _settle(bytes32 flipId, bytes32 seed) internal {
         Flip storage flip = flips[flipId];
         if (flip.status != Status.Pending) revert AlreadyResolved();
         flip.status = Status.Settled;
@@ -328,8 +341,31 @@ contract CoinFlip is ConsumerReceiver {
         uint8 winningSide = uint8(uint256(seed) & 1);
         address winner = winningSide == HEADS ? flip.heads : flip.tails;
         uint256 payout = flip.stake * 2;
-        emit Settled(flipId, winner, winningSide, payout);
+        emit Settled(flipId, winner, winningSide, payout, seed);
         winner.safeTransferETH(payout);
+    }
+
+    /// @notice Settle a flip whose Random seed is finalized but whose onCast push did not complete
+    /// (Random swallows a reverting callback, leaving the flip Pending while the seed exists). Anyone
+    /// may call; the pot goes to the parity-selected winner. The shared _settle path's AlreadyResolved
+    /// guard prevents any double payout across onCast and claim.
+    function claim(bytes32 flipId) external {
+        Flip storage flip = flips[flipId];
+        if (flip.status != Status.Pending) revert AlreadyResolved();
+        bytes32 seed = IRandom(random).randomness(flip.key).seed;
+        if (seed == bytes32(0)) revert TooEarly(); // seed not finalized yet
+        _settle(flipId, seed);
+    }
+
+    // --- ConsumerReceiver callbacks ---
+
+    /// @notice Called by core Random when a request's seed is finalized (we set callAtChange on
+    /// heat). Looks up the flip by key and routes through the shared _settle path, which pushes the
+    /// pot to the parity-selected winner. If the push reverts, Random swallows it and the flip stays
+    /// Pending for a later claim.
+    function onCast(bytes32 key, bytes32 seed) external override {
+        if (msg.sender != random) revert OnlyRandom();
+        _settle(flipByKey[key], seed);
     }
 
     function onReverse(bytes32, address, uint256) external override {}
