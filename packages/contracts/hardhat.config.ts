@@ -28,6 +28,23 @@ const config: HardhatUserConfig = {
         },
       },
     ],
+    // CoinFlip deploys to PulseChain testnet v4 (chain 943), which is pre-Cancun: it supports
+    // Shanghai opcodes (PUSH0) but rejects MCOPY/TSTORE. viaIR + cancun emits MCOPY, which
+    // reverts on 943 as "invalid opcode: MCOPY". Target Shanghai so the deployed bytecode runs
+    // there. (Core Random was compiled cancun but happens not to emit MCOPY in its live paths.)
+    overrides: {
+      'contracts/CoinFlip.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+    },
   },
   paths: {
     sources: './contracts',
