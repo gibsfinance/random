@@ -51,6 +51,7 @@ export const deploy = async () => {
   //   contractName.MulticallerWithSigner,
   //   '0x000000000000D9ECebf3C23529de49815Dac1c4c',
   // )
+  const coinFlip = await hre.viem.deployContract(contractName.CoinFlip, [random.address])
   const deployedContracts = {
     random,
     reader,
@@ -63,6 +64,7 @@ export const deploy = async () => {
     consumer,
     consumerIncomplete,
     consumerEmitter,
+    coinFlip,
   }
   for (const [name, contract] of Object.entries(deployedContracts)) {
     console.log('%s:%o', contract.address, name)
