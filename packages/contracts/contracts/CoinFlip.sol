@@ -3,6 +3,21 @@ pragma solidity ^0.8.24;
 
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 import {ConsumerReceiver} from "./implementations/ConsumerReceiver.sol";
+import {PreimageLocation} from "./PreimageLocation.sol";
+
+/// @notice Minimal view of core Random needed to drive the ink->heat lifecycle. The shipped
+/// IRandom abstract contract exposes `heat` but not `ink`, so we declare both here with the
+/// exact signatures verified against contracts/Random.sol.
+interface IRandomInkHeat {
+    function ink(PreimageLocation.Info memory info, bytes calldata data) external payable;
+
+    function heat(
+        uint256 required,
+        PreimageLocation.Info calldata settings,
+        PreimageLocation.Info[] calldata potentialLocations,
+        bool useTSTORE
+    ) external payable returns (bytes32);
+}
 
 /// @notice Two-person coin flip. Players escrow a stake and a side; opposite-side
 /// equal-stake entrants are matched first-in-first-out, the matched pair's randomness is
@@ -69,6 +84,20 @@ contract CoinFlip is ConsumerReceiver {
     mapping(bytes32 flipId => Flip flip) public flips;
     uint256 internal _flipNonce;
 
+    /// @notice Reverse index from a Random request key to the flip it settles, so the onCast
+    /// callback (Task 5) can find the flip when core Random reports the finalized seed.
+    mapping(bytes32 key => bytes32 flipId) public flipByKey;
+
+    /// @notice The running preimage offset for this contract's player pointer at
+    /// (provider=address(this), token=0, price=0). Random.ink auto-appends: it ignores the
+    /// caller-supplied info.offset and places the new pointer at the provider's current
+    /// preimage count, then bumps that count by the batch size. Because CoinFlip is the sole
+    /// inker at that section and inks exactly two preimages per flip, this counter mirrors
+    /// Random's internal _preimageCount and tells us the offset our just-inked players landed
+    /// at — which the heat locations must address. Hardcoding 0 would only work for the first
+    /// flip; flip #2's players live at offset 2, and so on.
+    uint256 internal _playerInkOffset;
+
     constructor(address _random) payable {
         random = _random;
     }
@@ -114,20 +143,149 @@ contract CoinFlip is ConsumerReceiver {
         return 0;
     }
 
+    /// @notice Enter and, if this completes a pair, ink the two players and heat them with the
+    /// supplied validator preimage locations, registering this contract as the request owner so
+    /// core Random calls back onCast when the seed finalizes. `template` is the price-0 section
+    /// both player preimages share (its provider/offset/index fields are advisory — the contract
+    /// inks at provider=address(this) and computes its own offset). `validatorLocations` are free
+    /// entropy preimages from the always-on pool, supplied off-chain in this version.
+    /// @param side HEADS (0) or TAILS (1)
+    /// @param preimage the hash of the player's secret, or WALK_AWAY_PREIMAGE for a walk-away
+    function enterAndMatch(
+        uint8 side,
+        bytes32 preimage,
+        PreimageLocation.Info calldata template,
+        PreimageLocation.Info[] calldata validatorLocations
+    ) external payable returns (uint256 id) {
+        if (side > TAILS) revert WrongSide();
+        if (msg.value == 0) revert ZeroStake();
+        id = ++nextEntrant;
+        entries[id] = Entry({
+            player: msg.sender,
+            side: side,
+            stake: msg.value,
+            preimage: preimage,
+            enteredAtBlock: block.number,
+            active: true
+        });
+        emit Entered(id, msg.sender, side, msg.value);
+        uint8 opposite = side == HEADS ? TAILS : HEADS;
+        uint256 matchedId = _popQueued(msg.value, opposite);
+        if (matchedId == 0) {
+            _queue[msg.value][side].push(id);
+            return id;
+        }
+        _pairAndHeat(matchedId, id, msg.value, template, validatorLocations);
+        return id;
+    }
+
     function _pair(uint256 aId, uint256 bId, uint256 stake) internal {
+        (Entry storage heads, Entry storage tails) = _consumePair(aId, bId);
+        _recordFlip(heads, tails, stake, bytes32(0));
+    }
+
+    /// @notice The randomness-driving pairing path. Inks both players' preimages in one batch
+    /// at this contract's price-0 section, then heats all (2 players + N validators) with this
+    /// contract as the request owner so Random will call onCast when the seed finalizes.
+    function _pairAndHeat(
+        uint256 aId,
+        uint256 bId,
+        uint256 stake,
+        PreimageLocation.Info calldata template,
+        PreimageLocation.Info[] calldata validatorLocations
+    ) internal {
+        (Entry storage heads, Entry storage tails) = _consumePair(aId, bId);
+
+        // The pointer our two players share. provider is forced to this contract; price is 0 so
+        // ink takes zero value; offset is whatever Random has already counted for us. callAtChange /
+        // durationIsTimestamp / duration / token come from the template and define the pointer's
+        // encoded-token slot — the heat locations must reuse them to address this same pointer.
+        uint256 offset = _playerInkOffset;
+        PreimageLocation.Info memory playerInfo = _playerLocation({offset: offset, index: 0, template: template});
+        IRandomInkHeat(random).ink(playerInfo, abi.encodePacked(heads.preimage, tails.preimage));
+
+        // Build the heat selection: the two player locations (same pointer, index 0 and 1) followed
+        // by the validator locations. Order is load-bearing — cast (Task 5) must replay it exactly.
+        // NOTE: each player location is a FRESH struct literal. Copying `playerInfo` into a new
+        // memory variable and mutating `.index` would alias the original (memory structs assign by
+        // reference in Solidity), corrupting every location that shares the reference.
+        uint256 validatorCount = validatorLocations.length;
+        uint256 required = 2 + validatorCount;
+        PreimageLocation.Info[] memory locations = new PreimageLocation.Info[](required);
+        locations[0] = _playerLocation({offset: offset, index: 0, template: template});
+        locations[1] = _playerLocation({offset: offset, index: 1, template: template});
+        for (uint256 i = 0; i < validatorCount; ++i) {
+            locations[2 + i] = validatorLocations[i];
+        }
+
+        // settings names the request OWNER (this contract) and turns on the onCast callback.
+        PreimageLocation.Info memory settings = PreimageLocation.Info({
+            provider: address(this),
+            callAtChange: true,
+            durationIsTimestamp: template.durationIsTimestamp,
+            duration: template.duration,
+            token: template.token,
+            price: 0,
+            offset: 0,
+            index: 0
+        });
+        bytes32 key = IRandomInkHeat(random).heat(required, settings, locations, false);
+
+        // Players consumed two preimages from our pointer; advance so the next flip inks past them.
+        _playerInkOffset = offset + 2;
+
+        bytes32 flipId = _recordFlip(heads, tails, stake, key);
+        flipByKey[key] = flipId;
+    }
+
+    /// @notice Build a fresh player preimage location. The two player preimages share ONE pointer
+    /// at (provider=this, token, price=0, offset); `index` 0 is heads and 1 is tails. The
+    /// token-defining fields come from `template` and MUST match the values used to ink the pointer,
+    /// otherwise the encoded-token key changes and Random cannot find the pointer. Returning a new
+    /// struct each call avoids the memory-aliasing trap (memory structs assign by reference).
+    function _playerLocation(uint256 offset, uint256 index, PreimageLocation.Info calldata template)
+        internal
+        view
+        returns (PreimageLocation.Info memory)
+    {
+        return PreimageLocation.Info({
+            provider: address(this),
+            callAtChange: template.callAtChange,
+            durationIsTimestamp: template.durationIsTimestamp,
+            duration: template.duration,
+            token: template.token,
+            price: 0,
+            offset: offset,
+            index: index
+        });
+    }
+
+    /// @notice Deactivate the two matched entries and resolve which is heads / tails.
+    function _consumePair(uint256 aId, uint256 bId)
+        internal
+        returns (Entry storage heads, Entry storage tails)
+    {
         Entry storage a = entries[aId];
         Entry storage b = entries[bId];
         a.active = false;
         b.active = false;
-        (Entry storage heads, Entry storage tails) = a.side == HEADS ? (a, b) : (b, a);
-        bytes32 flipId = keccak256(abi.encode(address(this), ++_flipNonce, heads.player, tails.player));
+        return a.side == HEADS ? (a, b) : (b, a);
+    }
+
+    /// @notice Persist a paired flip and emit Paired. `key` is bytes32(0) for the queue-only
+    /// path (enter) and the Random request key for the randomness-driving path (enterAndMatch).
+    function _recordFlip(Entry storage heads, Entry storage tails, uint256 stake, bytes32 key)
+        internal
+        returns (bytes32 flipId)
+    {
+        flipId = keccak256(abi.encode(address(this), ++_flipNonce, heads.player, tails.player));
         flips[flipId] = Flip({
             heads: heads.player,
             tails: tails.player,
             stake: stake,
             preimageHeads: heads.preimage,
             preimageTails: tails.preimage,
-            key: bytes32(0),
+            key: key,
             pairedAtBlock: block.number,
             status: Status.Pending
         });

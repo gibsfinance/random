@@ -66,4 +66,25 @@ describe('CoinFlip', () => {
       expect((await ctx.coinFlip.getEvents.Paired()).length).to.equal(0)
     })
   })
+
+  describe('pairing drives randomness', () => {
+    it('inks the players and heats validators, recording a key', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const pool = await testUtils.inkValidatorPool(ctx, 3)
+      const [a, b] = ctx.signers
+      const stake = viem.parseEther('1')
+      // template carries the shared price-0 section; provider/offset/index are advisory — the
+      // contract forces provider=address(this) and computes its own offset. The token-defining
+      // fields (callAtChange/durationIsTimestamp/duration/token) match the validator pool so the
+      // combined heat is well-formed.
+      const template = { ...pool.section, provider: ctx.coinFlip.address, price: 0n, offset: 0n, index: 0n }
+      // first entrant has no opposite-side match yet -> queues, no heat
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch(
+        [0, viem.keccak256(viem.toHex('a')), template, []], { value: stake, account: a.account }))
+      // second entrant completes the pair -> inks both players and heats with the validator pool
+      await expectations.emit(ctx,
+        ctx.coinFlip.write.enterAndMatch([1, viem.keccak256(viem.toHex('b')), template, pool.locations], { value: stake, account: b.account }),
+        ctx.random, 'Start')
+    })
+  })
 })
