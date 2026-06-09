@@ -23,3 +23,6 @@ artifacts
 
 packages/contracts/ignition/deployments/*/build-info/
 packages/contracts/ignition/deployments/*/journal.jsonl
+
+# Local deploy-address cache written by scripts/duel-943.ts
+packages/contracts/scripts/.coinflip-943.json
