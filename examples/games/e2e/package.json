@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "duel": "tsx scripts/duel.ts",
     "raffle": "tsx scripts/raffle.ts",
-    "gate": "tsx scripts/parity-gate.ts"
+    "gate": "tsx scripts/parity-gate.ts",
+    "ink-pools": "tsx scripts/ink-pools.ts",
+    "cast-watcher": "tsx scripts/cast-watcher.ts"
   },
   "dependencies": {
     "@gibs/games-core": "workspace:*",
@@ -17,5 +19,10 @@
     "@gibs/random": "workspace:*",
     "viem": "^2.25.0"
   },
-  "devDependencies": { "@types/node": "^22.10.0", "tsx": "^4.19.3", "typescript": "~5.8.3", "vitest": "^2.1.0" }
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.3",
+    "typescript": "~5.8.3",
+    "vitest": "^2.1.0"
+  }
 }
