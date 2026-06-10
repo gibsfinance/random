@@ -32,3 +32,6 @@ packages/contracts/scripts/.coinflip-943.json
 /lib/
 packages/contracts/forge-out/
 packages/contracts/forge-cache/
+
+# games 943 runner address cache
+examples/games/e2e/scripts/.games-943.json

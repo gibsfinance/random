@@ -55,21 +55,33 @@ seed; if even one is honest, they cannot.
 
 ## The live PulseChain testnet version four run (manual gate)
 
-The 943 run is a deliberate manual gate, not part of continuous integration. The procedure, for an
-operator holding the funded mnemonic:
+The 943 run is a deliberate manual gate, not part of continuous integration, but the whole
+procedure is automated by `e2e/scripts/run-943.ts`. An operator holding the funded mnemonic runs,
+from `examples/games/e2e`:
 
-1. Read the mnemonic without echoing it: `MNEMONIC="$(op read 'op://gibs/randomness/recovery phrase')"`
-2. Core Random is already live at `0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217` (this address is
-   pinned in `@gibs/games-core`'s chain registry). Deploy `Raffle` and `CoinFlip` against it,
-   allowlist the funded validator accounts on each game, and ink one price-zero preimage per
-   validator.
-3. Set `CHAIN=943` and run one coin-flip duel and one raffle round end to end. The cast must land
-   inside the twelve-block heat window, so override the remote procedure call endpoint to the
-   valve.city one (`RPC_943`) for reliability inside that window. See the header of
-   `packages/contracts/scripts/duel-943.ts` for the funding amounts and the gas-cap pattern — that
-   script remains the reference harness for 943.
-4. Confirm the on-chain winner equals the off-chain `settle` output, then record the deployed
-   addresses and the run output below under "943 run log".
+```bash
+MNEMONIC="$(op read 'op://gibs/randomness/recovery phrase')" \
+  RPC_943=<the valve.city endpoint> \
+  pnpm run-943
+```
+
+The script deploys `CoinFlip` and `Raffle` against the live core Random at
+`0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217` (pinned in `@gibs/games-core`'s chain registry) and
+caches the addresses in `scripts/.games-943.json` so a re-run reuses them; allowlists three
+mnemonic-derived validators and inks two price-zero preimages per validator (one for each game —
+a preimage is one-shot); funds the player wallets from account zero with explicit gas caps (the
+PulseChain call-prevalidation quirk); runs one coin-flip duel and one full raffle round, casting
+inside the twelve-block heat window; asserts at every settlement that the off-chain `settle`
+names the on-chain winner; waits out the hundred-block claim window and finalises the raffle
+payout; and appends the run record below under "943 run log".
+
+Useful switches: `DRY_RUN=true` simulates the deploys and an ink without broadcasting anything;
+`SKIP_FINALISE=true` stops after the parity assertions instead of waiting roughly seventeen
+minutes for the claim window (anyone may call `finalise` later); `COINFLIP=0x…`/`RAFFLE=0x…`
+reuse known deployments; `EXPECTED_PROVIDER` guards against running with the wrong mnemonic.
+`CHAIN=local` runs the identical code path against anvil as a smoke test (mining instead of
+waiting, no run-log append). The original `packages/contracts/scripts/duel-943.ts` remains the
+historical reference for the funding and gas-cap patterns.
 
 ## 943 run log
 

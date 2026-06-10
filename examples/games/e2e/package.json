@@ -7,7 +7,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "duel": "tsx scripts/duel.ts",
-    "raffle": "tsx scripts/raffle.ts"
+    "raffle": "tsx scripts/raffle.ts",
+    "run-943": "tsx scripts/run-943.ts"
   },
   "dependencies": {
     "@gibs/games-core": "workspace:*",
