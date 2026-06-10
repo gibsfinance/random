@@ -53,36 +53,42 @@ itself — can substitute entropy sources after entry. What remains is the hones
 the subset the players accepted: if every validator in the subset colludes, they can grind the
 seed; if even one is honest, they cannot.
 
-## The live PulseChain testnet version four run (manual gate)
+## The live run (the parity gate)
 
-The 943 run is a deliberate manual gate, not part of continuous integration, but the whole
-procedure is automated by `e2e/scripts/run-943.ts`. An operator holding the funded mnemonic runs,
-from `examples/games/e2e`:
+The live run is a deliberate manual gate, not part of continuous integration, but the whole
+procedure is automated by `e2e/scripts/parity-gate.ts`. It is chain-agnostic — `CHAIN` takes the
+numeric chain identifier (default 943; `local` is accepted as an alias for 31337). An operator
+holding the funded mnemonic runs, from `examples/games/e2e`:
 
 ```bash
+# PulseChain testnet version four (the default chain)
 MNEMONIC="$(op read 'op://gibs/randomness/recovery phrase')" \
-  RPC_943=<the valve.city endpoint> \
-  pnpm run-943
+  RPC=<the valve.city endpoint> \
+  pnpm gate
+
+# any other chain: supply the endpoint, the core Random address, and the expected account
+CHAIN=<id> RPC=<url> RANDOM_ADDRESS=0x… EXPECTED_PROVIDER=0x… MNEMONIC=… pnpm gate
 ```
 
-The script deploys `CoinFlip` and `Raffle` against the live core Random at
-`0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217` (pinned in `@gibs/games-core`'s chain registry) and
-caches the addresses in `scripts/.games-943.json` so a re-run reuses them; allowlists three
-mnemonic-derived validators and inks two price-zero preimages per validator (one for each game —
-a preimage is one-shot); funds the player wallets from account zero with explicit gas caps (the
-PulseChain call-prevalidation quirk); runs one coin-flip duel and one full raffle round, casting
-inside the twelve-block heat window; asserts at every settlement that the off-chain `settle`
-names the on-chain winner; waits out the hundred-block claim window and finalises the raffle
-payout; and appends the run record below under "943 run log".
+The script deploys `CoinFlip` and `Raffle` against core Random (943's live deployment at
+`0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217` is pinned in `@gibs/games-core`'s chain registry;
+elsewhere pass `RANDOM_ADDRESS`) and caches the addresses per chain in
+`scripts/.gate-deployments.json` so a re-run reuses them; allowlists three mnemonic-derived
+validators and inks two price-zero preimages per validator (one for each game — a preimage is
+one-shot); funds the player wallets from account zero with explicit gas caps (the PulseChain
+call-prevalidation quirk, harmless elsewhere); runs one coin-flip duel and one full raffle round,
+casting inside the twelve-block heat window; asserts at every settlement that the off-chain
+`settle` names the on-chain winner; waits out the hundred-block claim window and finalises the
+raffle payout; and appends the run record below under "Run log".
 
 Useful switches: `DRY_RUN=true` simulates the deploys and an ink without broadcasting anything;
-`SKIP_FINALISE=true` stops after the parity assertions instead of waiting roughly seventeen
-minutes for the claim window (anyone may call `finalise` later); `COINFLIP=0x…`/`RAFFLE=0x…`
-reuse known deployments; `EXPECTED_PROVIDER` guards against running with the wrong mnemonic.
-`CHAIN=local` runs the identical code path against anvil as a smoke test (mining instead of
-waiting, no run-log append). The original `packages/contracts/scripts/duel-943.ts` remains the
-historical reference for the funding and gas-cap patterns.
+`SKIP_FINALISE=true` stops after the parity assertions instead of waiting out the claim window
+(anyone may call `finalise` later); `COINFLIP=0x…`/`RAFFLE=0x…` reuse known deployments;
+`EXPECTED_PROVIDER` guards against running with the wrong mnemonic (defaults to the known funded
+account on 943). `CHAIN=local` runs the identical code path against anvil as a smoke test (mining
+instead of waiting, no run-log append). The original `packages/contracts/scripts/duel-943.ts`
+remains the historical reference for the funding and gas-cap patterns.
 
-## 943 run log
+## Run log
 
-_No 943 run recorded yet. Operators: append deployed addresses and parity output here._
+_No live run recorded yet. The parity gate appends deployed addresses and parity output here._

@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit",
     "duel": "tsx scripts/duel.ts",
     "raffle": "tsx scripts/raffle.ts",
-    "run-943": "tsx scripts/run-943.ts"
+    "gate": "tsx scripts/parity-gate.ts"
   },
   "dependencies": {
     "@gibs/games-core": "workspace:*",

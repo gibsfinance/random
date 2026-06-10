@@ -1,39 +1,45 @@
 /**
- * The 943 gate, automated: deploy CoinFlip + Raffle against live core Random on PulseChain
- * testnet v4, allowlist mnemonic-derived validators, ink one price-0 preimage per validator,
- * fund the player wallets, then run one coin-flip duel and one full raffle round end to end,
- * asserting at each settlement that the off-chain `settle` names the on-chain winner. On
- * success it appends a run-log entry to examples/games/README.md.
+ * The games platform parity gate, automated and chain-agnostic: deploy CoinFlip + Raffle
+ * against core Random on the target chain, allowlist mnemonic-derived validators, ink two
+ * price-0 preimages per validator, fund the player wallets, then run one coin-flip duel and
+ * one full raffle round end to end, asserting at every settlement that the off-chain `settle`
+ * names the on-chain winner. On success (any non-development chain) it appends a run-log
+ * entry to examples/games/README.md.
  *
  * Carries over the duel-943.ts conventions: every state-changing call is simulated first,
  * player calls carry explicit gas caps (PulseChain prevalidates eth_call balance against the
- * BLOCK gas limit when no gas is given), players are further address indexes of the same
- * funded mnemonic topped up from account 0, and deployed addresses are cached so a re-run
- * reuses the contracts.
+ * BLOCK gas limit when no gas is given — harmless elsewhere), players are further address
+ * indexes of the same funded mnemonic topped up from account 0, and deployed addresses are
+ * cached per chain so a re-run reuses the contracts.
  *
  * Environment variables:
- *   CHAIN        '943' (default) or 'local' — local is the smoke-test mode: same code path
- *                against anvil, deploying a fresh Random first and mining instead of waiting.
- *   MNEMONIC     funded recovery phrase (943; read via `op read`, never logged). Local mode
+ *   CHAIN        the numeric chain id to run against (default 943; 'local' is accepted as an
+ *                alias for 31337). 943 and 31337 are known to the core registry; any other
+ *                chain id additionally needs RPC and RANDOM_ADDRESS.
+ *   RPC          JSON-RPC endpoint (default: the core registry's endpoint for known chains;
+ *                required for unknown chains). RPC_943 is honored as a fallback on 943 —
+ *                override to the valve.city endpoint there for reliability inside the
+ *                12-block heat window.
+ *   MNEMONIC     funded recovery phrase (read via `op read`, never logged). Chain 31337
  *                defaults to the standard anvil test mnemonic.
- *   RPC_943      JSON-RPC endpoint for 943 (default: g4mm4 public testnet; override to the
- *                valve.city endpoint for reliability inside the 12-block heat window).
- *   STAKE        stake per player in coins (default '0.1' duel, also the raffle ticket price).
+ *   STAKE        stake per player in coins (default '0.1'; also the raffle ticket price).
  *   VALIDATORS   validator count (default 3 == the contract MIN_SUBSET).
  *   COINFLIP     reuse an already-deployed CoinFlip instead of deploying.
  *   RAFFLE       reuse an already-deployed Raffle instead of deploying.
- *   RANDOM_ADDRESS  override the core Random address (required if CHAIN=local reuses a chain;
- *                NOT named RANDOM because shells special-case that variable).
- *   EXPECTED_PROVIDER  the address account 0 must derive to on 943 (guards against a wrong
- *                mnemonic; set empty to skip).
- *   DRY_RUN      'true' => simulate the deploys and the first ink, broadcast nothing.
+ *   RANDOM_ADDRESS  override the core Random address (NOT named RANDOM because shells
+ *                special-case that variable). On 31337 a fresh Random is deployed when unset.
+ *   EXPECTED_PROVIDER  the address account 0 must derive to (guards against a wrong
+ *                mnemonic). Defaults to the known funded account on 943 only; set it
+ *                explicitly on other live chains, or empty to skip.
+ *   DRY_RUN      'true' => simulate the deploys and an ink, broadcast nothing.
  *   SKIP_FINALISE 'true' => stop after the raffle parity assert (reveals), printing how to
  *                finalise later, instead of waiting out the 100-block claim window.
  *   NO_RUN_LOG   'true' => do not append to the README run log.
  *
  * Run from examples/games/e2e:
- *   MNEMONIC="$(op read 'op://gibs/randomness/recovery phrase')" pnpm run-943
- * Smoke test (anvil running): CHAIN=local pnpm run-943
+ *   MNEMONIC="$(op read 'op://gibs/randomness/recovery phrase')" pnpm gate          # 943
+ *   CHAIN=local pnpm gate                                                          # anvil
+ *   CHAIN=<id> RPC=<url> RANDOM_ADDRESS=0x… MNEMONIC=… EXPECTED_PROVIDER=0x… pnpm gate
  */
 import * as viem from 'viem'
 import { mnemonicToAccount } from 'viem/accounts'
@@ -41,7 +47,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
 import {
-  chains,
+  chains as knownChains,
   defaultRpc,
   randomAddress as knownRandom,
   makeSecret,
@@ -52,7 +58,6 @@ import {
   raffleBytecode,
   randomAbi,
   raffleDraw,
-  type GamesChainId,
   type Info,
 } from '@gibs/games-core'
 import { coinflip } from '@gibs/coinflip'
@@ -60,19 +65,21 @@ import { raffle } from '@gibs/raffle'
 import RandomArtifact from '@gibs/random/artifacts/contracts/Random.sol/Random.json'
 
 const env = process.env
-const CHAIN: GamesChainId = env.CHAIN === 'local' ? 31337 : 943
-const IS_LOCAL = CHAIN === 31337
-const RPC = (IS_LOCAL ? env.RPC : env.RPC_943) || defaultRpc[CHAIN]
+const CHAIN_ID = env.CHAIN === 'local' || env.CHAIN === undefined ? (env.CHAIN === 'local' ? 31337 : 943) : Number(env.CHAIN)
+if (!Number.isInteger(CHAIN_ID) || CHAIN_ID <= 0) throw new Error(`CHAIN must be a positive chain id, got '${env.CHAIN}'`)
+/** 31337 is the development chain: anvil mining, test mnemonic, fresh Random, no cache/log. */
+const IS_DEV = CHAIN_ID === 31337
 const STAKE = viem.parseEther(env.STAKE || '0.1')
 const VALIDATOR_COUNT = env.VALIDATORS ? Number(env.VALIDATORS) : 3
 const DRY_RUN = env.DRY_RUN === 'true'
 const SKIP_FINALISE = env.SKIP_FINALISE === 'true'
+const KNOWN_PROVIDER_943 = '0xAF2b2118376b51eEcB58327526bc082aED3e4225'
 const EXPECTED_PROVIDER =
-  env.EXPECTED_PROVIDER === undefined ? '0xAF2b2118376b51eEcB58327526bc082aED3e4225' : env.EXPECTED_PROVIDER
+  env.EXPECTED_PROVIDER !== undefined ? env.EXPECTED_PROVIDER : CHAIN_ID === 943 ? KNOWN_PROVIDER_943 : ''
 const TEST_MNEMONIC = 'test test test test test test test test test test test junk'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
-const ADDRESS_CACHE = path.join(scriptDir, '.games-943.json')
+const ADDRESS_CACHE = path.join(scriptDir, '.gate-deployments.json')
 const README = path.join(scriptDir, '..', '..', 'README.md')
 
 // Explicit gas caps for player calls (PulseChain eth_call prevalidation quirk — see header).
@@ -84,38 +91,57 @@ const PLAYER_GAS_BUDGET = 6_000_000n // funding headroom over the largest cap
 
 const RAFFLE_PERIOD = 2n // blocks a raffle round must fill before arming
 
+/** Resolve the chain object and RPC endpoint: core registry first, env-built fallback. */
+const resolveChain = (): { chain: viem.Chain; rpc: string } => {
+  const known = (knownChains as Record<number, viem.Chain>)[CHAIN_ID]
+  const registryRpc = (defaultRpc as Record<number, string>)[CHAIN_ID]
+  const rpc = env.RPC || (CHAIN_ID === 943 ? env.RPC_943 : undefined) || registryRpc
+  if (!rpc) throw new Error(`chain ${CHAIN_ID} is not in the core registry; supply RPC`)
+  if (known) return { chain: known, rpc }
+  return {
+    chain: {
+      id: CHAIN_ID,
+      name: `chain-${CHAIN_ID}`,
+      nativeCurrency: { name: 'Coin', symbol: 'coins', decimals: 18 },
+      rpcUrls: { default: { http: [rpc] } },
+    },
+    rpc,
+  }
+}
+
 // Fresh secrets every run: the seed is a deterministic function of the revealed secrets, so
 // reuse would reproduce the same winner. Crypto-strong per-run salt models a real validator.
 const RUN_SALT = viem.bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
 const randomBigint = (maxExclusive: bigint): bigint =>
   BigInt(viem.hexToNumber(viem.bytesToHex(crypto.getRandomValues(new Uint8Array(4))))) % maxExclusive
 
-const coins = (value: bigint): string => `${viem.formatEther(value)} ${IS_LOCAL ? 'ETH' : 'tPLS'}`
-
-type Cache = { coinFlip?: viem.Hex; raffle?: viem.Hex }
+type Cache = Record<string, { coinFlip?: viem.Hex; raffle?: viem.Hex }>
 const loadCache = (): Cache => {
-  if (IS_LOCAL) return {} // anvil is ephemeral; never reuse local addresses
   if (!fs.existsSync(ADDRESS_CACHE)) return {}
   return JSON.parse(fs.readFileSync(ADDRESS_CACHE, 'utf8')) as Cache
 }
-const saveCache = (cache: Cache) => {
-  if (!IS_LOCAL) fs.writeFileSync(ADDRESS_CACHE, JSON.stringify(cache, null, 2))
+const saveCache = (entry: { coinFlip: viem.Hex; raffle: viem.Hex }) => {
+  if (IS_DEV) return // anvil is ephemeral; never cache development addresses
+  const cache = loadCache()
+  cache[String(CHAIN_ID)] = entry
+  fs.writeFileSync(ADDRESS_CACHE, JSON.stringify(cache, null, 2))
 }
 
 const main = async () => {
-  const mnemonic = env.MNEMONIC || (IS_LOCAL ? TEST_MNEMONIC : undefined)
-  if (!mnemonic) throw new Error('MNEMONIC is required for 943 (read it in via `op read`, it is never logged)')
+  const mnemonic = env.MNEMONIC || (IS_DEV ? TEST_MNEMONIC : undefined)
+  if (!mnemonic) throw new Error('MNEMONIC is required on a live chain (read it in via `op read`, it is never logged)')
 
   const account = mnemonicToAccount(mnemonic) // index 0: deployer + funder + caster
-  if (!IS_LOCAL && EXPECTED_PROVIDER && !viem.isAddressEqual(account.address, EXPECTED_PROVIDER as viem.Hex)) {
+  if (!IS_DEV && EXPECTED_PROVIDER && !viem.isAddressEqual(account.address, EXPECTED_PROVIDER as viem.Hex)) {
     throw new Error(
       `derived ${account.address} does not match expected provider ${EXPECTED_PROVIDER}; ` +
         'wrong mnemonic or derivation. Aborting before any transaction.',
     )
   }
 
-  const chain = chains[CHAIN]
-  const transport = viem.http(RPC)
+  const { chain, rpc } = resolveChain()
+  const coins = (value: bigint): string => `${viem.formatEther(value)} ${chain.nativeCurrency.symbol}`
+  const transport = viem.http(rpc)
   const publicClient = viem.createPublicClient({ chain, transport })
   const wallet = viem.createWalletClient({ account, chain, transport })
   const walletFor = (acct: viem.Account) => viem.createWalletClient({ account: acct, chain, transport })
@@ -154,9 +180,9 @@ const main = async () => {
     return receipt
   }
 
-  /** Advance past a target block: mine on anvil, poll on a live chain. */
+  /** Advance past a target block: mine on the development chain, poll on a live one. */
   const advancePastBlock = async (target: bigint) => {
-    if (IS_LOCAL) {
+    if (IS_DEV) {
       const now = await publicClient.getBlockNumber()
       if (now <= target) {
         await publicClient.request({
@@ -169,7 +195,7 @@ const main = async () => {
     for (;;) {
       const now = await publicClient.getBlockNumber()
       if (now > target) return
-      console.log(`  waiting for block > ${target} (now ${now}, ~${(target - now + 1n) * 10n}s)`)
+      console.log(`  waiting for block > ${target} (now ${now}, ${target - now + 1n} to go)`)
       await new Promise((resolve) => setTimeout(resolve, 30_000))
     }
   }
@@ -186,8 +212,8 @@ const main = async () => {
   const subset = validatorAccounts.map((v) => v.address)
 
   const balance = await publicClient.getBalance({ address: account.address })
-  console.log(`--- games platform run (chain ${CHAIN}) ---`)
-  console.log(`rpc             : ${RPC}`)
+  console.log(`--- games platform parity gate (chain ${CHAIN_ID}) ---`)
+  console.log(`rpc             : ${rpc}`)
   console.log(`account 0       : ${account.address} (deployer + funder + caster)`)
   console.log(`balance (acct0) : ${coins(balance)}`)
   console.log(`stake           : ${coins(STAKE)} per player; fund/player ${coins(fundPerPlayer)}`)
@@ -195,10 +221,10 @@ const main = async () => {
   console.log('')
 
   // --- Resolve core Random ---------------------------------------------------------------
-  let random = (env.RANDOM_ADDRESS as viem.Hex | undefined) ?? knownRandom[CHAIN]
+  let random = (env.RANDOM_ADDRESS as viem.Hex | undefined) ?? (knownRandom as Record<number, viem.Hex | undefined>)[CHAIN_ID]
   if (!random) {
-    if (!IS_LOCAL) throw new Error('no Random address for this chain')
-    console.log('[deploy] local smoke mode: deploying a fresh core Random')
+    if (!IS_DEV) throw new Error(`no core Random address for chain ${CHAIN_ID}; supply RANDOM_ADDRESS`)
+    console.log('[deploy] development chain: deploying a fresh core Random')
     const hash = await wallet.deployContract({
       abi: RandomArtifact.abi as viem.Abi,
       bytecode: RandomArtifact.bytecode as viem.Hex,
@@ -251,11 +277,11 @@ const main = async () => {
   }
 
   // --- Deploy or reuse the games -----------------------------------------------------------
-  const cache = loadCache()
-  const deployGame = async (name: string, cached: viem.Hex | undefined, abi: viem.Abi, bytecode: viem.Hex) => {
-    if (cached) {
-      console.log(`[deploy] reusing ${name} at ${cached}`)
-      return cached
+  const cached = IS_DEV ? {} : loadCache()[String(CHAIN_ID)] ?? {}
+  const deployGame = async (name: string, reuse: viem.Hex | undefined, abi: viem.Abi, bytecode: viem.Hex) => {
+    if (reuse) {
+      console.log(`[deploy] reusing ${name} at ${reuse}`)
+      return reuse
     }
     console.log(`[deploy] deploying ${name}(random)`)
     const hash = await wallet.deployContract({ abi, bytecode, args: [random], ...fees })
@@ -266,13 +292,13 @@ const main = async () => {
   }
   const coinFlipAddr = await deployGame(
     'CoinFlip',
-    (env.COINFLIP as viem.Hex | undefined) ?? cache.coinFlip,
+    (env.COINFLIP as viem.Hex | undefined) ?? cached.coinFlip,
     coinFlipAbi,
     coinFlipBytecode,
   )
   const raffleAddr = await deployGame(
     'Raffle',
-    (env.RAFFLE as viem.Hex | undefined) ?? cache.raffle,
+    (env.RAFFLE as viem.Hex | undefined) ?? cached.raffle,
     raffleAbi,
     raffleBytecode,
   )
@@ -514,7 +540,7 @@ const main = async () => {
 
   // --- Run log ------------------------------------------------------------------------------
   const logEntry = [
-    `### Run ${new Date().toISOString().slice(0, 10)} (chain ${CHAIN})`,
+    `### Run ${new Date().toISOString().slice(0, 10)} (chain ${CHAIN_ID})`,
     '',
     `- Random: \`${random}\``,
     `- CoinFlip: \`${coinFlipAddr}\``,
@@ -525,10 +551,10 @@ const main = async () => {
   ].join('\n')
   console.log('--- run log entry ---')
   console.log(logEntry)
-  if (!IS_LOCAL && env.NO_RUN_LOG !== 'true') {
+  if (!IS_DEV && env.NO_RUN_LOG !== 'true') {
     const readme = fs.readFileSync(README, 'utf8')
-    const marker = '## 943 run log'
-    const placeholder = /\n_No 943 run recorded yet[^\n]*\n/
+    const marker = '## Run log'
+    const placeholder = /\n_No live run recorded yet[^\n]*\n/
     const updated = readme.includes(marker)
       ? readme
           .replace(placeholder, '\n')

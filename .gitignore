@@ -33,5 +33,5 @@ packages/contracts/scripts/.coinflip-943.json
 packages/contracts/forge-out/
 packages/contracts/forge-cache/
 
-# games 943 runner address cache
-examples/games/e2e/scripts/.games-943.json
+# games parity-gate per-chain deployment cache
+examples/games/e2e/scripts/.gate-deployments.json
