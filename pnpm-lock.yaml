@@ -46,6 +46,37 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.20)
 
+  examples/games/e2e:
+    dependencies:
+      '@gibs/coinflip':
+        specifier: workspace:*
+        version: link:../coinflip
+      '@gibs/games-core':
+        specifier: workspace:*
+        version: link:../core
+      '@gibs/raffle':
+        specifier: workspace:*
+        version: link:../raffle
+      '@gibs/random':
+        specifier: workspace:*
+        version: link:../../../packages/contracts
+      viem:
+        specifier: ^2.25.0
+        version: 2.52.2(typescript@5.8.3)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.20
+      tsx:
+        specifier: ^4.19.3
+        version: 4.22.4
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.20)
+
   examples/games/raffle:
     dependencies:
       '@gibs/games-core':
