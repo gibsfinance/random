@@ -210,6 +210,43 @@ contract Raffle is GameBase {
         emit Drawn(roundId, round.draw, round.claimDeadline);
     }
 
+    /// @notice Reveal a committed guess during the claim window. Verifies the commitment against
+    /// (guess, salt, msg.sender) — the address binding is what stops a front-runner replaying a
+    /// revealed guess from the mempool. Overwrites the provisional winner if strictly closer, ties
+    /// broken by earliest commit block then ticket id (so the winner is independent of reveal order).
+    function reveal(uint256 ticketId, uint256 guess, bytes32 salt) external {
+        Ticket storage ticket = tickets[ticketId];
+        Round storage round = rounds[ticket.roundId];
+        if (round.status != Status.Claiming) revert WrongRoundState();
+        if (block.number > round.claimDeadline) revert WindowClosed();
+        if (!ticket.active) revert TicketInactive();
+        if (ticket.revealed) revert AlreadyRevealed();
+        if (guess < 1 || guess > RANGE) revert GuessOutOfRange();
+        if (keccak256(abi.encode(guess, salt, msg.sender)) != ticket.commitment) revert BadReveal();
+
+        ticket.revealed = true;
+        uint256 distance = guess > round.draw ? guess - round.draw : round.draw - guess;
+
+        bool leading;
+        if (round.bestTicket == 0) {
+            leading = true;
+        } else if (distance < round.bestDistance) {
+            leading = true;
+        } else if (distance == round.bestDistance) {
+            Ticket storage best = tickets[round.bestTicket];
+            if (ticket.committedAtBlock < best.committedAtBlock) {
+                leading = true;
+            } else if (ticket.committedAtBlock == best.committedAtBlock && ticketId < round.bestTicket) {
+                leading = true;
+            }
+        }
+        if (leading) {
+            round.bestTicket = ticketId;
+            round.bestDistance = distance;
+        }
+        emit Revealed(ticketId, ticket.roundId, guess, distance, leading);
+    }
+
     /// @notice Pull fallback when the onCast push did not complete though the seed is finalized.
     function recordDraw(bytes32 roundId) external {
         Round storage round = rounds[roundId];

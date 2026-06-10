@@ -14,6 +14,30 @@ describe('Raffle', () => {
   const threshold = 3n
   const period = 5n
 
+  // fill -> arm -> cast; returns the recorded draw. Top-level so reveal/finalise/invariant
+  // suites all share it.
+  const armAndDraw = async (ctx: any) => {
+    const { subset, locations, secrets } = await testUtils.setUpValidators(ctx, ctx.raffle, 3)
+    const players = ctx.signers.slice(1, 4)
+    const salts = players.map((_p: any, i: number) => viem.keccak256(viem.toHex(`salt-${i}`)))
+    const guesses = [10n, 128n, 250n]
+    let firstReceipt: any
+    for (let i = 0; i < 3; i++) {
+      const receipt = await testUtils.confirmTx(ctx, ctx.raffle.write.commit(
+        [stake, threshold, period, subset, commitmentFor(guesses[i], salts[i], players[i].account.address)],
+        { value: stake, account: players[i].account },
+      ))
+      if (i === 0) firstReceipt = receipt
+    }
+    const roundId = (await ctx.raffle.getEvents.RoundOpened({}, { blockHash: firstReceipt.blockHash }))[0].args.roundId as viem.Hex
+    await helpers.mine(6)
+    const armReceipt = await testUtils.confirmTx(ctx, ctx.raffle.write.arm([roundId, locations]))
+    const key = (await ctx.raffle.getEvents.Armed({}, { blockHash: armReceipt.blockHash }))[0].args.key as viem.Hex
+    const castReceipt = await testUtils.confirmTx(ctx, ctx.random.write.cast([key, locations, secrets]))
+    const draw = (await ctx.raffle.getEvents.Drawn({}, { blockHash: castReceipt.blockHash }))[0].args.draw as bigint
+    return { roundId, players, salts, guesses, draw }
+  }
+
   describe('commit and cancel', () => {
     it('opens a round on the first commit and escrows the stake', async () => {
       const ctx = await helpers.loadFixture(testUtils.deploy)
@@ -126,6 +150,48 @@ describe('Raffle', () => {
       expect(draw).to.be.lessThanOrEqual(RANGE)
       // no payout on draw
       expect(await publicClient.getBalance({ address: ctx.raffle.address })).to.equal(potBefore)
+    })
+  })
+
+  describe('reveal and overwrite', () => {
+    it('accepts a valid reveal and rejects a guess that does not match the commitment', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { players, salts, guesses } = await armAndDraw(ctx)
+      // ticket 1 belongs to players[0]; revealing the wrong guess fails the hash
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.reveal([1n, guesses[0] + 1n, salts[0]], { account: players[0].account }),
+        'BadReveal',
+      )
+      await expectations.emit(ctx,
+        ctx.raffle.write.reveal([1n, guesses[0], salts[0]], { account: players[0].account }),
+        ctx.raffle, 'Revealed',
+      )
+    })
+
+    it('rejects a reveal replayed from a different sender (address binding)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { players, salts, guesses } = await armAndDraw(ctx)
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.reveal([1n, guesses[0], salts[0]], { account: players[1].account }),
+        'BadReveal',
+      )
+    })
+
+    it('keeps the closest revealer as the provisional winner regardless of reveal order', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { roundId, players, salts, guesses, draw } = await armAndDraw(ctx)
+      // reveal all three; compute who should lead off-chain
+      for (let i = 0; i < 3; i++) {
+        await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([BigInt(i + 1), guesses[i], salts[i]], { account: players[i].account }))
+      }
+      const distances = guesses.map((g) => (g > draw ? g - draw : draw - g))
+      let bestIdx = 0
+      for (let i = 1; i < 3; i++) if (distances[i] < distances[bestIdx]) bestIdx = i
+      const round = await ctx.raffle.read.rounds([roundId])
+      // bestTicket is field index 12 in the Round struct tuple
+      expect(round[12]).to.equal(BigInt(bestIdx + 1))
     })
   })
 })
