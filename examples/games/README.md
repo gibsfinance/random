@@ -71,9 +71,11 @@ Raffle salt custody: the salt proving a hidden guess lives in the browser's loca
 commit flow shows a backup string immediately, and losing the salt before revealing forfeits
 the stake to the pot. The import field restores a backup on another browser.
 
-To light up PulseChain testnet v4, fill the commented 943 entry in `web/src/config.ts` with the
-addresses from the parity gate's run log below (and keep its `rpc` pointed at the valve fleet
-endpoint rather than the public default).
+PulseChain testnet v4 is LIVE in `web/src/config.ts` (filled from the 2026-06-10 gate run —
+see the run log below and `e2e/scripts/943-deployment.json`). For settlement to happen, a cast
+watcher must be running: `MNEMONIC=… SEEDS0=… pnpm --filter @gibs/games-e2e cast-watcher`
+(secrets re-derive from the seeds0 mnemonic; see `e2e/scripts/seeds0.ts` for the convention,
+`ink-pools.ts` to provision fresh pools when the current ones run dry).
 
 ### Production deployment (games.msgboard.xyz)
 
@@ -126,7 +128,7 @@ override. An operator holding the funded mnemonic runs, from `examples/games/e2e
 
 ```bash
 # PulseChain testnet version four (the default chain)
-MNEMONIC="$(op read 'op://gibs/randomness/recovery phrase')" \
+MNEMONIC="$(op read 'op://valve/randomness/recovery phrase')" \
   RPC=<the valve.city endpoint> \
   pnpm gate
 
@@ -155,4 +157,12 @@ remains the historical reference for the funding and gas-cap patterns.
 
 ## Run log
 
-_No live run recorded yet. The parity gate appends deployed addresses and parity output here._
+### Run 2026-06-10 (chain 943)
+
+- Random: `0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217`
+- CoinFlip: `0x8d3a58d77d22636026066200f8868cd653ec2b2a`
+- Raffle: `0x33f506fafe4f05c8de9a07e1c8a7f73f50f1da36`
+- Duel: seed `0x99c565d15e3724c0fef09dcca5a20cd7adc0dc6acfd28c8260a53f7bde852929`, winner `0x21D9FF00c90BDd06B0F87A186A64BB8713C6AB3B` (tails) — off-chain == on-chain ✓
+- Raffle: draw 73, winning ticket 3 (`0x568333a2F743FbCAdfDE027f2d72a4E43aDa891f`) — off-chain == on-chain ✓; finalised, payout 0.3 v4PLS to 0x568333a2F743FbCAdfDE027f2d72a4E43aDa891f
+
+
