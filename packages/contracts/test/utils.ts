@@ -382,33 +382,3 @@ export const setUpValidators = async (
   }
 }
 
-/**
- * Ink a small pool of validator preimages at a price-0 section under one of the always-on
- * randomness providers, mirroring the off-chain validator pool the CoinFlip contract heats
- * alongside the two player preimages. Returns the section, the per-preimage heat locations
- * (offset 0, index 0..count-1) and the secret batch so a later cast can reveal them.
- */
-export const inkValidatorPool = async (ctx: Context, count = 3) => {
-  const rand = await ctx.hre.viem.getContractAt(contractName.Random, ctx.random.address)
-  const [provider] = ctx.randomnessProviders
-  const section = {
-    ...utils.defaultSection,
-    provider: provider.account!.address,
-    price: 0n,
-    offset: 0n,
-  }
-  const batch = (await utils.createTestPreimages(section, BigInt(count)))[0]!
-  const preimages = batch.map((s) => s.preimage)
-  const locations = batch.map((_s, index) => ({
-    ...section,
-    index: BigInt(index),
-  }))
-  await confirmTx(
-    ctx,
-    rand.write.ink([{ ...section, index: 0n }, viem.concatHex(preimages)], {
-      account: provider.account!,
-      value: 0n,
-    }),
-  )
-  return { section, locations, secrets: batch }
-}

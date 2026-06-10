@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {PreimageLocation} from "../PreimageLocation.sol";
 
 interface ICoinFlipEnter {
-    function enterAndMatch(uint8 side, bytes32 preimage, PreimageLocation.Info[] calldata validatorLocations)
+    function enterAndMatch(uint8 side, address[] calldata validatorSubset, PreimageLocation.Info[] calldata validatorLocations)
         external
         payable
         returns (uint256 id);
@@ -26,10 +26,10 @@ contract RejectableReceiver {
     function enter(
         address coinFlip,
         uint8 side,
-        bytes32 preimage,
+        address[] calldata validatorSubset,
         PreimageLocation.Info[] calldata validatorLocations
     ) external payable returns (uint256) {
-        return ICoinFlipEnter(coinFlip).enterAndMatch{value: msg.value}(side, preimage, validatorLocations);
+        return ICoinFlipEnter(coinFlip).enterAndMatch{value: msg.value}(side, validatorSubset, validatorLocations);
     }
 
     receive() external payable {
