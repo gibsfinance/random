@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as viem from 'viem'
-import { coinflip } from '../src/index'
+import { coinflip, makePresets } from '../src/index'
 
 const params = {
   stake: viem.parseEther('1'),
@@ -67,5 +67,28 @@ describe('coinflip.settle', () => {
   it('settle throws when no entry holds the winning side (corrupt entry set)', () => {
     const onlyTails = [{ player: '0xbbb' as viem.Hex, side: 'tails' as const }]
     expect(() => coinflip.settle(params, onlyTails, viem.padHex('0x02', { size: 32 }))).to.throw('winning side')
+  })
+})
+
+describe('makePresets', () => {
+  const subset = params.validatorSubset
+
+  it('produces the canonical stake ladder bound to the given subset', () => {
+    const presets = makePresets(subset)
+    expect(presets.map((p) => p.params.stake)).to.deep.equal([
+      viem.parseEther('0.1'),
+      viem.parseEther('1'),
+      viem.parseEther('10'),
+    ])
+    for (const p of presets) {
+      expect(p.params.validatorSubset).to.deep.equal(subset)
+      expect(() => coinflip.parseParams(p.params)).to.not.throw()
+      expect(p.label.length).to.be.greaterThan(0)
+    }
+  })
+
+  it('every preset label is distinct (the picker needs unambiguous options)', () => {
+    const labels = makePresets(subset).map((p) => p.label)
+    expect(new Set(labels).size).to.equal(labels.length)
   })
 })

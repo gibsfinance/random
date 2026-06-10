@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as viem from 'viem'
-import { raffle } from '../src/index'
+import { raffle, makePresets } from '../src/index'
 import { raffleDraw } from '@gibs/games-core'
 
 const params = {
@@ -127,5 +127,28 @@ describe('raffle.settle', () => {
       const actual = raffle.settle(params, entries, seed)
       expect(actual?.ticketId ?? null).to.equal(expected?.ticketId ?? null)
     }
+  })
+})
+
+describe('makePresets', () => {
+  it('produces canonical tuples that parseParams accepts, bound to the subset', () => {
+    const presets = makePresets(params.validatorSubset)
+    expect(presets.length).to.be.greaterThan(0)
+    for (const p of presets) {
+      expect(() => raffle.parseParams(p.params)).to.not.throw()
+      expect(p.params.threshold).to.equal(3n)
+      expect(p.params.validatorSubset).to.deep.equal(params.validatorSubset)
+      expect(p.label.length).to.be.greaterThan(0)
+    }
+  })
+
+  it('spans the canonical stake ladder with distinct labels', () => {
+    const presets = makePresets(params.validatorSubset)
+    expect(presets.map((p) => p.params.stake)).to.deep.equal([
+      viem.parseEther('0.1'),
+      viem.parseEther('1'),
+      viem.parseEther('10'),
+    ])
+    expect(new Set(presets.map((p) => p.label)).size).to.equal(presets.length)
   })
 })

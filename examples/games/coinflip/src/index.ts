@@ -1,5 +1,5 @@
 import * as viem from 'viem'
-import { type Game, coinFlipOutcome } from '@gibs/games-core'
+import { type Game, type Preset, coinFlipOutcome } from '@gibs/games-core'
 
 export type CoinFlipParams = { stake: bigint; validatorSubset: viem.Hex[] }
 export type CoinFlipEntry = { player: viem.Hex; side: 'heads' | 'tails' }
@@ -40,3 +40,17 @@ export const coinflip: Game<CoinFlipParams, CoinFlipEntry, CoinFlipOutcome> = {
 
   presets: [],
 }
+
+const STAKE_LADDER = [viem.parseEther('0.1'), viem.parseEther('1'), viem.parseEther('10')] as const
+
+/**
+ * The canonical presets for a chain's recommended validator subset. Stake tuples are game logic
+ * (liquidity concentrates when everyone uses the same ladder — the spec's anti-fragmentation
+ * nudge); the subset is deployment config, so this is a factory rather than a constant. A
+ * recommended list, not a whitelist: binding already constrains the validators.
+ */
+export const makePresets = (validatorSubset: viem.Hex[]): Preset<CoinFlipParams>[] =>
+  STAKE_LADDER.map((stake) => ({
+    label: `${viem.formatEther(stake)} flip`,
+    params: { stake, validatorSubset },
+  }))

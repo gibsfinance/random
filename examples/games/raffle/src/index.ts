@@ -1,5 +1,5 @@
 import * as viem from 'viem'
-import { type Game, raffleDraw } from '@gibs/games-core'
+import { type Game, type Preset, raffleDraw } from '@gibs/games-core'
 
 export type RaffleParams = {
   stake: bigint
@@ -75,3 +75,18 @@ export const raffle: Game<RaffleParams, RaffleEntry, RaffleOutcome | null> = {
 
   presets: [],
 }
+
+const STAKE_LADDER = [viem.parseEther('0.1'), viem.parseEther('1'), viem.parseEther('10')] as const
+const CANONICAL_THRESHOLD = 3n
+const CANONICAL_PERIOD = 30n // blocks a round fills before it may arm — long enough to gather entries
+
+/**
+ * The canonical presets for a chain's recommended validator subset. One threshold/period shape
+ * across a stake ladder so identical tuples land in the same round (the round key is the
+ * parameter tuple — fragmenting the tuple fragments the pot). Subset is deployment config.
+ */
+export const makePresets = (validatorSubset: viem.Hex[]): Preset<RaffleParams>[] =>
+  STAKE_LADDER.map((stake) => ({
+    label: `${viem.formatEther(stake)} raffle (${CANONICAL_THRESHOLD} players)`,
+    params: { stake, threshold: CANONICAL_THRESHOLD, period: CANONICAL_PERIOD, validatorSubset },
+  }))
