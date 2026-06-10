@@ -56,9 +56,12 @@ seed; if even one is honest, they cannot.
 ## The live run (the parity gate)
 
 The live run is a deliberate manual gate, not part of continuous integration, but the whole
-procedure is automated by `e2e/scripts/parity-gate.ts`. It is chain-agnostic — `CHAIN` takes the
-numeric chain identifier (default 943; `local` is accepted as an alias for 31337). An operator
-holding the funded mnemonic runs, from `examples/games/e2e`:
+procedure is automated by `e2e/scripts/parity-gate.ts`. It is chain-agnostic — `CHAIN` takes a
+chain name as exported by viem's chain registry (case-insensitive: `pulsechainV4`, `pulsechain`,
+`sepolia`, `foundry`, …), a friendly alias (`local`, `anvil`, `hardhat`, `dev` all mean the
+development chain 31337), or a raw numeric chain identifier. The default is 943 (PulseChain
+testnet version four). The endpoint defaults to the chain's public one, so `RPC` is only an
+override. An operator holding the funded mnemonic runs, from `examples/games/e2e`:
 
 ```bash
 # PulseChain testnet version four (the default chain)
@@ -66,8 +69,8 @@ MNEMONIC="$(op read 'op://gibs/randomness/recovery phrase')" \
   RPC=<the valve.city endpoint> \
   pnpm gate
 
-# any other chain: supply the endpoint, the core Random address, and the expected account
-CHAIN=<id> RPC=<url> RANDOM_ADDRESS=0x… EXPECTED_PROVIDER=0x… MNEMONIC=… pnpm gate
+# any other chain by name: supply the core Random address and the expected account
+CHAIN=pulsechain RANDOM_ADDRESS=0x… EXPECTED_PROVIDER=0x… MNEMONIC=… pnpm gate
 ```
 
 The script deploys `CoinFlip` and `Raffle` against core Random (943's live deployment at

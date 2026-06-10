@@ -13,13 +13,14 @@
  * cached per chain so a re-run reuses the contracts.
  *
  * Environment variables:
- *   CHAIN        the numeric chain id to run against (default 943; 'local' is accepted as an
- *                alias for 31337). 943 and 31337 are known to the core registry; any other
- *                chain id additionally needs RPC and RANDOM_ADDRESS.
- *   RPC          JSON-RPC endpoint (default: the core registry's endpoint for known chains;
- *                required for unknown chains). RPC_943 is honored as a fallback on 943 —
- *                override to the valve.city endpoint there for reliability inside the
- *                12-block heat window.
+ *   CHAIN        which chain to run against — a chain NAME as exported by viem/chains
+ *                (case-insensitive: pulsechainV4, pulsechain, sepolia, foundry, ...), one of
+ *                the aliases local/anvil/hardhat/dev (=> 31337), or a numeric chain id.
+ *                Default 943 (pulsechainV4). A numeric id viem doesn't know needs RPC too.
+ *   RPC          JSON-RPC endpoint. Defaults to the core registry's endpoint (943, 31337) or
+ *                the chain's public default from viem/chains. RPC_943 is honored as a
+ *                fallback on 943 — override to the valve.city endpoint there for reliability
+ *                inside the 12-block heat window.
  *   MNEMONIC     funded recovery phrase (read via `op read`, never logged). Chain 31337
  *                defaults to the standard anvil test mnemonic.
  *   STAKE        stake per player in coins (default '0.1'; also the raffle ticket price).
@@ -39,9 +40,10 @@
  * Run from examples/games/e2e:
  *   MNEMONIC="$(op read 'op://gibs/randomness/recovery phrase')" pnpm gate          # 943
  *   CHAIN=local pnpm gate                                                          # anvil
- *   CHAIN=<id> RPC=<url> RANDOM_ADDRESS=0x… MNEMONIC=… EXPECTED_PROVIDER=0x… pnpm gate
+ *   CHAIN=pulsechain RANDOM_ADDRESS=0x… MNEMONIC=… EXPECTED_PROVIDER=0x… pnpm gate
  */
 import * as viem from 'viem'
+import * as viemChains from 'viem/chains'
 import { mnemonicToAccount } from 'viem/accounts'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -65,8 +67,58 @@ import { raffle } from '@gibs/raffle'
 import RandomArtifact from '@gibs/random/artifacts/contracts/Random.sol/Random.json'
 
 const env = process.env
-const CHAIN_ID = env.CHAIN === 'local' || env.CHAIN === undefined ? (env.CHAIN === 'local' ? 31337 : 943) : Number(env.CHAIN)
-if (!Number.isInteger(CHAIN_ID) || CHAIN_ID <= 0) throw new Error(`CHAIN must be a positive chain id, got '${env.CHAIN}'`)
+
+/**
+ * Resolve the CHAIN input — a viem/chains export name (case-insensitive), a friendly alias,
+ * or a numeric chain id — to a chain object plus the RPC endpoint to use. Precedence for the
+ * endpoint: RPC env > RPC_943 (on 943) > the core registry > the chain's viem default.
+ */
+const resolveChain = (input: string): { chain: viem.Chain; rpc: string } => {
+  const aliases: Record<string, number> = { local: 31337, anvil: 31337, hardhat: 31337, dev: 31337, testnet: 943 }
+  const isChain = (c: unknown): c is viem.Chain =>
+    typeof c === 'object' && c !== null && 'id' in c && 'rpcUrls' in c
+  const numeric = /^\d+$/.test(input) ? Number(input) : aliases[input.toLowerCase()]
+
+  let chain: viem.Chain | undefined
+  if (numeric !== undefined) {
+    chain =
+      (knownChains as Record<number, viem.Chain>)[numeric] ??
+      (Object.values(viemChains) as unknown[]).find((c): c is viem.Chain => isChain(c) && c.id === numeric)
+    if (!chain && !env.RPC) {
+      throw new Error(`chain id ${numeric} is unknown to viem/chains; supply RPC`)
+    }
+    chain ??= {
+      id: numeric,
+      name: `chain-${numeric}`,
+      nativeCurrency: { name: 'Coin', symbol: 'coins', decimals: 18 },
+      rpcUrls: { default: { http: [env.RPC!] } },
+    }
+  } else {
+    const wanted = input.toLowerCase()
+    const named = Object.entries(viemChains as Record<string, unknown>).find(
+      ([name, c]) => isChain(c) && name.toLowerCase() === wanted,
+    )?.[1] as viem.Chain | undefined
+    if (!named) {
+      throw new Error(
+        `unknown chain '${input}' — use a viem/chains export name (pulsechainV4, pulsechain, sepolia, ...), ` +
+          'an alias (local/anvil), or a numeric chain id',
+      )
+    }
+    // prefer the core registry's object when it covers this id (e.g. the local 31337 chain)
+    chain = (knownChains as Record<number, viem.Chain>)[named.id] ?? named
+  }
+
+  const rpc =
+    env.RPC ||
+    (chain.id === 943 ? env.RPC_943 : undefined) ||
+    (defaultRpc as Record<number, string>)[chain.id] ||
+    chain.rpcUrls.default?.http[0]
+  if (!rpc) throw new Error(`chain ${chain.id} (${chain.name}) has no default RPC endpoint; supply RPC`)
+  return { chain, rpc }
+}
+
+const { chain: CHAIN, rpc: RPC } = resolveChain(env.CHAIN ?? '943')
+const CHAIN_ID = CHAIN.id
 /** 31337 is the development chain: anvil mining, test mnemonic, fresh Random, no cache/log. */
 const IS_DEV = CHAIN_ID === 31337
 const STAKE = viem.parseEther(env.STAKE || '0.1')
@@ -90,24 +142,6 @@ const REVEAL_GAS = 500_000n
 const PLAYER_GAS_BUDGET = 6_000_000n // funding headroom over the largest cap
 
 const RAFFLE_PERIOD = 2n // blocks a raffle round must fill before arming
-
-/** Resolve the chain object and RPC endpoint: core registry first, env-built fallback. */
-const resolveChain = (): { chain: viem.Chain; rpc: string } => {
-  const known = (knownChains as Record<number, viem.Chain>)[CHAIN_ID]
-  const registryRpc = (defaultRpc as Record<number, string>)[CHAIN_ID]
-  const rpc = env.RPC || (CHAIN_ID === 943 ? env.RPC_943 : undefined) || registryRpc
-  if (!rpc) throw new Error(`chain ${CHAIN_ID} is not in the core registry; supply RPC`)
-  if (known) return { chain: known, rpc }
-  return {
-    chain: {
-      id: CHAIN_ID,
-      name: `chain-${CHAIN_ID}`,
-      nativeCurrency: { name: 'Coin', symbol: 'coins', decimals: 18 },
-      rpcUrls: { default: { http: [rpc] } },
-    },
-    rpc,
-  }
-}
 
 // Fresh secrets every run: the seed is a deterministic function of the revealed secrets, so
 // reuse would reproduce the same winner. Crypto-strong per-run salt models a real validator.
@@ -139,7 +173,8 @@ const main = async () => {
     )
   }
 
-  const { chain, rpc } = resolveChain()
+  const chain = CHAIN
+  const rpc = RPC
   const coins = (value: bigint): string => `${viem.formatEther(value)} ${chain.nativeCurrency.symbol}`
   const transport = viem.http(rpc)
   const publicClient = viem.createPublicClient({ chain, transport })
