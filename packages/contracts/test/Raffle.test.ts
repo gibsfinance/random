@@ -268,4 +268,57 @@ describe('Raffle', () => {
       )
     })
   })
+
+  describe('security invariants', () => {
+    it('settlement cannot be blocked by any player action (no last-revealer-abort)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { roundId, players, salts, guesses } = await armAndDraw(ctx)
+      // only the first player reveals; the others withhold. The window still closes and finalise pays.
+      await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([1n, guesses[0], salts[0]], { account: players[0].account }))
+      await helpers.mine(101)
+      // finalise succeeds and pays player 0 (the only revealer) — withholding cannot abort it
+      await expectations.emit(ctx, ctx.raffle.write.finalise([roundId]), ctx.raffle, 'Finalised')
+    })
+
+    it('the draw is fixed at cast and independent of any reveal (seed is validator-only)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { roundId, players, salts, guesses } = await armAndDraw(ctx)
+      const drawAfterCast = (await ctx.raffle.read.rounds([roundId]))[10] as bigint
+      await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([1n, guesses[0], salts[0]], { account: players[0].account }))
+      const drawAfterReveal = (await ctx.raffle.read.rounds([roundId]))[10] as bigint
+      expect(drawAfterReveal).to.equal(drawAfterCast)
+    })
+
+    it('a reveal with an altered guess reverts (guess freeze)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { players, salts, guesses } = await armAndDraw(ctx)
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.reveal([1n, (guesses[0] % RANGE) + 1n, salts[0]], { account: players[0].account }),
+        'BadReveal',
+      )
+    })
+
+    it('arm cannot substitute a sybil validator for the declared subset', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { subset, locations } = await testUtils.setUpValidators(ctx, ctx.raffle, 3)
+      const players = ctx.signers.slice(1, 4)
+      let firstReceipt: any
+      for (let i = 0; i < 3; i++) {
+        const receipt = await testUtils.confirmTx(ctx, ctx.raffle.write.commit(
+          [stake, threshold, period, subset, commitmentFor(BigInt(i + 1), viem.keccak256(viem.toHex(`x${i}`)), players[i].account.address)],
+          { value: stake, account: players[i].account },
+        ))
+        if (i === 0) firstReceipt = receipt
+      }
+      const roundId = (await ctx.raffle.getEvents.RoundOpened({}, { blockHash: firstReceipt.blockHash }))[0].args.roundId as viem.Hex
+      await helpers.mine(6)
+      const sybil = [locations[0], locations[1], { ...locations[2], provider: subset[0] }]
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.arm([roundId, sybil]),
+        'SubsetMismatch',
+      )
+    })
+  })
 })
