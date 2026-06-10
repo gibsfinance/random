@@ -19,6 +19,7 @@ import { mnemonicToAccount } from 'viem/accounts'
 import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
+import { seeds0Secret, SECRET_STRIDE } from './seeds0'
 import {
   chains,
   defaultRpc,
@@ -33,14 +34,7 @@ const env = process.env
 const CHAIN = (env.CHAIN ? Number(env.CHAIN) : 943) as GamesChainId
 const VALIDATOR_COUNT = env.VALIDATORS ? Number(env.VALIDATORS) : 3
 const POOL_SIZE = env.POOL_SIZE ? Number(env.POOL_SIZE) : 16
-const SECRET_STRIDE = 1000 // validator i uses seeds0 HD accounts [i*1000, i*1000+POOL_SIZE)
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
-
-/** seeds0 secret: the raw HD private key at accountIndex (the duel-943 seeds0 convention). */
-export const seeds0Secret = (seeds0: string, accountIndex: number): viem.Hex => {
-  const hd = mnemonicToAccount(seeds0, { accountIndex }).getHdKey()
-  return viem.toHex(hd.privateKey!)
-}
 
 const main = async () => {
   if (!env.MNEMONIC) throw new Error('MNEMONIC (funded payer) required')

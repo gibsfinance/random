@@ -30,12 +30,11 @@ import {
   type GamesChainId,
   type Info,
 } from '@gibs/games-core'
-import { seeds0Secret } from './ink-pools'
+import { seeds0Secret, SECRET_STRIDE } from './seeds0'
 
 const env = process.env
 const CHAIN = (env.CHAIN ? Number(env.CHAIN) : 943) as GamesChainId
 const INTERVAL_MS = env.INTERVAL_MS ? Number(env.INTERVAL_MS) : 5_000
-const SECRET_STRIDE = 1000
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const ZERO32 = viem.padHex('0x0', { size: 32 })
 
