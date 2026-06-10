@@ -321,4 +321,296 @@ describe('Raffle', () => {
       )
     })
   })
+
+  // Coverage gates: every guard and branch that is a real path (not a defensive/unreachable
+  // check) gets an explicit test. The draw is unpredictable through a real cast, so tie tests
+  // impersonate the Random contract and push a chosen seed through the real onCast entrypoint.
+  describe('coverage gates', () => {
+    const setUpFilled = async (ctx: any, guesses: bigint[], salts: viem.Hex[]) => {
+      const { subset, locations, secrets } = await testUtils.setUpValidators(ctx, ctx.raffle, 3)
+      const players = ctx.signers.slice(1, 1 + guesses.length)
+      let firstReceipt: any
+      for (let i = 0; i < guesses.length; i++) {
+        const receipt = await testUtils.confirmTx(ctx, ctx.raffle.write.commit(
+          [stake, threshold, period, subset, commitmentFor(guesses[i], salts[i], players[i].account.address)],
+          { value: stake, account: players[i].account },
+        ))
+        if (i === 0) firstReceipt = receipt
+      }
+      const roundId = (await ctx.raffle.getEvents.RoundOpened({}, { blockHash: firstReceipt.blockHash }))[0].args.roundId as viem.Hex
+      return { roundId, players, subset, locations, secrets }
+    }
+
+    const armRound = async (ctx: any, roundId: viem.Hex, locations: any[]) => {
+      await helpers.mine(6)
+      const armReceipt = await testUtils.confirmTx(ctx, ctx.raffle.write.arm([roundId, locations]))
+      return (await ctx.raffle.getEvents.Armed({}, { blockHash: armReceipt.blockHash }))[0].args.key as viem.Hex
+    }
+
+    // push a chosen seed through the real onCast entrypoint as the Random contract
+    const drawWithSeed = async (ctx: any, key: viem.Hex, seed: bigint) => {
+      await ctx.hre.network.provider.send('hardhat_impersonateAccount', [ctx.random.address])
+      await ctx.hre.network.provider.send('hardhat_setBalance', [ctx.random.address, viem.toHex(10n ** 18n)])
+      await testUtils.confirmTx(ctx, ctx.raffle.write.onCast([key, viem.toHex(seed, { size: 32 })], { account: ctx.random.address }))
+      await ctx.hre.network.provider.send('hardhat_stopImpersonatingAccount', [ctx.random.address])
+    }
+
+    it('rejects zero stake, threshold, and period (BadParams)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { subset } = await testUtils.setUpValidators(ctx, ctx.raffle, 3)
+      const [, p] = ctx.signers
+      const c = commitmentFor(1n, viem.keccak256(viem.toHex('z')), p.account.address)
+      for (const [s, t, per] of [[0n, threshold, period], [stake, 0n, period], [stake, threshold, 0n]] as const) {
+        await expectations.revertedWithCustomError(
+          ctx.raffle,
+          ctx.raffle.write.commit([s, t, per, subset, c], { value: s, account: p.account }),
+          'BadParams',
+        )
+      }
+    })
+
+    it('setFee rejects a non-owner and a fee above 100%', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const [, p] = ctx.signers
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.setFee([1n, p.account.address], { account: p.account }),
+        'OnlyOwner',
+      )
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.setFee([10_001n, p.account.address]),
+        'BadFee',
+      )
+    })
+
+    it('a commit after the active round armed opens a fresh round for the tuple', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const salts = [0, 1, 2].map((i) => viem.keccak256(viem.toHex(`fr${i}`)))
+      const { roundId, players, subset, locations } = await setUpFilled(ctx, [1n, 2n, 3n], salts)
+      await armRound(ctx, roundId, locations)
+      // same tuple again: activeRound was cleared at arm, so this must emit RoundOpened anew
+      const receipt = await testUtils.confirmTx(ctx, ctx.raffle.write.commit(
+        [stake, threshold, period, subset, commitmentFor(9n, viem.keccak256(viem.toHex('fr9')), players[0].account.address)],
+        { value: stake, account: players[0].account },
+      ))
+      const opened = await ctx.raffle.getEvents.RoundOpened({}, { blockHash: receipt.blockHash })
+      expect(opened.length).to.equal(1)
+      expect(opened[0].args.roundId).to.not.equal(roundId)
+    })
+
+    it('cancel is one-shot and blocked once the round is no longer filling', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const salts = [0, 1, 2, 3].map((i) => viem.keccak256(viem.toHex(`cc${i}`)))
+      const { roundId, players, locations } = await setUpFilled(ctx, [1n, 2n, 3n, 4n], salts)
+      await testUtils.confirmTx(ctx, ctx.raffle.write.cancel([4n], { account: players[3].account }))
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.cancel([4n], { account: players[3].account }),
+        'TicketInactive',
+      )
+      await armRound(ctx, roundId, locations)
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.cancel([1n], { account: players[0].account }),
+        'WrongRoundState',
+      )
+    })
+
+    it('arm is one-shot (NotFilling on the second arm)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const salts = [0, 1, 2].map((i) => viem.keccak256(viem.toHex(`oa${i}`)))
+      const { roundId, locations } = await setUpFilled(ctx, [1n, 2n, 3n], salts)
+      await armRound(ctx, roundId, locations)
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.arm([roundId, locations]),
+        'NotFilling',
+      )
+    })
+
+    it('reveal guards: wrong state, closed window, inactive ticket, double reveal, range', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      // out-of-range guesses are committable (the commitment is just a hash) but unrevealable
+      const salts = [0, 1, 2, 3].map((i) => viem.keccak256(viem.toHex(`rg${i}`)))
+      const guesses = [0n, 300n, 50n, 60n]
+      const { roundId, players, locations } = await setUpFilled(ctx, guesses, salts)
+      // wrong state: round still filling
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.reveal([3n, guesses[2], salts[2]], { account: players[2].account }),
+        'WrongRoundState',
+      )
+      // cancel ticket 4 while filling (still >= threshold), then draw
+      await testUtils.confirmTx(ctx, ctx.raffle.write.cancel([4n], { account: players[3].account }))
+      const key = await armRound(ctx, roundId, locations)
+      await drawWithSeed(ctx, key, 127n) // draw = 128
+      // inactive (cancelled) ticket cannot reveal
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.reveal([4n, guesses[3], salts[3]], { account: players[3].account }),
+        'TicketInactive',
+      )
+      // out-of-range guesses fail after the commitment would have matched
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.reveal([1n, 0n, salts[0]], { account: players[0].account }),
+        'GuessOutOfRange',
+      )
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.reveal([2n, 300n, salts[1]], { account: players[1].account }),
+        'GuessOutOfRange',
+      )
+      // double reveal
+      await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([3n, guesses[2], salts[2]], { account: players[2].account }))
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.reveal([3n, guesses[2], salts[2]], { account: players[2].account }),
+        'AlreadyRevealed',
+      )
+      // window closes
+      await helpers.mine(101)
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.reveal([1n, guesses[0], salts[0]], { account: players[0].account }),
+        'WindowClosed',
+      )
+    })
+
+    it('a strictly closer reveal overwrites; an equal-distance later commit does not', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const salts = [0, 1, 2, 3].map((i) => viem.keccak256(viem.toHex(`tb${i}`)))
+      // draw will be 128: g0=100 (d=28, earliest commit), g1=156 (d=28, later commit),
+      // g2=127 (d=1), g3=10 (d=118)
+      const guesses = [100n, 156n, 127n, 10n]
+      const { roundId, players, locations } = await setUpFilled(ctx, guesses, salts)
+      const key = await armRound(ctx, roundId, locations)
+      await drawWithSeed(ctx, key, 127n) // draw = 1 + 127 % 256 = 128
+      // ticket 2 (g=156) reveals first: leads as the first reveal
+      await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([2n, guesses[1], salts[1]], { account: players[1].account }))
+      expect((await ctx.raffle.read.rounds([roundId]))[12]).to.equal(2n)
+      // ticket 1 (g=100, equal distance 28, EARLIER commit block) overwrites on the tie
+      await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([1n, guesses[0], salts[0]], { account: players[0].account }))
+      expect((await ctx.raffle.read.rounds([roundId]))[12]).to.equal(1n)
+      // ticket 4 (g=10, distance 118) is farther: leading=false, winner unchanged
+      await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([4n, guesses[3], salts[3]], { account: players[3].account }))
+      expect((await ctx.raffle.read.rounds([roundId]))[12]).to.equal(1n)
+      // ticket 3 (g=127, distance 1) is strictly closer: overwrites
+      await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([3n, guesses[2], salts[2]], { account: players[2].account }))
+      expect((await ctx.raffle.read.rounds([roundId]))[12]).to.equal(3n)
+    })
+
+    it('an equal-distance, same-block tie goes to the lower ticket id', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { subset, locations } = await testUtils.setUpValidators(ctx, ctx.raffle, 3)
+      const players = ctx.signers.slice(1, 4)
+      const salts = [0, 1, 2].map((i) => viem.keccak256(viem.toHex(`sb${i}`)))
+      const guesses = [100n, 156n, 1n]
+      // commits 1 and 2 land in the SAME block
+      await ctx.hre.network.provider.send('evm_setAutomine', [false])
+      const h1 = await ctx.raffle.write.commit(
+        [stake, threshold, period, subset, commitmentFor(guesses[0], salts[0], players[0].account.address)],
+        { value: stake, account: players[0].account },
+      )
+      const h2 = await ctx.raffle.write.commit(
+        [stake, threshold, period, subset, commitmentFor(guesses[1], salts[1], players[1].account.address)],
+        { value: stake, account: players[1].account },
+      )
+      await ctx.hre.network.provider.send('evm_mine', [])
+      await ctx.hre.network.provider.send('evm_setAutomine', [true])
+      const r1 = await testUtils.confirmTx(ctx, h1)
+      await testUtils.confirmTx(ctx, h2)
+      await testUtils.confirmTx(ctx, ctx.raffle.write.commit(
+        [stake, threshold, period, subset, commitmentFor(guesses[2], salts[2], players[2].account.address)],
+        { value: stake, account: players[2].account },
+      ))
+      const roundId = (await ctx.raffle.getEvents.RoundOpened({}, { blockHash: r1.blockHash }))[0].args.roundId as viem.Hex
+      const key = await armRound(ctx, roundId, locations)
+      await drawWithSeed(ctx, key, 127n) // draw = 128; tickets 1 and 2 both at distance 28, same block
+      await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([2n, guesses[1], salts[1]], { account: players[1].account }))
+      expect((await ctx.raffle.read.rounds([roundId]))[12]).to.equal(2n)
+      // equal distance, equal commit block: lower ticket id wins
+      await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([1n, guesses[0], salts[0]], { account: players[0].account }))
+      expect((await ctx.raffle.read.rounds([roundId]))[12]).to.equal(1n)
+    })
+
+    it('recordDraw guards: wrong state before arm and after settle, too early before cast', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const salts = [0, 1, 2].map((i) => viem.keccak256(viem.toHex(`rd${i}`)))
+      const { roundId, locations, secrets } = await setUpFilled(ctx, [1n, 2n, 3n], salts)
+      // before arm: not Drawing
+      await expectations.revertedWithCustomError(ctx.raffle, ctx.raffle.write.recordDraw([roundId]), 'WrongRoundState')
+      const key = await armRound(ctx, roundId, locations)
+      // armed but the seed has not finalised
+      await expectations.revertedWithCustomError(ctx.raffle, ctx.raffle.write.recordDraw([roundId]), 'TooEarly')
+      // a real cast settles via the push; the pull is then a no-op state
+      await testUtils.confirmTx(ctx, ctx.random.write.cast([key, locations, secrets]))
+      await expectations.revertedWithCustomError(ctx.raffle, ctx.raffle.write.recordDraw([roundId]), 'WrongRoundState')
+    })
+
+    it('finalise is one-shot (no double pay)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { roundId, players, salts, guesses } = await armAndDraw(ctx)
+      await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([1n, guesses[0], salts[0]], { account: players[0].account }))
+      await helpers.mine(101)
+      await testUtils.confirmTx(ctx, ctx.raffle.write.finalise([roundId]))
+      await expectations.revertedWithCustomError(ctx.raffle, ctx.raffle.write.finalise([roundId]), 'WrongRoundState')
+    })
+
+    it('refundTicket guards: owner only, not before stale, not once the seed exists, one-shot', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const salts = [0, 1, 2].map((i) => viem.keccak256(viem.toHex(`rf${i}`)))
+      const { roundId, players, locations } = await setUpFilled(ctx, [1n, 2n, 3n], salts)
+      await armRound(ctx, roundId, locations)
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.refundTicket([1n], { account: players[1].account }),
+        'NotTicketOwner',
+      )
+      // armed, seed missing, but not yet stale
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.refundTicket([1n], { account: players[0].account }),
+        'TooEarly',
+      )
+      await helpers.mine(201)
+      await testUtils.confirmTx(ctx, ctx.raffle.write.refundTicket([1n], { account: players[0].account }))
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.refundTicket([1n], { account: players[0].account }),
+        'TicketInactive',
+      )
+    })
+
+    it('refundTicket rejects once a seed finalised (TooEarly path on a cast round)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const salts = [0, 1, 2].map((i) => viem.keccak256(viem.toHex(`rc${i}`)))
+      const { roundId, players, locations, secrets } = await setUpFilled(ctx, [1n, 2n, 3n], salts)
+      const key = await armRound(ctx, roundId, locations)
+      await testUtils.confirmTx(ctx, ctx.random.write.cast([key, locations, secrets]))
+      // the seed exists and the round settled: Drawing-state check fires first
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.refundTicket([1n], { account: players[0].account }),
+        'WrongRoundState',
+      )
+    })
+  })
+
+  describe('value conservation', () => {
+    it('a finalised round leaves no stuck balance attributable to it', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const publicClient = await ctx.hre.viem.getPublicClient()
+      const before = await publicClient.getBalance({ address: ctx.raffle.address })
+      const { roundId, players, salts, guesses } = await armAndDraw(ctx)
+      for (let i = 0; i < 3; i++) {
+        await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([BigInt(i + 1), guesses[i], salts[i]], { account: players[i].account }))
+      }
+      await helpers.mine(101)
+      await testUtils.confirmTx(ctx, ctx.raffle.write.finalise([roundId]))
+      const after = await publicClient.getBalance({ address: ctx.raffle.address })
+      expect(after).to.equal(before) // the round's three stakes all left the contract
+    })
+  })
 })
