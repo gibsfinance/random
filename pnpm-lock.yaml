@@ -8,6 +8,25 @@ importers:
 
   .: {}
 
+  examples/games/coinflip:
+    dependencies:
+      '@gibs/games-core':
+        specifier: workspace:*
+        version: link:../core
+      viem:
+        specifier: ^2.25.0
+        version: 2.52.2(typescript@5.8.3)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.20
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.20)
+
   examples/games/core:
     dependencies:
       '@gibs/random':
@@ -6905,6 +6924,7 @@ snapshots:
       - prisma
       - react-devtools-core
       - sass
+      - sass-embedded
       - sql.js
       - sqlite3
       - stylus
@@ -10470,12 +10490,13 @@ snapshots:
       debug: 4.4.3(supports-color@8.1.1)
       pathe: 1.1.2
       picocolors: 1.1.1
-      vite: 5.0.7(@types/node@22.19.20)
+      vite: 5.4.21(@types/node@22.19.20)
     transitivePeerDependencies:
       - '@types/node'
       - less
       - lightningcss
       - sass
+      - sass-embedded
       - stylus
       - sugarss
       - supports-color
