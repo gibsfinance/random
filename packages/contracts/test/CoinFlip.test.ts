@@ -368,4 +368,18 @@ describe('CoinFlip', () => {
       expect(await publicClient.getBalance({ address: ctx.coinFlip.address })).to.equal(0n)
     })
   })
+
+  describe('validator-only entropy', () => {
+    it('emits no Ink event from the game during a full flip (the game inks nothing)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { subset, locations } = await testUtils.setUpValidators(ctx, ctx.coinFlip, 3)
+      const [, heads, tails] = ctx.signers
+      const stake = viem.parseEther('1')
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([0, subset, []], { value: stake, account: heads.account }))
+      const matchReceipt = await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([1, subset, locations], { value: stake, account: tails.account }))
+      const inkEvents = await ctx.random.getEvents.Ink({}, { blockHash: matchReceipt.blockHash })
+      const gameInks = inkEvents.filter((e) => viem.getAddress((e.args as any).provider) === viem.getAddress(ctx.coinFlip.address))
+      expect(gameInks.length).to.equal(0)
+    })
+  })
 })
