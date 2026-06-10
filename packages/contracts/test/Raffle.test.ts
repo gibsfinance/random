@@ -194,4 +194,78 @@ describe('Raffle', () => {
       expect(round[12]).to.equal(BigInt(bestIdx + 1))
     })
   })
+
+  describe('finalise', () => {
+    it('pays the winner the pot less fee after the window closes', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      // set a 5% fee
+      await testUtils.confirmTx(ctx, ctx.raffle.write.setFee([500n, ctx.signers[11].account.address]))
+      const { roundId, players, salts, guesses, draw } = await armAndDraw(ctx)
+      for (let i = 0; i < 3; i++) {
+        await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([BigInt(i + 1), guesses[i], salts[i]], { account: players[i].account }))
+      }
+      const distances = guesses.map((g) => (g > draw ? g - draw : draw - g))
+      let bestIdx = 0
+      for (let i = 1; i < 3; i++) if (distances[i] < distances[bestIdx]) bestIdx = i
+      await helpers.mine(101) // past the claim window
+      const pot = stake * 3n
+      const fee = (pot * 500n) / 10_000n
+      await expectations.changeEtherBalances(ctx,
+        ctx.raffle.write.finalise([roundId]),
+        [players[bestIdx].account.address, ctx.signers[11].account.address],
+        [pot - fee, fee],
+      )
+    })
+
+    it('routes the pot to the validators when nobody reveals (no-contest)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { roundId } = await armAndDraw(ctx)
+      const subset = await ctx.raffle.read.roundSubset([roundId])
+      await helpers.mine(101)
+      const pot = stake * 3n
+      const perValidator = pot / 3n
+      await expectations.changeEtherBalances(ctx,
+        ctx.raffle.write.finalise([roundId]),
+        subset as viem.Hex[],
+        [perValidator, perValidator, perValidator],
+      )
+    })
+
+    it('reverts finalise before the window closes', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { roundId, players, salts, guesses } = await armAndDraw(ctx)
+      await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([1n, guesses[0], salts[0]], { account: players[0].account }))
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.finalise([roundId]),
+        'WindowOpen',
+      )
+    })
+  })
+
+  describe('liveness refund', () => {
+    it('lets each committer reclaim their ticket when the seed never finalises', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { subset, locations } = await testUtils.setUpValidators(ctx, ctx.raffle, 3)
+      const players = ctx.signers.slice(1, 4)
+      let firstReceipt: any
+      for (let i = 0; i < 3; i++) {
+        const receipt = await testUtils.confirmTx(ctx, ctx.raffle.write.commit(
+          [stake, threshold, period, subset, commitmentFor(BigInt(i + 1), viem.keccak256(viem.toHex(`s${i}`)), players[i].account.address)],
+          { value: stake, account: players[i].account },
+        ))
+        if (i === 0) firstReceipt = receipt
+      }
+      const roundId = (await ctx.raffle.getEvents.RoundOpened({}, { blockHash: firstReceipt.blockHash }))[0].args.roundId as viem.Hex
+      await helpers.mine(6)
+      await testUtils.confirmTx(ctx, ctx.raffle.write.arm([roundId, locations]))
+      // never cast; pass the stale timeout
+      await helpers.mine(201)
+      await expectations.changeEtherBalances(ctx,
+        ctx.raffle.write.refundTicket([1n], { account: players[0].account }),
+        [players[0].account.address],
+        [stake],
+      )
+    })
+  })
 })

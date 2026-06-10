@@ -255,4 +255,48 @@ contract Raffle is GameBase {
         if (seed == bytes32(0)) revert TooEarly();
         _settle(roundId, seed);
     }
+
+    /// @notice After the claim window, pay the closest revealer the pot less the fee; if nobody
+    /// revealed, route the pot to the round's contributing validators (the no-contest case — the
+    /// seed finalised, so no validator was chopped). Non-revealers' stakes are part of the pot.
+    function finalise(bytes32 roundId) external {
+        Round storage round = rounds[roundId];
+        if (round.status != Status.Claiming) revert WrongRoundState();
+        if (block.number <= round.claimDeadline) revert WindowOpen();
+        round.status = Status.Paid;
+
+        uint256 pot = round.settledPot;
+        if (round.bestTicket == 0) {
+            address[] storage subset = _roundSubset[roundId];
+            uint256 n = subset.length;
+            uint256 share = pot / n;
+            for (uint256 i = 0; i < n; ++i) {
+                _pay(subset[i], i + 1 == n ? pot - share * (n - 1) : share);
+            }
+            emit NoContest(roundId, share);
+            return;
+        }
+
+        uint256 fee = (pot * feeBips) / BIPS;
+        address winner = tickets[round.bestTicket].player;
+        emit Finalised(roundId, winner, pot - fee, fee);
+        if (fee > 0) _pay(feeRecipient, fee);
+        _pay(winner, pot - fee);
+    }
+
+    /// @notice Liveness exit: when an armed round's seed never finalised (chopped or stale), each
+    /// committer reclaims their own ticket's stake. Pull, per-ticket, so a large round needs no push.
+    function refundTicket(uint256 ticketId) external {
+        Ticket storage ticket = tickets[ticketId];
+        if (ticket.player != msg.sender) revert NotTicketOwner();
+        if (!ticket.active) revert TicketInactive();
+        Round storage round = rounds[ticket.roundId];
+        if (round.status != Status.Drawing) revert WrongRoundState();
+        bool seedMissing = IRandom(random).randomness(round.key).seed == bytes32(0);
+        if (!seedMissing) revert TooEarly();
+        if (!choppedInstance[ticket.roundId] && !_isStale(round.armedAtBlock)) revert TooEarly();
+        ticket.active = false;
+        emit TicketRefunded(ticketId);
+        _refund(ticket.player, round.stake);
+    }
 }
