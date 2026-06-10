@@ -3,6 +3,9 @@ import * as viem from 'viem'
 import { deployments } from './config'
 import { useWallet } from './hooks/useWallet'
 import { useChainData } from './hooks/useChainData'
+import { TrustBanner, isTrustAcknowledged } from './components/TrustBanner'
+import { CoinFlipScreen } from './components/CoinFlipScreen'
+import { RaffleScreen } from './components/RaffleScreen'
 
 const short = (a?: viem.Hex) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '')
 
@@ -12,6 +15,9 @@ export const App = () => {
   const deployment = deployments[deploymentIndex]
   const wallet = useWallet(deployment?.chainId ?? 31337)
   const data = useChainData(deployment ?? null, wallet.address)
+  const [trustAcknowledged, setTrustAcknowledged] = useState(() =>
+    deployment ? isTrustAcknowledged(deployment.chainId) : false,
+  )
 
   if (!deployment) {
     return (
@@ -63,9 +69,22 @@ export const App = () => {
         </button>
         <span className="muted">block {data.blockNumber.toString()}</span>
       </div>
-      <div className="card muted">
-        {tab === 'coinflip' ? 'Coin flip screen lands in the next commit.' : 'Raffle screen lands in the next commit.'}
-      </div>
+      <TrustBanner deployment={deployment} onAcknowledged={() => setTrustAcknowledged(true)} />
+      {tab === 'coinflip' ? (
+        <CoinFlipScreen
+          deployment={deployment}
+          data={data}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+        />
+      ) : (
+        <RaffleScreen
+          deployment={deployment}
+          data={data}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+        />
+      )}
     </div>
   )
 }
