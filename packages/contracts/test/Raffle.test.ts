@@ -68,4 +68,64 @@ describe('Raffle', () => {
       )
     })
   })
+
+  describe('arm and draw', () => {
+    const fillRound = async (ctx: any, subset: viem.Hex[], guesses: bigint[], salts: viem.Hex[]) => {
+      const players = ctx.signers.slice(1, 1 + guesses.length)
+      let firstReceipt: any
+      for (let i = 0; i < guesses.length; i++) {
+        const receipt = await testUtils.confirmTx(ctx, ctx.raffle.write.commit(
+          [stake, threshold, period, subset, commitmentFor(guesses[i], salts[i], players[i].account.address)],
+          { value: stake, account: players[i].account },
+        ))
+        if (i === 0) firstReceipt = receipt
+      }
+      const opened = await ctx.raffle.getEvents.RoundOpened({}, { blockHash: firstReceipt.blockHash })
+      const roundId = opened[0].args.roundId as viem.Hex
+      return { roundId, players }
+    }
+
+    it('reverts arm before the period elapses', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { subset, locations } = await testUtils.setUpValidators(ctx, ctx.raffle, 3)
+      const { roundId } = await fillRound(ctx, subset, [1n, 2n, 3n], ['0x01', '0x02', '0x03'].map((s) => viem.padHex(s as viem.Hex, { size: 32 })))
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.arm([roundId, locations]),
+        'PeriodNotElapsed',
+      )
+    })
+
+    it('reverts arm below the threshold', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { subset, locations } = await testUtils.setUpValidators(ctx, ctx.raffle, 3)
+      const { roundId } = await fillRound(ctx, subset, [1n, 2n], ['0x01', '0x02'].map((s) => viem.padHex(s as viem.Hex, { size: 32 })))
+      await helpers.mine(6)
+      await expectations.revertedWithCustomError(
+        ctx.raffle,
+        ctx.raffle.write.arm([roundId, locations]),
+        'ThresholdNotMet',
+      )
+    })
+
+    it('arms a filled round, casts, and records a draw in [1..256] without paying', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { subset, locations, secrets } = await testUtils.setUpValidators(ctx, ctx.raffle, 3)
+      const salts = ['0x01', '0x02', '0x03'].map((s) => viem.padHex(s as viem.Hex, { size: 32 }))
+      const { roundId } = await fillRound(ctx, subset, [1n, 2n, 3n], salts)
+      await helpers.mine(6)
+      const armReceipt = await testUtils.confirmTx(ctx, ctx.raffle.write.arm([roundId, locations]))
+      const key = (await ctx.raffle.getEvents.Armed({}, { blockHash: armReceipt.blockHash }))[0].args.key as viem.Hex
+      const publicClient = await ctx.hre.viem.getPublicClient()
+      const potBefore = await publicClient.getBalance({ address: ctx.raffle.address })
+      const castReceipt = await testUtils.confirmTx(ctx, ctx.random.write.cast([key, locations, secrets]))
+      const drawn = await ctx.raffle.getEvents.Drawn({}, { blockHash: castReceipt.blockHash })
+      expect(drawn.length).to.equal(1)
+      const draw = drawn[0].args.draw as bigint
+      expect(draw).to.be.greaterThanOrEqual(1n)
+      expect(draw).to.be.lessThanOrEqual(RANGE)
+      // no payout on draw
+      expect(await publicClient.getBalance({ address: ctx.raffle.address })).to.equal(potBefore)
+    })
+  })
 })

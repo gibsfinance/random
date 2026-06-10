@@ -175,10 +175,47 @@ contract Raffle is GameBase {
         return _roundSubset[roundId];
     }
 
-    /// @notice Placeholder settlement so this concrete contract satisfies GameBase's abstract
-    /// `_settle`. Draw recording is implemented in Task 9; until `arm` exists no round can reach
-    /// `Drawing`, so settlement is unreachable here. Revert defensively (matches the real guard).
-    function _settle(bytes32, bytes32) internal override {
-        revert WrongRoundState();
+    /// @notice Operator step: heat the round's declared validator subset once it is at threshold and
+    /// a period has elapsed. Permissionless, but bound — _heatBound permits only locations matching
+    /// the declared subset, and the threshold and filling-status checks make arming one-shot.
+    function arm(bytes32 roundId, PreimageLocation.Info[] calldata validatorLocations) external {
+        Round storage round = rounds[roundId];
+        if (round.status != Status.Filling) revert NotFilling();
+        if (round.commitCount < round.threshold) revert ThresholdNotMet();
+        if (block.number < round.createdAtBlock + round.period) revert PeriodNotElapsed();
+
+        round.status = Status.Drawing;
+        round.armedAtBlock = block.number;
+        round.settledPot = round.pot;
+        // the next commit for this tuple opens a fresh round
+        bytes32 tupleHash = keccak256(abi.encode(round.stake, round.threshold, round.period, round.subsetHash));
+        if (activeRound[tupleHash] == roundId) {
+            activeRound[tupleHash] = bytes32(0);
+        }
+
+        bytes32 key = _heatBound(_roundSubset[roundId], validatorLocations);
+        round.key = key;
+        instanceByKey[key] = roundId;
+        emit Armed(roundId, key);
+    }
+
+    /// @notice Record the draw and open the claim window (does not pay). Invoked by onCast (push)
+    /// via GameBase and by recordDraw (pull fallback).
+    function _settle(bytes32 roundId, bytes32 seed) internal override {
+        Round storage round = rounds[roundId];
+        if (round.status != Status.Drawing) revert WrongRoundState();
+        round.status = Status.Claiming;
+        round.draw = 1 + (uint256(seed) % RANGE);
+        round.claimDeadline = block.number + CLAIM_BLOCKS;
+        emit Drawn(roundId, round.draw, round.claimDeadline);
+    }
+
+    /// @notice Pull fallback when the onCast push did not complete though the seed is finalized.
+    function recordDraw(bytes32 roundId) external {
+        Round storage round = rounds[roundId];
+        if (round.status != Status.Drawing) revert WrongRoundState();
+        bytes32 seed = IRandom(random).randomness(round.key).seed;
+        if (seed == bytes32(0)) revert TooEarly();
+        _settle(roundId, seed);
     }
 }
