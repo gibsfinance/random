@@ -30,4 +30,42 @@ describe('coinflip.settle', () => {
   it('parseParams rejects a subset below the minimum of three', () => {
     expect(() => coinflip.parseParams({ stake: 1n, validatorSubset: ['0x1', '0x2'] })).to.throw()
   })
+
+  it('parseParams rejects duplicate subset members even when the casing differs', () => {
+    const dupes = ['0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '0x2222222222222222222222222222222222222222']
+    expect(() => coinflip.parseParams({ stake: 1n, validatorSubset: dupes })).to.throw('distinct')
+  })
+
+  it('parseParams rejects a zero, negative, or non-bigint stake', () => {
+    expect(() => coinflip.parseParams({ stake: 0n, validatorSubset: params.validatorSubset })).to.throw()
+    expect(() => coinflip.parseParams({ stake: -1n, validatorSubset: params.validatorSubset })).to.throw()
+    expect(() => coinflip.parseParams({ stake: 1, validatorSubset: params.validatorSubset })).to.throw()
+  })
+
+  it('decodeEntry accepts both the numeric on-chain side and the string side', () => {
+    expect(coinflip.decodeEntry({ player: '0xaaa', side: 0 }).side).to.equal('heads')
+    expect(coinflip.decodeEntry({ player: '0xaaa', side: 1 }).side).to.equal('tails')
+    expect(coinflip.decodeEntry({ player: '0xaaa', side: 'heads' }).side).to.equal('heads')
+    expect(coinflip.decodeEntry({ player: '0xaaa', side: 'tails' }).side).to.equal('tails')
+  })
+
+  it('canArm rejects overfilled and same-side pairs', () => {
+    const h = { player: '0xaaa' as viem.Hex, side: 'heads' as const }
+    const t = { player: '0xbbb' as viem.Hex, side: 'tails' as const }
+    expect(coinflip.canArm(params, [h, t, { ...h, player: '0xccc' }])).to.equal(false)
+    expect(coinflip.canArm(params, [t, { ...t, player: '0xddd' }])).to.equal(false)
+    expect(coinflip.canArm(params, [])).to.equal(false)
+  })
+
+  it('settle is independent of entry order', () => {
+    const h = { player: '0xaaa' as viem.Hex, side: 'heads' as const }
+    const t = { player: '0xbbb' as viem.Hex, side: 'tails' as const }
+    const evenSeed = viem.padHex('0x02', { size: 32 })
+    expect(coinflip.settle(params, [h, t], evenSeed).winner).to.equal(coinflip.settle(params, [t, h], evenSeed).winner)
+  })
+
+  it('settle throws when no entry holds the winning side (corrupt entry set)', () => {
+    const onlyTails = [{ player: '0xbbb' as viem.Hex, side: 'tails' as const }]
+    expect(() => coinflip.settle(params, onlyTails, viem.padHex('0x02', { size: 32 }))).to.throw('winning side')
+  })
 })

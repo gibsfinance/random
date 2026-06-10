@@ -29,4 +29,23 @@ describe('secrets', () => {
     expect(raffleDraw(seedMod0)).to.equal(1n)
     expect(raffleDraw(seedMod255)).to.equal(256n)
   })
+
+  it('holds both reductions over a sweep of derived seeds (property check)', () => {
+    // 256 deterministic but well-mixed seeds via keccak — every draw must land in [1..256]
+    // and both reductions must equal the raw arithmetic the contracts use.
+    for (let i = 0; i < 256; i++) {
+      const seed = viem.keccak256(viem.toHex(`property-seed-${i}`))
+      const value = BigInt(seed)
+      expect(coinFlipOutcome(seed)).to.equal(value % 2n === 0n ? 'heads' : 'tails')
+      const draw = raffleDraw(seed)
+      expect(draw).to.equal(1n + (value % 256n))
+      expect(draw >= 1n && draw <= 256n).to.equal(true)
+    }
+  })
+
+  it('seed order matters: permuting the secrets changes the seed', () => {
+    const s0 = viem.keccak256(viem.toHex('order-a'))
+    const s1 = viem.keccak256(viem.toHex('order-b'))
+    expect(seedFromSecrets([s0, s1])).to.not.equal(seedFromSecrets([s1, s0]))
+  })
 })
