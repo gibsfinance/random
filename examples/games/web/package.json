@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "dev:local": "tsx scripts/dev-local.ts && vite",
     "dev:seed": "tsx scripts/dev-local.ts",
-    "dev:cast": "tsx scripts/dev-cast.ts"
+    "dev:cast": "tsx scripts/dev-cast.ts",
+    "dev:walkthrough": "tsx scripts/dev-walkthrough.ts"
   },
   "dependencies": {
     "@gibs/games-core": "workspace:*",

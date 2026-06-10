@@ -35,3 +35,6 @@ packages/contracts/forge-cache/
 
 # games parity-gate per-chain deployment cache
 examples/games/e2e/scripts/.gate-deployments.json
+
+# games web generated local deployment
+examples/games/web/src/generated/
