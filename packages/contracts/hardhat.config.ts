@@ -44,6 +44,39 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      'contracts/GameBase.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/Raffle.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/test/GameBaseHarness.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
     },
   },
   paths: {
