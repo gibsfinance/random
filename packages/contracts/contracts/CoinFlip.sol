@@ -118,11 +118,18 @@ contract CoinFlip is GameBase {
         _refund(e.player, e.stake);
     }
 
-    /// @notice Refund both players of a paired flip whose seed never finalized in time.
+    /// @notice Refund both players of a paired flip whose seed never finalized in time. The seed
+    /// must be genuinely missing: a flip whose seed HAS finalized is value-decided and can only be
+    /// settled to the parity winner via claim/onCast, never unwound to a mutual refund (otherwise a
+    /// participant could escape a decided outcome by waiting out the timeout). Mirrors
+    /// Raffle.refundTicket — refund opens once the seed is missing AND the request was chopped or
+    /// the liveness timeout elapsed.
     function refundStale(bytes32 flipId) external {
         Flip storage flip = flips[flipId];
         if (flip.status != Status.Pending) revert AlreadyResolved();
-        if (!_isStale(flip.pairedAtBlock)) revert TooEarly();
+        bool seedMissing = IRandom(random).randomness(flip.key).seed == bytes32(0);
+        if (!seedMissing) revert TooEarly();
+        if (!choppedInstance[flipId] && !_isStale(flip.pairedAtBlock)) revert TooEarly();
         flip.status = Status.Refunded;
         _refund(flip.heads, flip.stake);
         _refund(flip.tails, flip.stake);

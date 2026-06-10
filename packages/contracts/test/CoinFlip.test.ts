@@ -367,6 +367,43 @@ describe('CoinFlip', () => {
       expect(after - before).to.equal(stake * 2n)
       expect(await publicClient.getBalance({ address: ctx.coinFlip.address })).to.equal(0n)
     })
+
+    it('refundStale cannot unwind a flip whose seed already finalized (claim is the only resolution)', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { subset, locations, secrets } = await testUtils.setUpValidators(ctx, ctx.coinFlip, 3)
+      const caster = ctx.signers[5]!
+      const funder = ctx.signers[6]!
+      const stake = viem.parseEther('1')
+      const publicClient = await ctx.hre.viem.getPublicClient()
+
+      // receiver enters both sides so it is the winner regardless of parity; the onCast push fails
+      // and the flip stays Pending with the seed finalized.
+      const receiver = await ctx.hre.viem.deployContract(contractName.RejectableReceiver as any, [])
+      await testUtils.confirmTx(ctx, receiver.write.enter([ctx.coinFlip.address, 0, subset, []], { value: stake, account: funder.account }))
+      const matchReceipt = await testUtils.confirmTx(ctx, receiver.write.enter([ctx.coinFlip.address, 1, subset, locations], { value: stake, account: funder.account }))
+      const key = (await ctx.coinFlip.getEvents.Heated({}, { blockHash: matchReceipt.blockHash }))[0]!.args.key as viem.Hex
+      const flipId = (await ctx.coinFlip.getEvents.Paired({}, { blockHash: matchReceipt.blockHash }))[0]!.args.flipId!
+      await testUtils.confirmTx(ctx, ctx.random.write.cast([key, locations, secrets], { account: caster.account }))
+      expect((await ctx.random.read.randomness([key])).seed).to.not.equal(viem.zeroHash)
+
+      // let the receiver accept ETH again, so a refund transfer itself would NOT fail — this
+      // isolates the seed check as the reason refundStale is rejected (not the ETH transfer).
+      await testUtils.confirmTx(ctx, receiver.write.setReject([false], { account: funder.account }))
+
+      // pass the stale timeout. The seed IS finalized, so refundStale must refuse — a decided flip
+      // can only be settled to the winner via claim, never unwound to a mutual refund. (Pre-fix,
+      // refundStale ignored the seed and would have refunded both, escaping the decided outcome.)
+      await helpers.mine(201)
+      await expectations.revertedWithCustomError(
+        ctx.coinFlip,
+        ctx.coinFlip.write.refundStale([flipId]),
+        'TooEarly',
+      )
+
+      // the rightful resolution: claim pays the winner the full pot
+      await expectations.emit(ctx, ctx.coinFlip.write.claim([flipId], { account: caster.account }), ctx.coinFlip, 'Settled')
+      expect(await publicClient.getBalance({ address: ctx.coinFlip.address })).to.equal(0n)
+    })
   })
 
   describe('validator-only entropy', () => {
