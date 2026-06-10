@@ -31,12 +31,24 @@ const local = Object.values(generated)[0]?.default
 
 export const deployments: GameDeployment[] = [
   ...(local ? [{ ...local, label: 'Local (anvil)' }] : []),
-  // 943 lights up after the live parity-gate run: fill these from the README run log.
-  // {
-  //   chainId: 943, label: 'PulseChain testnet v4',
-  //   coinFlip: '0x…', raffle: '0x…', random: '0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217',
-  //   canonicalSubset: ['0x…', '0x…', '0x…'], poolOffsets: {}, deployBlock: '<gate deploy block>',
-  //   rpc: 'https://evm-943-rpc.valve.city', // the valve fleet, not the public default
-  //   explorer: 'https://scan.v4.testnet.pulsechain.com',
-  // },
+  // Deployed by the 2026-06-10 live parity-gate run + ink-pools (e2e/scripts/943-deployment.json).
+  {
+    chainId: 943,
+    label: 'PulseChain testnet v4',
+    coinFlip: '0x8d3a58d77d22636026066200f8868cd653ec2b2a',
+    raffle: '0x33f506fafe4f05c8de9a07e1c8a7f73f50f1da36',
+    random: '0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217',
+    canonicalSubset: [
+      '0xAe96b0748f933914867d59486251043790cB2896',
+      '0x2a638D7135966a5cA1973c930bD0317cd7d6874c',
+      '0x0D3148A85608708Fe944EE71E13B4C9181b7cc83',
+    ],
+    poolOffsets: {
+      '0xae96b0748f933914867d59486251043790cb2896': '2',
+      '0x2a638d7135966a5ca1973c930bd0317cd7d6874c': '2',
+      '0x0d3148a85608708fe944ee71e13b4c9181b7cc83': '2',
+    },
+    deployBlock: '24643476',
+    explorer: 'https://scan.v4.testnet.pulsechain.com/#',
+  },
 ]
