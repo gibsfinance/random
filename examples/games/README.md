@@ -44,6 +44,36 @@ Each script deploys fresh contracts, so restart `anvil` between runs (or just le
 fresh deployments do not collide, but event scans start from block zero, so a fresh chain keeps
 the output unambiguous).
 
+## The web app
+
+`web/` (`@gibs/games-web`) is the player-facing surface: Vite + React over the core, with no
+game arithmetic of its own — every rule goes through the game packages, and every settled round
+renders a "verify this draw yourself" panel that recomputes the winner off-chain (the parity
+assertion as a product feature, with an explicit MISMATCH state). The trust disclosure below is
+acknowledge-to-play.
+
+Local development (anvil running):
+
+1. `pnpm --filter @gibs/games-web dev:local` — deploys Random + both games, allowlists three
+   validators with sixteen-preimage pools (a preimage is one-shot; each pairing or arming
+   consumes one per validator), seeds a waiting heads entry and a two-of-three raffle round,
+   writes `src/generated/local.json`, and starts the dev server.
+2. Point a browser wallet at `http://127.0.0.1:8545` (chain 31337) with any spare anvil key
+   (account 9 is free) and play.
+3. `pnpm --filter @gibs/games-web dev:cast` is the stand-in validator: it casts any outstanding
+   seeds and reveals the seeded bots' tickets. `dev:cast mine 31` passes the raffle period;
+   `dev:cast mine 101` closes a reveal window so Finalise opens (anvil only mines on
+   transactions).
+4. `pnpm --filter @gibs/games-web dev:walkthrough full` runs the whole loop headlessly —
+   exactly the transactions the buttons send — and asserts both verify-panel parity conditions.
+
+Raffle salt custody: the salt proving a hidden guess lives in the browser's localStorage; the
+commit flow shows a backup string immediately, and losing the salt before revealing forfeits
+the stake to the pot. The import field restores a backup on another browser.
+
+To light up PulseChain testnet v4, fill the commented 943 entry in `web/src/config.ts` with the
+addresses from the parity gate's run log below.
+
 ## The disclosed trust assumption
 
 Any player-facing surface must show this plainly: **a draw is safe as long as at least one of the
