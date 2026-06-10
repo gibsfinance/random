@@ -440,4 +440,46 @@ describe('CoinFlip', () => {
       expect(gameInks.length).to.equal(0)
     })
   })
+
+  // Property fuzzing (Hardhat). Fuzzes seed parity and stake; the validator-only seed decides the
+  // winner, so we push a fuzzed seed through the real onCast as Random. Asserts the parity winner
+  // takes exactly 2*stake and the contract is left with no dust. Seeded LCG -> reproducible.
+  describe('property fuzzing', () => {
+    const ITERATIONS = 40
+    const makeRng = (seed: number) => {
+      let s = seed >>> 0
+      return () => { s = (Math.imul(s, 1103515245) + 12345) >>> 0; return s / 0x100000000 }
+    }
+    const randInt = (rng: () => number, lo: number, hi: number) => lo + Math.floor(rng() * (hi - lo + 1))
+
+    it(`pays the parity winner exactly 2*stake with no dust across ${ITERATIONS} fuzzed flips`, async () => {
+      const rng = makeRng(0xbeef)
+      for (let iter = 0; iter < ITERATIONS; iter++) {
+        const ctx = await helpers.loadFixture(testUtils.deploy)
+        const publicClient = await ctx.hre.viem.getPublicClient()
+        const { subset, locations } = await testUtils.setUpValidators(ctx, ctx.coinFlip, 3)
+        const heads = ctx.signers[1]
+        const tails = ctx.signers[2]
+        const stake = viem.parseEther('1') * BigInt(randInt(rng, 1, 9))
+
+        await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([0, subset, []], { value: stake, account: heads.account }))
+        const matchReceipt = await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([1, subset, locations], { value: stake, account: tails.account }))
+        const key = (await ctx.coinFlip.getEvents.Heated({}, { blockHash: matchReceipt.blockHash }))[0]!.args.key as viem.Hex
+
+        const seedVal = BigInt(randInt(rng, 0, 0xffffff)) * 31337n + BigInt(iter)
+        const parity = Number(seedVal & 1n) // 0 = heads, 1 = tails
+        const expectedWinner = parity === 0 ? heads : tails
+        const winnerBefore = await publicClient.getBalance({ address: expectedWinner.account.address })
+
+        await ctx.hre.network.provider.send('hardhat_impersonateAccount', [ctx.random.address])
+        await ctx.hre.network.provider.send('hardhat_setBalance', [ctx.random.address, viem.toHex(10n ** 18n)])
+        await testUtils.confirmTx(ctx, ctx.coinFlip.write.onCast([key, viem.toHex(seedVal, { size: 32 })], { account: ctx.random.address }))
+        await ctx.hre.network.provider.send('hardhat_stopImpersonatingAccount', [ctx.random.address])
+
+        const winnerAfter = await publicClient.getBalance({ address: expectedWinner.account.address })
+        expect(winnerAfter - winnerBefore, `iter ${iter}: parity winner gets 2*stake`).to.equal(stake * 2n)
+        expect(await publicClient.getBalance({ address: ctx.coinFlip.address }), `iter ${iter}: no dust`).to.equal(0n)
+      }
+    })
+  })
 })

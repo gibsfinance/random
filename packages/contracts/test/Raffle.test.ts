@@ -641,4 +641,121 @@ describe('Raffle', () => {
       expect(after).to.equal(before) // the round's three stakes all left the contract
     })
   })
+
+  // Property fuzzing in the Hardhat toolchain. A real validator cast yields an unpredictable draw,
+  // so to fuzz over many draws we impersonate Random and push a chosen seed through the real onCast
+  // entrypoint; the contract logic under test (winner selection, accounting) is identical either
+  // way. A seeded LCG drives the randomness so any failure is reproducible from the logged seed.
+  describe('property fuzzing', () => {
+    const ITERATIONS = 40
+
+    // deterministic 32-bit LCG (glibc constants); reproducible, no Math.random
+    const makeRng = (seed: number) => {
+      let s = seed >>> 0
+      return () => {
+        s = (Math.imul(s, 1103515245) + 12345) >>> 0
+        return s / 0x100000000
+      }
+    }
+    const randInt = (rng: () => number, lo: number, hi: number) => lo + Math.floor(rng() * (hi - lo + 1))
+
+    // off-chain oracle: replays the exact on-chain selection rule (closest distance, ties to the
+    // earliest commit block, then the lowest ticket id) over the revealed tickets.
+    const expectedWinner = (
+      draw: bigint,
+      revealed: { ticketId: bigint; guess: bigint; block: bigint }[],
+    ) => {
+      let best: { ticketId: bigint; dist: bigint; block: bigint } | null = null
+      for (const r of revealed) {
+        const dist = r.guess > draw ? r.guess - draw : draw - r.guess
+        if (
+          best === null ||
+          dist < best.dist ||
+          (dist === best.dist && r.block < best.block) ||
+          (dist === best.dist && r.block === best.block && r.ticketId < best.ticketId)
+        ) {
+          best = { ticketId: r.ticketId, dist, block: r.block }
+        }
+      }
+      return best ? best.ticketId : 0n
+    }
+
+    it(`holds draw-range, winner-is-closest and value conservation across ${ITERATIONS} fuzzed rounds`, async () => {
+      const fuzzSeed = 0xc0ffee
+      const rng = makeRng(fuzzSeed)
+
+      for (let iter = 0; iter < ITERATIONS; iter++) {
+        // fresh fixture per iteration: a real arm() consumes the validators' inked preimages, so
+        // each round needs freshly-inked entropy (otherwise Random reverts UnableToService).
+        const ctx = await helpers.loadFixture(testUtils.deploy)
+        const publicClient = await ctx.hre.viem.getPublicClient()
+        const { subset, locations } = await testUtils.setUpValidators(ctx, ctx.raffle, 3)
+        const pool = ctx.signers.slice(1, 9) // a random subset of these commits each round
+        const contractBefore = await publicClient.getBalance({ address: ctx.raffle.address })
+        const n = randInt(rng, 3, pool.length) // at least threshold (3) committers
+        const fStake = viem.parseEther('1') * BigInt(randInt(rng, 1, 5))
+        const players = pool.slice(0, n)
+        const guesses = players.map(() => BigInt(randInt(rng, 1, 256)))
+        const salts = players.map((_p, i) => viem.keccak256(viem.toHex(`fz-${iter}-${i}`)))
+
+        let firstReceipt: any
+        const commitBlocks: bigint[] = []
+        for (let i = 0; i < n; i++) {
+          const receipt = await testUtils.confirmTx(ctx, ctx.raffle.write.commit(
+            [fStake, 3n, 5n, subset, commitmentFor(guesses[i], salts[i], players[i].account.address)],
+            { value: fStake, account: players[i].account },
+          ))
+          if (i === 0) firstReceipt = receipt
+          commitBlocks.push(receipt.blockNumber as bigint)
+        }
+        const roundId = (await ctx.raffle.getEvents.RoundOpened({}, { blockHash: firstReceipt.blockHash }))[0].args.roundId as viem.Hex
+        // ticket ids are 1-based via ++nextTicket; player i (commit i) holds firstTicket + i
+        const firstTicket = (await ctx.raffle.read.nextTicket()) - BigInt(n) + 1n
+
+        await helpers.mine(6)
+        const armReceipt = await testUtils.confirmTx(ctx, ctx.raffle.write.arm([roundId, locations]))
+        const key = (await ctx.raffle.getEvents.Armed({}, { blockHash: armReceipt.blockHash }))[0].args.key as viem.Hex
+
+        // push a fuzzed seed through the real onCast as Random
+        const seedVal = BigInt(randInt(rng, 0, 0xffffff)) * 7919n + BigInt(iter)
+        await ctx.hre.network.provider.send('hardhat_impersonateAccount', [ctx.random.address])
+        await ctx.hre.network.provider.send('hardhat_setBalance', [ctx.random.address, viem.toHex(10n ** 18n)])
+        await testUtils.confirmTx(ctx, ctx.raffle.write.onCast([key, viem.toHex(seedVal, { size: 32 })], { account: ctx.random.address }))
+        await ctx.hre.network.provider.send('hardhat_stopImpersonatingAccount', [ctx.random.address])
+
+        const draw = (await ctx.raffle.read.rounds([roundId]))[10] as bigint
+        expect(draw, `iter ${iter} seed ${fuzzSeed}: draw in range`).to.be.greaterThanOrEqual(1n)
+        expect(draw).to.be.lessThanOrEqual(RANGE)
+
+        // reveal a random subset in a random order; track who actually revealed
+        const order = players.map((_p, i) => i).sort(() => rng() - 0.5)
+        const revealed: { ticketId: bigint; guess: bigint; block: bigint }[] = []
+        for (const i of order) {
+          if (rng() < 0.2) continue // ~20% withhold their reveal
+          const ticketId = firstTicket + BigInt(i)
+          await testUtils.confirmTx(ctx, ctx.raffle.write.reveal([ticketId, guesses[i], salts[i]], { account: players[i].account }))
+          revealed.push({ ticketId, guess: guesses[i], block: commitBlocks[i] })
+        }
+
+        await helpers.mine(101)
+        const subsetBalsBefore = await Promise.all(subset.map((v: viem.Hex) => publicClient.getBalance({ address: v })))
+        await testUtils.confirmTx(ctx, ctx.raffle.write.finalise([roundId]))
+
+        const pot = fStake * BigInt(n)
+        const oracleWinner = expectedWinner(draw, revealed)
+        if (oracleWinner !== 0n) {
+          // bestTicket on-chain must match the oracle, and that player must have received the pot
+          expect((await ctx.raffle.read.rounds([roundId]))[12], `iter ${iter}: winner matches oracle`).to.equal(oracleWinner)
+        } else {
+          // nobody revealed -> no-contest: the pot is split across the validator subset
+          const after = await Promise.all(subset.map((v: viem.Hex) => publicClient.getBalance({ address: v })))
+          const distributed = after.reduce((acc, b, i) => acc + (b - subsetBalsBefore[i]), 0n)
+          expect(distributed, `iter ${iter}: no-contest distributes whole pot`).to.equal(pot)
+        }
+        // value conservation: the contract holds exactly what it did before this round
+        const contractAfter = await publicClient.getBalance({ address: ctx.raffle.address })
+        expect(contractAfter, `iter ${iter}: no stuck balance`).to.equal(contractBefore)
+      }
+    })
+  })
 })
