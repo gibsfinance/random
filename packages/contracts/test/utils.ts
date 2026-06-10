@@ -52,6 +52,7 @@ export const deploy = async () => {
   //   '0x000000000000D9ECebf3C23529de49815Dac1c4c',
   // )
   const coinFlip = await hre.viem.deployContract(contractName.CoinFlip, [random.address])
+  const gameBaseHarness = await hre.viem.deployContract(contractName.GameBaseHarness, [random.address])
   const deployedContracts = {
     random,
     reader,
@@ -65,6 +66,7 @@ export const deploy = async () => {
     consumerIncomplete,
     consumerEmitter,
     coinFlip,
+    gameBaseHarness,
   }
   for (const [name, contract] of Object.entries(deployedContracts)) {
     console.log('%s:%o', contract.address, name)
@@ -336,6 +338,47 @@ export const selectPreimages = async (
   return {
     all: _flattened.value(),
     selections: _flattened.sampleSize(count).value(),
+  }
+}
+
+/**
+ * Allowlist `count` of the always-on randomness providers on a GameBase-derived contract and ink
+ * one price-0 preimage per provider under that provider's own address. Returns, per validator, the
+ * address, its heat location (offset 0, index 0), and its secret — the shape a declared subset and
+ * its heat selection take.
+ */
+export const setUpValidators = async (
+  ctx: Context,
+  // a GameBase-derived contract instance; typed loosely so any game's write surface is callable
+  game: any,
+  count = 3,
+) => {
+  const rand = await ctx.hre.viem.getContractAt(contractName.Random, ctx.random.address)
+  const providers = (await getRandomnessProviders(ctx.hre)).slice(0, count)
+  const validators = await Promise.all(
+    providers.map(async (provider) => {
+      await confirmTx(ctx, game.write.addValidator([provider.account!.address]))
+      const section = {
+        ...utils.defaultSection,
+        provider: provider.account!.address,
+        price: 0n,
+        offset: 0n,
+        index: 0n,
+      }
+      const secret = viem.keccak256(viem.toHex(`gamebase-validator-${provider.account!.address}`))
+      const preimage = viem.keccak256(secret)
+      await confirmTx(
+        ctx,
+        rand.write.ink([section, preimage], { account: provider.account!, value: 0n }),
+      )
+      return { address: provider.account!.address, location: { ...section, index: 0n }, secret, preimage }
+    }),
+  )
+  return {
+    subset: validators.map((v) => v.address),
+    locations: validators.map((v) => v.location),
+    secrets: validators.map((v) => v.secret),
+    validators,
   }
 }
 

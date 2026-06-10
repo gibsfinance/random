@@ -36,9 +36,17 @@ export const revertedWithCustomError = async (
     const er = rpcError.walk((err: unknown) => {
       return !!(err as any).data
     })
+    const rawData = (er as any).data
+    const hexData: string | undefined =
+      typeof rawData === 'string' && rawData.startsWith('0x')
+        ? rawData
+        : typeof rawData === 'object' && rawData !== null && typeof rawData.data === 'string'
+        ? rawData.data
+        : undefined
+    if (!hexData) throw new Error('no revert data found')
     const parsed = viem.decodeErrorResult({
       abi: contract.abi,
-      data: (er as any).data,
+      data: hexData as `0x${string}`,
     })
     if (parsed.errorName === errorName) {
       if (!parsed.args || _.isEqual(parsed.args, args)) {
