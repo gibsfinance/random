@@ -26,3 +26,9 @@ packages/contracts/ignition/deployments/*/journal.jsonl
 
 # Local deploy-address cache written by scripts/duel-943.ts
 packages/contracts/scripts/.coinflip-943.json
+
+# Foundry (games-platform fuzz/invariant suite). forge-std is restored with
+# `forge install foundry-rs/forge-std` (like node_modules); build output is disposable.
+/lib/
+packages/contracts/forge-out/
+packages/contracts/forge-cache/
