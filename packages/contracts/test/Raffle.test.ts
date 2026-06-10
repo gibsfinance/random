@@ -267,6 +267,34 @@ describe('Raffle', () => {
         [stake],
       )
     })
+
+    it('refunds immediately via the chop path, before the stale timeout', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { subset, locations } = await testUtils.setUpValidators(ctx, ctx.raffle, 3)
+      const players = ctx.signers.slice(1, 4)
+      let firstReceipt: any
+      for (let i = 0; i < 3; i++) {
+        const receipt = await testUtils.confirmTx(ctx, ctx.raffle.write.commit(
+          [stake, threshold, period, subset, commitmentFor(BigInt(i + 1), viem.keccak256(viem.toHex(`ch${i}`)), players[i].account.address)],
+          { value: stake, account: players[i].account },
+        ))
+        if (i === 0) firstReceipt = receipt
+      }
+      const roundId = (await ctx.raffle.getEvents.RoundOpened({}, { blockHash: firstReceipt.blockHash }))[0].args.roundId as viem.Hex
+      await helpers.mine(6)
+      const armReceipt = await testUtils.confirmTx(ctx, ctx.raffle.write.arm([roundId, locations]))
+      const key = (await ctx.raffle.getEvents.Armed({}, { blockHash: armReceipt.blockHash }))[0].args.key as viem.Hex
+      // expire the heat window and chop the request -> Random pushes onChop -> choppedInstance set
+      await helpers.mine(12)
+      await testUtils.confirmTx(ctx, ctx.random.write.chop([key, locations]))
+      expect(await ctx.raffle.read.choppedInstance([roundId])).to.equal(true)
+      // refund is available now (chopped), well before STALE_BLOCKS would have elapsed
+      await expectations.changeEtherBalances(ctx,
+        ctx.raffle.write.refundTicket([1n], { account: players[0].account }),
+        [players[0].account.address],
+        [stake],
+      )
+    })
   })
 
   describe('security invariants', () => {

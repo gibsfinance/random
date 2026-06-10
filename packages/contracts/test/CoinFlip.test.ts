@@ -404,6 +404,27 @@ describe('CoinFlip', () => {
       await expectations.emit(ctx, ctx.coinFlip.write.claim([flipId], { account: caster.account }), ctx.coinFlip, 'Settled')
       expect(await publicClient.getBalance({ address: ctx.coinFlip.address })).to.equal(0n)
     })
+
+    it('refundStale opens immediately via the chop path, before the stale timeout', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const { subset, locations } = await testUtils.setUpValidators(ctx, ctx.coinFlip, 3)
+      const [a, b] = ctx.signers
+      const stake = viem.parseEther('1')
+      await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([0, subset, []], { value: stake, account: a.account }))
+      const matchReceipt = await testUtils.confirmTx(ctx, ctx.coinFlip.write.enterAndMatch([1, subset, locations], { value: stake, account: b.account }))
+      const key = (await ctx.coinFlip.getEvents.Heated({}, { blockHash: matchReceipt.blockHash }))[0]!.args.key as viem.Hex
+      const flipId = (await ctx.coinFlip.getEvents.Paired({}, { blockHash: matchReceipt.blockHash }))[0]!.args.flipId!
+      // expire the heat window and chop -> onChop sets choppedInstance; the seed never formed
+      await helpers.mine(12)
+      await testUtils.confirmTx(ctx, ctx.random.write.chop([key, locations]))
+      expect(await ctx.coinFlip.read.choppedInstance([flipId])).to.equal(true)
+      // both players are refunded now (chopped + seed missing), without waiting for STALE_BLOCKS
+      await expectations.changeEtherBalances(ctx,
+        ctx.coinFlip.write.refundStale([flipId]),
+        [a!.account.address, b!.account.address],
+        [stake, stake],
+      )
+    })
   })
 
   describe('validator-only entropy', () => {

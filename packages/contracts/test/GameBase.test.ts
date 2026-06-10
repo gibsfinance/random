@@ -31,6 +31,34 @@ describe('GameBase', () => {
         'OnlyOwner',
       )
     })
+
+    it('transfers ownership and moves owner-only authority to the new owner', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      const next = ctx.signers[1]
+      await expectations.emit(ctx,
+        ctx.gameBaseHarness.write.transferOwnership([next.account.address]),
+        ctx.gameBaseHarness, 'OwnerTransferred',
+      )
+      expect(viem.getAddress((await ctx.gameBaseHarness.read.owner()) as viem.Hex)).to.equal(viem.getAddress(next.account.address))
+      // the old owner has lost owner-only authority
+      await expectations.revertedWithCustomError(
+        ctx.gameBaseHarness,
+        ctx.gameBaseHarness.write.addValidator([ctx.signers[5].account.address]),
+        'OnlyOwner',
+      )
+      // the new owner now holds it
+      await testUtils.confirmTx(ctx, ctx.gameBaseHarness.write.addValidator([ctx.signers[5].account.address], { account: next.account }))
+      expect(await ctx.gameBaseHarness.read.isValidator([ctx.signers[5].account.address])).to.equal(true)
+    })
+
+    it('rejects transferOwnership from a non-owner', async () => {
+      const ctx = await helpers.loadFixture(testUtils.deploy)
+      await expectations.revertedWithCustomError(
+        ctx.gameBaseHarness,
+        ctx.gameBaseHarness.write.transferOwnership([ctx.signers[1].account.address], { account: ctx.signers[1].account }),
+        'OnlyOwner',
+      )
+    })
   })
 
   describe('escrow', () => {
