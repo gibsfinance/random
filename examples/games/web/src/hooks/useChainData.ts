@@ -43,7 +43,7 @@ export const useChainData = (deployment: GameDeployment | null, myAddress?: viem
     if (!deployment || busy.current) return
     busy.current = true
     try {
-      const client = publicClientFor(deployment.chainId)
+      const client = publicClientFor(deployment.chainId, deployment.rpc)
       const from = BigInt(deployment.deployBlock)
       const [blockNumber, entered, cancelled, paired, heated, settled, opened, committed, ticketCancelled, armed, drawn, revealed, finalised, noContest, ticketRefunded] =
         await Promise.all([

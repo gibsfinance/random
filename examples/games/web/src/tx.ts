@@ -11,7 +11,7 @@ export const sendGameTx = async (
   walletClient: viem.WalletClient,
   call: { address: viem.Hex; abi: viem.Abi; functionName: string; args: readonly unknown[]; value?: bigint },
 ): Promise<viem.TransactionReceipt> => {
-  const publicClient = publicClientFor(deployment.chainId)
+  const publicClient = publicClientFor(deployment.chainId, deployment.rpc)
   try {
     const { request } = await publicClient.simulateContract({
       ...call,

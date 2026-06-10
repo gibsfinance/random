@@ -118,7 +118,7 @@ export const RaffleScreen = ({
   const loadSeed = (round: RaffleRoundView) =>
     run(async () => {
       if (!round.key) throw new Error('round has no request key yet')
-      const randomness = (await publicClientFor(deployment.chainId).readContract({
+      const randomness = (await publicClientFor(deployment.chainId, deployment.rpc).readContract({
         address: deployment.random,
         abi: randomAbi,
         functionName: 'randomness',

@@ -9,8 +9,8 @@ declare global {
   }
 }
 
-/** Build the read client for a chain through the core registry. */
-export const publicClientFor = (chainId: GamesChainId) => makePublicClient(chainId)
+/** Build the read client for a chain through the core registry (optionally overriding the RPC). */
+export const publicClientFor = (chainId: GamesChainId, rpc?: string) => makePublicClient(chainId, rpc)
 
 /** Connect the injected wallet and return a viem wallet client on the requested chain. */
 export const connectInjected = async (chainId: GamesChainId): Promise<viem.WalletClient> => {

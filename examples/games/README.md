@@ -72,7 +72,38 @@ commit flow shows a backup string immediately, and losing the salt before reveal
 the stake to the pot. The import field restores a backup on another browser.
 
 To light up PulseChain testnet v4, fill the commented 943 entry in `web/src/config.ts` with the
-addresses from the parity gate's run log below.
+addresses from the parity gate's run log below (and keep its `rpc` pointed at the valve fleet
+endpoint rather than the public default).
+
+### Production deployment (games.msgboard.xyz)
+
+The build is a fully static bundle (`pnpm --filter @gibs/games-web build` → `web/dist/`); the
+browser talks straight to the chain, so hosting is one Caddy site block on the msgboard box
+behind the existing Cloudflare-proxied `msgboard.xyz` zone. The sequence, blocked first on the
+live 943 gate run (without it the site has no playable chain):
+
+1. Run the gate (`pnpm gate` with the funded mnemonic), fill `web/src/config.ts`'s 943 entry
+   from the run log, commit, `pnpm --filter @gibs/games-web build`.
+2. Cloudflare dashboard: add a proxied A record `games` → the msgboard box, same as the
+   existing `archive`/`evm-943-entropy` records.
+3. On the box: copy `web/dist/` to `/var/www/games`, and add to the Caddyfile (it already
+   terminates `*.msgboard.xyz` with the Cloudflare origin certificate):
+
+   ```
+   games.msgboard.xyz {
+       tls /etc/caddy/origin.pem /etc/caddy/origin.key
+       encode gzip zstd
+       root * /var/www/games
+       try_files {path} /index.html
+       file_server
+   }
+   ```
+
+   (Match the cert paths and any common snippets to the existing site blocks on the box —
+   this lives in the private `deploy/` tree, not in this repository.) Validate with
+   `caddy validate` before reloading, then `systemctl reload caddy`.
+4. Smoke: `https://games.msgboard.xyz` loads, the trust banner shows, the chain picker offers
+   PulseChain testnet v4, and a settled round's verify panel shows the match state.
 
 ## The disclosed trust assumption
 

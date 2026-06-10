@@ -14,6 +14,8 @@ export type GameDeployment = {
   poolOffsets: Record<string, string>
   /** Scan events from here (the deploy block) to keep live-chain scans cheap. */
   deployBlock: string
+  /** Override the read RPC (e.g. the valve.city fleet endpoint); defaults to the core registry's. */
+  rpc?: string
   explorer?: string
 }
 
@@ -33,7 +35,8 @@ export const deployments: GameDeployment[] = [
   // {
   //   chainId: 943, label: 'PulseChain testnet v4',
   //   coinFlip: '0x…', raffle: '0x…', random: '0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217',
-  //   canonicalSubset: ['0x…', '0x…', '0x…'], poolOffsets: {}, deployBlock: '0',
+  //   canonicalSubset: ['0x…', '0x…', '0x…'], poolOffsets: {}, deployBlock: '<gate deploy block>',
+  //   rpc: 'https://evm-943-rpc.valve.city', // the valve fleet, not the public default
   //   explorer: 'https://scan.v4.testnet.pulsechain.com',
   // },
 ]
