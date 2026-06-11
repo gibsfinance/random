@@ -6,8 +6,55 @@ import type { ChainData } from '../hooks/useChainData'
 import type { FlipView } from '../model/coinflip-lobby'
 import { sendGameTx, nextHeatLocations } from '../tx'
 import { CoinFlipVerifyPanel } from './VerifyPanel'
-import { AddressLink, Provenance, SourceNote, formatWhen } from './Meta'
+import { AddressLink, Provenance, SourceNote, archiveTrailUrl, formatWhen } from './Meta'
 import { StakeInput, parseStake } from './StakeInput'
+
+/**
+ * Hoisted to module level on purpose: defining this inside the screen gave it a fresh
+ * component identity every render, so the 4 s poll remounted every card and replayed the
+ * entry animation — the "periodic flashing". A stable identity just re-renders in place.
+ */
+const FlipCard = ({
+  flip,
+  deployment,
+  timestamps,
+}: {
+  flip: FlipView
+  deployment: GameDeployment
+  timestamps: Record<string, number>
+}) => (
+  <div className="card">
+    <div className="row" style={{ justifyContent: 'space-between' }}>
+      <span>
+        <span className="tag">heads</span>
+        <AddressLink deployment={deployment} address={flip.heads} />
+        <span className="muted"> vs </span>
+        <span className="tag">tails</span>
+        <AddressLink deployment={deployment} address={flip.tails} />
+        {flip.mine && <span className="tag ok">you</span>}
+      </span>
+      <span>
+        {flip.status === 'pending' ? (
+          <span className="muted flipping"><span className="coin" />waiting for the validators' cast…</span>
+        ) : (
+          <span className="ok">
+            {flip.winningSide} wins — <AddressLink deployment={deployment} address={flip.winner!} /> takes{' '}
+            {viem.formatEther(flip.stake * 2n)}
+          </span>
+        )}
+      </span>
+    </div>
+    <Provenance
+      deployment={deployment}
+      timestamps={timestamps}
+      items={[
+        { label: 'paired', block: flip.pairedAtBlock, tx: flip.pairTx },
+        { label: 'settled', block: flip.settledAtBlock, tx: flip.settleTx },
+      ]}
+    />
+    <CoinFlipVerifyPanel flip={flip} deployment={deployment} />
+  </div>
+)
 
 export const CoinFlipScreen = ({
   deployment,
@@ -75,40 +122,6 @@ export const CoinFlipScreen = ({
   const matchableNow =
     stake !== undefined &&
     data.lobby.openEntries.some((e) => e.stake === stake && e.side === (side === 0 ? 'tails' : 'heads'))
-
-  const FlipCard = ({ flip }: { flip: FlipView }) => (
-    <div className="card">
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <span>
-          <span className="tag">heads</span>
-          <AddressLink deployment={deployment} address={flip.heads} />
-          <span className="muted"> vs </span>
-          <span className="tag">tails</span>
-          <AddressLink deployment={deployment} address={flip.tails} />
-          {flip.mine && <span className="tag ok">you</span>}
-        </span>
-        <span>
-          {flip.status === 'pending' ? (
-            <span className="muted flipping"><span className="coin" />waiting for the validators' cast…</span>
-          ) : (
-            <span className="ok">
-              {flip.winningSide} wins — <AddressLink deployment={deployment} address={flip.winner!} /> takes{' '}
-              {viem.formatEther(flip.stake * 2n)}
-            </span>
-          )}
-        </span>
-      </div>
-      <Provenance
-        deployment={deployment}
-        timestamps={data.timestamps}
-        items={[
-          { label: 'paired', block: flip.pairedAtBlock, tx: flip.pairTx },
-          { label: 'settled', block: flip.settledAtBlock, tx: flip.settleTx },
-        ]}
-      />
-      <CoinFlipVerifyPanel flip={flip} deployment={deployment} />
-    </div>
-  )
 
   const pending = data.lobby.flips.filter((f) => f.status === 'pending')
   const settled = data.lobby.flips.filter((f) => f.status === 'settled')
@@ -179,7 +192,7 @@ export const CoinFlipScreen = ({
         </div>
       ))}
       {[...pending].reverse().map((flip) => (
-        <FlipCard key={flip.flipId} flip={flip} />
+        <FlipCard key={flip.flipId} flip={flip} deployment={deployment} timestamps={data.timestamps} />
       ))}
 
       <h2>
@@ -192,10 +205,20 @@ export const CoinFlipScreen = ({
           <summary>
             {settled.length} settled flip{settled.length === 1 ? '' : 's'} · {viem.formatEther(settledPot)} paid out
             {lastSettledWhen && <span className="muted"> · last {lastSettledWhen}</span>}
+            {archiveTrailUrl(deployment) && (
+              <a
+                href={archiveTrailUrl(deployment)}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                msgboard trail ↗
+              </a>
+            )}
             <span className="muted history-hint">every one verifiable — open the book</span>
           </summary>
           {[...settled].reverse().map((flip) => (
-            <FlipCard key={flip.flipId} flip={flip} />
+            <FlipCard key={flip.flipId} flip={flip} deployment={deployment} timestamps={data.timestamps} />
           ))}
         </details>
       )}

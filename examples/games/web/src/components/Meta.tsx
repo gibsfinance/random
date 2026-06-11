@@ -11,6 +11,27 @@ export const explorerUrl = (
   value: string,
 ): string | undefined => (deployment.explorer ? `${deployment.explorer}/${kind}/${value}` : undefined)
 
+/**
+ * A prefilled archive.msgboard.xyz query for the venue's settlement notices on this chain —
+ * the trail the cast watcher stamps onto MsgBoard (category msgboard-games) with every cast.
+ */
+export const archiveTrailUrl = (deployment: GameDeployment): string | undefined => {
+  if (!deployment.archive) return undefined
+  const query = `{
+  message_archive(
+    where: { chain_id: { _eq: ${deployment.chainId} }, category_text: { _eq: "msgboard-games" } }
+    order_by: { first_seen_at: desc }
+    limit: 50
+  ) {
+    category_text
+    data_text
+    block_number
+    first_seen_at
+  }
+}`
+  return `${deployment.archive}/?query=${encodeURIComponent(query)}`
+}
+
 /** "Jun 11, 14:32 UTC" — short enough for a card line, full ISO in the title for the pedants. */
 export const formatWhen = (unixSeconds?: number): string | undefined => {
   if (unixSeconds === undefined) return undefined
@@ -116,14 +137,20 @@ export const SourceNote = ({
   contractLabel: string
 }) => {
   const url = explorerUrl(deployment, 'address', contract)
+  const trail = archiveTrailUrl(deployment)
   return (
     <InfoDot>
       <strong>Don't take our word for any of this.</strong> Every fact on this card is read live from the{' '}
       {url ? <ExternalLink href={url}>{contractLabel} contract</ExternalLink> : `${contractLabel} contract`} on{' '}
       {deployment.label} — this site adds nothing you can't check. The timestamps and tx links point at the public
       explorer; the how-to for checking a draw yourself is written up{' '}
-      <ExternalLink href={MSGBOARD_GAMES_DOCS}>on MsgBoard</ExternalLink> (and the data itself already lives on
-      chain).
+      <ExternalLink href={MSGBOARD_GAMES_DOCS}>on MsgBoard</ExternalLink>
+      {trail ? (
+        <>
+          , and every settlement leaves a notice on the board — <ExternalLink href={trail}>see the trail</ExternalLink>
+        </>
+      ) : null}{' '}
+      (the data itself already lives on chain).
     </InfoDot>
   )
 }

@@ -19,6 +19,14 @@
  *      SEEDS0 (bot guess/salt derivation), CHAIN (default 943), RPC, CONFIG,
  *      BOTS (default 3), INTERVAL_MS (default 90000), ENTER_PROBABILITY (default 0.35),
  *      MAX_STAKE (coins, default 25 — the biggest human stake a bot will take on),
+ *      VAULT_FLOOR (coins, default 100): when the funder (account 0) drops below this, the
+ *      bots PAUSE all spending on that chain — no top-ups, entries, commits, arms or
+ *      finalises (reveals still go out; they recover escrowed stakes). Play resumes by
+ *      itself once the vault is refilled.
+ *      SELF_PLAY_INTERVAL_MS (default 0 = off): minimum gap between SELF-INITIATED spends
+ *      (fresh queue entries, opening rounds, filling bot-only rounds). Pairing a human
+ *      entry or filling a round a human sits in stays immediate — sparing cadence never
+ *      leaves a human hanging.
  *      ONCE=true for a single pass.
  */
 import * as viem from 'viem'
@@ -42,6 +50,8 @@ const BOT_KEY_BASE = 50_000_000 // reserved seeds0 range for bot salt derivation
 const INTERVAL_MS = env.INTERVAL_MS ? Number(env.INTERVAL_MS) : 90_000
 const ENTER_PROBABILITY = env.ENTER_PROBABILITY ? Number(env.ENTER_PROBABILITY) : 0.35
 const MAX_STAKE = viem.parseEther(env.MAX_STAKE || '25') // biggest entry/ticket a bot takes on
+const VAULT_FLOOR = viem.parseEther(env.VAULT_FLOOR || '100')
+const SELF_PLAY_INTERVAL_MS = env.SELF_PLAY_INTERVAL_MS ? Number(env.SELF_PLAY_INTERVAL_MS) : 0
 const GAS_CUSHION = viem.parseEther('1') // keep enough aside to always afford the gas
 const TOP_UP_BELOW = viem.parseEther('50')
 const TOP_UP_TO = viem.parseEther('200')
@@ -70,6 +80,14 @@ const main = async () => {
 
   const botAddresses = new Set(bots.map((b) => b.account.address.toLowerCase()))
   const randomPick = <T,>(items: T[]): T => items[Math.floor(Math.random() * items.length)]!
+
+  // sparing cadence: self-initiated spends respect a minimum gap; human-facing ones don't
+  let lastSelfPlay = 0
+  const selfPlayAllowed = () => Date.now() - lastSelfPlay >= SELF_PLAY_INTERVAL_MS
+  const markSelfPlay = () => {
+    lastSelfPlay = Date.now()
+  }
+  let vaultPaused = false
 
   /** salt_n/guess_n for a bot's n-th raffle commit — recomputable forever from seeds0. */
   const ticketPlan = (saltKey: viem.Hex, ordinal: number) => {
@@ -100,6 +118,7 @@ const main = async () => {
   }
 
   const topUp = async () => {
+    if (vaultPaused) return
     for (const bot of bots) {
       const balance = await publicClient.getBalance({ address: bot.account.address })
       if (balance >= TOP_UP_BELOW) continue
@@ -117,6 +136,7 @@ const main = async () => {
 
   // --- coin flip ---------------------------------------------------------------------------
   const tickCoinFlip = async () => {
+    if (vaultPaused) return
     // open entries = Entered minus anything no longer active (paired or cancelled), straight
     // from the contract's own entries(id).active flag — no event-derivation heuristics
     const entered = await publicClient.getContractEvents({
@@ -140,6 +160,8 @@ const main = async () => {
 
     if (open.length > 0) {
       const target = open[0]!
+      const targetIsBot = botAddresses.has(target.player.toLowerCase())
+      if (targetIsBot && !selfPlayAllowed()) return // bot-vs-bot is self-play; humans never wait
       const candidates = bots.filter((b) => b.account.address.toLowerCase() !== target.player.toLowerCase())
       const funded: typeof candidates = []
       for (const b of candidates) {
@@ -157,10 +179,11 @@ const main = async () => {
         value: target.stake,
         gas: ENTER_GAS,
       })
+      if (targetIsBot) markSelfPlay()
       console.log(`flip: ${taker.account.address} took the ${opposite === 0 ? 'heads' : 'tails'} side vs ${target.player}`)
       return
     }
-    if (Math.random() < ENTER_PROBABILITY) {
+    if (selfPlayAllowed() && Math.random() < ENTER_PROBABILITY) {
       const bot = randomPick(bots)
       const side = Math.random() < 0.5 ? 0 : 1
       await sendAs(bot.publicClient, bot.wallet, {
@@ -171,6 +194,7 @@ const main = async () => {
         value: flipParams.stake,
         gas: ENTER_GAS,
       })
+      markSelfPlay()
       console.log(`flip: ${bot.account.address} queued ${side === 0 ? 'heads' : 'tails'}`)
     }
   }
@@ -186,10 +210,14 @@ const main = async () => {
       fromBlock: from,
     })
     const commitsByBot = new Map<string, { ticketId: bigint; roundId: viem.Hex }[]>()
+    const humanRounds = new Set<viem.Hex>()
     for (const log of committedLogs) {
       const args = log.args as { ticketId: bigint; roundId: viem.Hex; player: viem.Hex }
       const key = args.player.toLowerCase()
-      if (!botAddresses.has(key)) continue
+      if (!botAddresses.has(key)) {
+        humanRounds.add(args.roundId) // a human holds a ticket — filling this round is service, not self-play
+        continue
+      }
       commitsByBot.set(key, [...(commitsByBot.get(key) ?? []), { ticketId: args.ticketId, roundId: args.roundId }])
     }
 
@@ -213,9 +241,11 @@ const main = async () => {
       })) as unknown[]
       if (Number(round[7]) !== 1) continue // 1 = Filling
       sawFillable = true
+      if (vaultPaused) continue
       const commitCount = round[5] as bigint
       const createdAtBlock = round[4] as bigint
       if (commitCount < opened.threshold) {
+        if (!humanRounds.has(opened.roundId) && !selfPlayAllowed()) continue // bot-only round: sparing cadence
         for (const fresh of bots) {
           const mine = commitsByBot.get(fresh.account.address.toLowerCase()) ?? []
           if (mine.some((c) => c.roundId === opened.roundId)) continue
@@ -231,6 +261,7 @@ const main = async () => {
             value: opened.stake,
             gas: COMMIT_GAS,
           })
+          if (!humanRounds.has(opened.roundId)) markSelfPlay()
           console.log(`raffle: ${fresh.account.address} committed (ordinal ${ordinal}) to ${opened.roundId.slice(0, 10)}`)
           return
         }
@@ -245,7 +276,7 @@ const main = async () => {
         return
       }
     }
-    if (!sawFillable && Math.random() < ENTER_PROBABILITY) {
+    if (!sawFillable && !vaultPaused && selfPlayAllowed() && Math.random() < ENTER_PROBABILITY) {
       // no active round — open one
       const bot = randomPick(bots)
       const ordinal = (commitsByBot.get(bot.account.address.toLowerCase()) ?? []).length
@@ -258,6 +289,7 @@ const main = async () => {
         value: raffleParams.stake,
         gas: COMMIT_GAS,
       })
+      markSelfPlay()
       console.log(`raffle: ${bot.account.address} opened a new round (ordinal ${ordinal})`)
       return
     }
@@ -298,7 +330,7 @@ const main = async () => {
             gas: REVEAL_GAS,
           })
           console.log(`raffle: ${bot.account.address} revealed ticket ${commit.ticketId} (guess ${guess})`)
-        } else if (status === 3 && currentBlock > claimDeadline && !seenRounds.has(commit.roundId)) {
+        } else if (status === 3 && currentBlock > claimDeadline && !seenRounds.has(commit.roundId) && !vaultPaused) {
           seenRounds.add(commit.roundId)
           await sendAs(funder.publicClient, funder.wallet, {
             address: config.raffle,
@@ -313,6 +345,16 @@ const main = async () => {
   }
 
   const tick = async () => {
+    const vault = await publicClient.getBalance({ address: funder.account.address })
+    const nowPaused = vault < VAULT_FLOOR
+    if (nowPaused !== vaultPaused) {
+      console.log(
+        nowPaused
+          ? `vault below floor (${viem.formatEther(vault)} < ${viem.formatEther(VAULT_FLOOR)}) — tables paused on chain ${CHAIN} until refilled`
+          : `vault refilled (${viem.formatEther(vault)}) — tables back open on chain ${CHAIN}`,
+      )
+    }
+    vaultPaused = nowPaused
     await topUp()
     await tickCoinFlip().catch((e) => console.error(`flip tick: ${(e as Error).message?.split('\n')[0]}`))
     await tickRaffle().catch((e) => console.error(`raffle tick: ${(e as Error).message?.split('\n')[0]}`))

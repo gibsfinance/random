@@ -14,10 +14,11 @@
     "player-bots": "tsx scripts/player-bots.ts"
   },
   "dependencies": {
-    "@gibs/games-core": "workspace:*",
     "@gibs/coinflip": "workspace:*",
+    "@gibs/games-core": "workspace:*",
     "@gibs/raffle": "workspace:*",
     "@gibs/random": "workspace:*",
+    "@msgboard/sdk": "^0.0.31",
     "viem": "^2.25.0"
   },
   "devDependencies": {

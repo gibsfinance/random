@@ -10,10 +10,18 @@
  *
  * Env: MNEMONIC (funded caster/payer), SEEDS0, CHAIN (default 943), RPC, CONFIG (path to
  *      <chain>-deployment.json), INTERVAL_MS (default 5000), ONCE=true for a single pass.
+ *      VAULT_FLOOR (coins, default 100): below this funder balance the watcher stops
+ *      SPENDING on pool maintenance — casts still go out (settling open games is an
+ *      obligation), but no new pools are inked until the vault is refilled.
+ *      MSGBOARD_RPC (default the keyed vk_demo valve endpoint for CHAIN): a node running
+ *      the msgboard_ module. After each cast the watcher posts a compact settlement notice
+ *      to MsgBoard (category msgboard-games, proof-of-work stamp, no gas) — the venue's
+ *      coordination trail that archive.msgboard.xyz keeps queryable. Failures are non-fatal.
  *
  * Run from examples/games/e2e:  MNEMONIC=… SEEDS0=… pnpm cast-watcher
  */
 import * as viem from 'viem'
+import { MsgBoardClient } from '@msgboard/sdk'
 import { randomAbi, poolLocationFor, type GamesChainId, type Info } from '@gibs/games-core'
 import { seeds0Secret, SECRET_STRIDE } from './seeds0'
 import { loadDeployment, makeActor, sendAs, heatsSince } from './actor-common'
@@ -21,6 +29,8 @@ import { loadDeployment, makeActor, sendAs, heatsSince } from './actor-common'
 const env = process.env
 const CHAIN = (env.CHAIN ? Number(env.CHAIN) : 943) as GamesChainId
 const INTERVAL_MS = env.INTERVAL_MS ? Number(env.INTERVAL_MS) : 5_000
+const VAULT_FLOOR = viem.parseEther(env.VAULT_FLOOR || '100')
+const MSGBOARD_CATEGORY = 'msgboard-games'
 const ZERO32 = viem.padHex('0x0', { size: 32 })
 /** Ink pool n+1 once fewer than this many slots remain in pool n. */
 const INK_AHEAD = 8n
@@ -32,6 +42,22 @@ const main = async () => {
   const { account, publicClient, wallet } = makeActor(CHAIN, env.MNEMONIC, 0, env.RPC)
   const poolSize = BigInt(config.poolSize)
   console.log(`cast watcher on chain ${CHAIN} as ${account.address}; origin block ${config.deployBlock}, pool size ${poolSize}`)
+
+  // The venue's town crier: a PoW-stamped MsgBoard notice per settlement — costs work, not
+  // gas, so it keeps running even when the vault is too dry to spend.
+  const msgboardRpc = env.MSGBOARD_RPC || `https://one.valve.city/rpc/vk_demo/evm/${CHAIN}`
+  const board = new MsgBoardClient(
+    viem.createPublicClient({ transport: viem.http(msgboardRpc) }) as ConstructorParameters<typeof MsgBoardClient>[0],
+  )
+  const postNotice = async (data: string) => {
+    try {
+      const work = await board.doPoW(MSGBOARD_CATEGORY, data)
+      await board.addMessage(work.message)
+      console.log(`msgboard notice: ${data}`)
+    } catch (error) {
+      console.error(`msgboard notice failed (non-fatal): ${(error as Error).message?.split('\n')[0]}`)
+    }
+  }
 
   const locationsAt = (k: bigint): Info[] =>
     config.canonicalSubset.map((provider) => {
@@ -52,6 +78,11 @@ const main = async () => {
   const maintainPools = async (heatCount: bigint) => {
     const remaining = poolSize - (heatCount % poolSize)
     if (remaining > INK_AHEAD) return
+    const vault = await publicClient.getBalance({ address: account.address })
+    if (vault < VAULT_FLOOR) {
+      console.log(`vault below floor (${viem.formatEther(vault)} < ${viem.formatEther(VAULT_FLOOR)}) — pool inking paused until refilled`)
+      return
+    }
     for (const [i, provider] of config.canonicalSubset.entries()) {
       const base = BigInt(config.poolOffsets[provider.toLowerCase()] ?? '0')
       const nextPool = poolLocationFor(((heatCount / poolSize) + 1n) * poolSize, base, poolSize)
@@ -109,6 +140,7 @@ const main = async () => {
           args: [heat.key, locationsAt(k), secrets],
         })
         console.log(`cast key ${heat.key} (slot ${k}) in block ${receipt.blockNumber}`)
+        await postNotice(`cast ${heat.key.slice(0, 10)} blk ${receipt.blockNumber} chain ${CHAIN}`)
       } catch (error) {
         // expired window, raced by another caster, etc. — log and keep watching
         console.error(`cast ${heat.key} failed: ${(error as Error).message?.split('\n')[0]}`)

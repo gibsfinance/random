@@ -19,6 +19,8 @@ export type GameDeployment = {
   /** Override the read RPC (e.g. the valve.city fleet endpoint); defaults to the core registry's. */
   rpc?: string
   explorer?: string
+  /** MsgBoard archive (GraphiQL) base URL — the venue's coordination-notice trail. */
+  archive?: string
 }
 
 /**
@@ -53,5 +55,6 @@ export const deployments: GameDeployment[] = [
     deployBlock: '24645214',
     poolSize: 64,
     explorer: 'https://scan.v4.testnet.pulsechain.com/#',
+    archive: 'https://archive.msgboard.xyz',
   },
 ]

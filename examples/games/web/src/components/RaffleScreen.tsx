@@ -9,7 +9,7 @@ import { saveSalt, loadSalt, exportBackup, importBackup } from '../model/salts'
 import { sendGameTx, nextHeatLocations } from '../tx'
 import { publicClientFor } from '../wallet'
 import { RaffleVerifyPanel } from './VerifyPanel'
-import { AddressLink, Provenance, SourceNote, explorerUrl, formatWhen } from './Meta'
+import { AddressLink, Provenance, SourceNote, archiveTrailUrl, explorerUrl, formatWhen } from './Meta'
 import { StakeInput, parseStake } from './StakeInput'
 
 const commitmentFor = (guess: bigint, salt: viem.Hex, player: viem.Hex): viem.Hex =>
@@ -18,6 +18,145 @@ const commitmentFor = (guess: bigint, salt: viem.Hex, player: viem.Hex): viem.He
   )
 
 const ACTIVE_PHASES = new Set(['filling', 'drawing', 'claiming'])
+
+/**
+ * Hoisted to module level on purpose: a nested definition gets a fresh component identity
+ * every render, so the 4 s poll remounted every card and replayed the entry animation —
+ * the "periodic flashing". Stable identity = in-place re-render.
+ */
+const RoundCard = ({
+round,
+deployment,
+data,
+seed,
+busy,
+canPlay,
+phaseTag,
+onArm,
+onFinalise,
+onLoadSeed,
+onReveal,
+onRefund,
+}: {
+round: RaffleRoundView
+deployment: GameDeployment
+data: ChainData
+seed?: viem.Hex
+busy: boolean
+canPlay: boolean
+phaseTag: (round: RaffleRoundView) => string
+onArm: (round: RaffleRoundView) => void
+onFinalise: (round: RaffleRoundView) => void
+onLoadSeed: (round: RaffleRoundView) => void
+onReveal: (ticketId: bigint) => void
+onRefund: (ticketId: bigint) => void
+}) => (
+  <div className="card">
+    <div className="row" style={{ justifyContent: 'space-between' }}>
+      <span>
+        <span className="tag">{phaseTag(round)}</span>
+        {viem.formatEther(round.stake)} per ticket · {round.threshold.toString()} players ·{' '}
+        pot {viem.formatEther(round.stake * round.commitCount)}
+        {round.draw !== undefined && <span className="tag">draw: {round.draw.toString()}</span>}
+      </span>
+      <span className="row">
+        {round.phase === 'filling' && round.commitCount >= round.threshold && (
+          <button className="secondary" onClick={() => onArm(round)} disabled={!canPlay}>
+            Arm (heat the validators)
+          </button>
+        )}
+        {round.phase === 'claiming' && round.finaliseOpen && (
+          <button onClick={() => onFinalise(round)} disabled={!canPlay}>
+            Finalise
+          </button>
+        )}
+        {round.phase === 'claiming' && !seed && (
+          <button className="secondary" onClick={() => onLoadSeed(round)} disabled={busy}>
+            Load seed to verify
+          </button>
+        )}
+      </span>
+    </div>
+    {round.phase === 'paid' && (
+      <p className="ok">
+        winner <AddressLink deployment={deployment} address={round.winner!} /> took{' '}
+        {viem.formatEther(round.payout!)}
+      </p>
+    )}
+    <Provenance
+      deployment={deployment}
+      timestamps={data.timestamps}
+      items={[
+        { label: 'opened', block: round.openedAtBlock },
+        { label: 'armed', block: round.armedAtBlock, tx: round.armTx },
+        { label: 'drawn', block: round.drawnAtBlock, tx: round.drawTx },
+        { label: 'paid', block: round.finalisedAtBlock, tx: round.finaliseTx },
+      ]}
+    />
+    <table>
+      <tbody>
+        {round.tickets.map((ticket) => {
+          const commitWhen = formatWhen(data.timestamps[ticket.committedAtBlock.toString()])
+          const commitUrl = ticket.commitTx ? explorerUrl(deployment, 'tx', ticket.commitTx) : undefined
+          const revealUrl = ticket.revealTx ? explorerUrl(deployment, 'tx', ticket.revealTx) : undefined
+          return (
+            <tr key={ticket.ticketId.toString()}>
+              <td>#{ticket.ticketId.toString()}</td>
+              <td>
+                <AddressLink deployment={deployment} address={ticket.player} />
+                {ticket.mine && <span className="tag ok">you</span>}
+              </td>
+              <td>
+                {ticket.cancelled && <span className="muted">cancelled</span>}
+                {ticket.refunded && <span className="muted">refunded</span>}
+                {ticket.revealed && (
+                  <span>
+                    guess {ticket.guess!.toString()} (distance {ticket.distance!.toString()})
+                    {ticket.leading && <span className="tag ok">leading</span>}
+                  </span>
+                )}
+                {!ticket.revealed && !ticket.cancelled && !ticket.refunded && <span className="muted">hidden</span>}
+              </td>
+              <td className="card-meta">
+                {commitWhen && <span title={`committed at block ${ticket.committedAtBlock}`}>{commitWhen}</span>}
+                {commitUrl && (
+                  <span>
+                    {' · '}
+                    <a href={commitUrl} target="_blank" rel="noreferrer">
+                      commit ↗
+                    </a>
+                  </span>
+                )}
+                {revealUrl && (
+                  <span>
+                    {' · '}
+                    <a href={revealUrl} target="_blank" rel="noreferrer">
+                      reveal ↗
+                    </a>
+                  </span>
+                )}
+              </td>
+              <td>
+                {ticket.mine && round.phase === 'claiming' && round.revealOpen && !ticket.revealed && (
+                  <button onClick={() => onReveal(ticket.ticketId)} disabled={!canPlay}>
+                    Reveal
+                  </button>
+                )}
+                {ticket.mine && round.staleRefundCandidate && !ticket.refunded && (
+                  <button className="danger" onClick={() => onRefund(ticket.ticketId)} disabled={!canPlay}>
+                    Refund stake
+                  </button>
+                )}
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
+    <RaffleVerifyPanel round={round} seed={seed} deployment={deployment} />
+  </div>
+)
+
 
 export const RaffleScreen = ({
   deployment,
@@ -154,112 +293,6 @@ export const RaffleScreen = ({
     }
   }
 
-  const RoundCard = ({ round }: { round: RaffleRoundView }) => (
-    <div className="card">
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <span>
-          <span className="tag">{phaseTag(round)}</span>
-          {viem.formatEther(round.stake)} per ticket · {round.threshold.toString()} players ·{' '}
-          pot {viem.formatEther(round.stake * round.commitCount)}
-          {round.draw !== undefined && <span className="tag">draw: {round.draw.toString()}</span>}
-        </span>
-        <span className="row">
-          {round.phase === 'filling' && round.commitCount >= round.threshold && (
-            <button className="secondary" onClick={() => void arm(round)} disabled={!canPlay}>
-              Arm (heat the validators)
-            </button>
-          )}
-          {round.phase === 'claiming' && round.finaliseOpen && (
-            <button onClick={() => void finalise(round)} disabled={!canPlay}>
-              Finalise
-            </button>
-          )}
-          {round.phase === 'claiming' && !seeds[round.roundId] && (
-            <button className="secondary" onClick={() => void loadSeed(round)} disabled={busy}>
-              Load seed to verify
-            </button>
-          )}
-        </span>
-      </div>
-      {round.phase === 'paid' && (
-        <p className="ok">
-          winner <AddressLink deployment={deployment} address={round.winner!} /> took{' '}
-          {viem.formatEther(round.payout!)}
-        </p>
-      )}
-      <Provenance
-        deployment={deployment}
-        timestamps={data.timestamps}
-        items={[
-          { label: 'opened', block: round.openedAtBlock },
-          { label: 'armed', block: round.armedAtBlock, tx: round.armTx },
-          { label: 'drawn', block: round.drawnAtBlock, tx: round.drawTx },
-          { label: 'paid', block: round.finalisedAtBlock, tx: round.finaliseTx },
-        ]}
-      />
-      <table>
-        <tbody>
-          {round.tickets.map((ticket) => {
-            const commitWhen = formatWhen(data.timestamps[ticket.committedAtBlock.toString()])
-            const commitUrl = ticket.commitTx ? explorerUrl(deployment, 'tx', ticket.commitTx) : undefined
-            const revealUrl = ticket.revealTx ? explorerUrl(deployment, 'tx', ticket.revealTx) : undefined
-            return (
-              <tr key={ticket.ticketId.toString()}>
-                <td>#{ticket.ticketId.toString()}</td>
-                <td>
-                  <AddressLink deployment={deployment} address={ticket.player} />
-                  {ticket.mine && <span className="tag ok">you</span>}
-                </td>
-                <td>
-                  {ticket.cancelled && <span className="muted">cancelled</span>}
-                  {ticket.refunded && <span className="muted">refunded</span>}
-                  {ticket.revealed && (
-                    <span>
-                      guess {ticket.guess!.toString()} (distance {ticket.distance!.toString()})
-                      {ticket.leading && <span className="tag ok">leading</span>}
-                    </span>
-                  )}
-                  {!ticket.revealed && !ticket.cancelled && !ticket.refunded && <span className="muted">hidden</span>}
-                </td>
-                <td className="card-meta">
-                  {commitWhen && <span title={`committed at block ${ticket.committedAtBlock}`}>{commitWhen}</span>}
-                  {commitUrl && (
-                    <span>
-                      {' · '}
-                      <a href={commitUrl} target="_blank" rel="noreferrer">
-                        commit ↗
-                      </a>
-                    </span>
-                  )}
-                  {revealUrl && (
-                    <span>
-                      {' · '}
-                      <a href={revealUrl} target="_blank" rel="noreferrer">
-                        reveal ↗
-                      </a>
-                    </span>
-                  )}
-                </td>
-                <td>
-                  {ticket.mine && round.phase === 'claiming' && round.revealOpen && !ticket.revealed && (
-                    <button onClick={() => void reveal(ticket.ticketId)} disabled={!canPlay}>
-                      Reveal
-                    </button>
-                  )}
-                  {ticket.mine && round.staleRefundCandidate && !ticket.refunded && (
-                    <button className="danger" onClick={() => void refund(ticket.ticketId)} disabled={!canPlay}>
-                      Refund stake
-                    </button>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      <RaffleVerifyPanel round={round} seed={seeds[round.roundId]} deployment={deployment} />
-    </div>
-  )
 
   const liveRounds = data.rounds.filter((r) => ACTIVE_PHASES.has(r.phase))
   const doneRounds = data.rounds.filter((r) => !ACTIVE_PHASES.has(r.phase))
@@ -362,7 +395,21 @@ export const RaffleScreen = ({
       </h2>
       {liveRounds.length === 0 && <p className="muted">No round on the table — play a number to open one.</p>}
       {[...liveRounds].reverse().map((round) => (
-        <RoundCard key={round.roundId} round={round} />
+        <RoundCard
+          key={round.roundId}
+          round={round}
+          deployment={deployment}
+          data={data}
+          seed={seeds[round.roundId]}
+          busy={busy}
+          canPlay={canPlay}
+          phaseTag={phaseTag}
+          onArm={(r) => void arm(r)}
+          onFinalise={(r) => void finalise(r)}
+          onLoadSeed={(r) => void loadSeed(r)}
+          onReveal={(t) => void reveal(t)}
+          onRefund={(t) => void refund(t)}
+        />
       ))}
 
       <h2>
@@ -376,10 +423,34 @@ export const RaffleScreen = ({
             {doneRounds.length} finished round{doneRounds.length === 1 ? '' : 's'} · {viem.formatEther(paidOut)} paid
             out
             {lastDoneWhen && <span className="muted"> · last {lastDoneWhen}</span>}
+            {archiveTrailUrl(deployment) && (
+              <a
+                href={archiveTrailUrl(deployment)}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                msgboard trail ↗
+              </a>
+            )}
             <span className="muted history-hint">every one verifiable — open the book</span>
           </summary>
           {[...doneRounds].reverse().map((round) => (
-            <RoundCard key={round.roundId} round={round} />
+            <RoundCard
+              key={round.roundId}
+              round={round}
+              deployment={deployment}
+              data={data}
+              seed={seeds[round.roundId]}
+              busy={busy}
+              canPlay={canPlay}
+              phaseTag={phaseTag}
+              onArm={(r) => void arm(r)}
+              onFinalise={(r) => void finalise(r)}
+              onLoadSeed={(r) => void loadSeed(r)}
+              onReveal={(t) => void reveal(t)}
+              onRefund={(t) => void refund(t)}
+            />
           ))}
         </details>
       )}

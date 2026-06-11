@@ -94,27 +94,26 @@ export const App = () => {
             <div className="howit-step">
               <span className="howit-num">1</span>
               <strong>Secrets go in before the action.</strong> Validators ink hashed secrets on chain ahead of every
-              game, and your entry pins that exact set — no late swaps, no reshuffles.
+              game, and your entry pins that exact set — no late swaps. Don't trust the set? Anyone can ink and
+              join it — you or the house included.
             </div>
             <div className="howit-step">
               <span className="howit-num">2</span>
               <strong>The reveal is the draw.</strong> The seed is the hash of all the validators' revealed secrets
-              together. If even one of them is honest, no cartel — house included — can steer the result. Don't
-              trust any of them? Bring your own: anyone can ink secrets and join the set, you and the house
-              included.
+              together — one honest validator beats any cartel, and the outcome is pure math on the seed.
             </div>
             <div className="howit-step">
               <span className="howit-num">3</span>
-              <strong>You keep the books.</strong> Your browser recomputes every outcome from the seed and stamps the
-              slip <em>on the level</em> — or calls it crooked. Don't trust the table; audit it.
-            </div>
-            <div className="howit-step">
-              <span className="howit-num">4</span>
-              <strong>Supercharged by MsgBoard.</strong> Validators coordinate over MsgBoard, where a message costs a
-              proof-of-work stamp instead of gas — near-zero overhead to keep the entropy flowing, so the odds
-              aren't bled dry by fees.
+              <strong>You keep the books.</strong> Your browser recomputes every outcome and stamps the slip{' '}
+              <em>on the level</em> — or calls it crooked. Don't trust the table; audit it.
             </div>
           </div>
+          <p className="howit-footer">
+            <strong>Supercharged by MsgBoard:</strong> the validators coordinate with proof-of-work stamps instead
+            of gas, so fees never bleed the odds — every settlement leaves a notice on the board (follow the
+            msgboard trail from <em>The record</em>). And if a chain's vault ever runs dry, the tables simply
+            pause; nothing breaks, and play resumes the moment it's refilled.
+          </p>
         </div>
       </details>
       {wallet.error && <div className="banner bad">{wallet.error}</div>}
