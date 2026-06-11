@@ -37,10 +37,12 @@
         color: var(--cream);
         font: 15px/1.55 var(--sans);
         background:
-          radial-gradient(1200px 600px at 50% -10%, rgba(201, 162, 39, 0.07), transparent 60%),
+          radial-gradient(1200px 600px at 50% -10%, rgba(224, 168, 52, 0.13), transparent 60%),
+          radial-gradient(140% 100% at 50% 30%, transparent 55%, rgba(0, 0, 0, 0.45)),
           radial-gradient(900px 500px at 85% 110%, rgba(88, 192, 138, 0.05), transparent 55%),
           repeating-linear-gradient(0deg, transparent 0 2px, rgba(0, 0, 0, 0.12) 2px 4px),
           var(--felt-800);
+        background-attachment: fixed;
         min-height: 100vh;
       }
       #root { max-width: 920px; margin: 0 auto; padding: 1.25rem 1.25rem 4rem; }
@@ -92,7 +94,7 @@
       }
       button.secondary:hover:not(:disabled) { border-color: var(--brass-soft); color: var(--brass); filter: none; }
       button.danger { background: linear-gradient(180deg, #e98577, #c14b3b); border-color: #8e3527; color: #fff; }
-      input, select {
+      input {
         background: var(--felt-900);
         color: var(--cream);
         border: 1px solid var(--line);
@@ -100,7 +102,43 @@
         padding: 0.48rem 0.65rem;
         font: 500 0.92rem var(--sans);
       }
-      input:focus, select:focus { outline: 1px solid var(--brass-soft); }
+      input:focus { outline: 1px solid var(--brass-soft); }
+
+      /* ---------- the house menu (no native selects in this establishment) ---------- */
+      .menu { position: relative; display: inline-block; }
+      .menu-trigger {
+        display: inline-flex; align-items: center; gap: 0.55rem;
+        background: var(--felt-900);
+        color: var(--cream);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0.46rem 0.7rem;
+        font: 500 0.92rem var(--sans);
+        box-shadow: none;
+      }
+      .menu-trigger:hover:not(:disabled) { border-color: var(--brass-soft); filter: none; }
+      .menu-caret { color: var(--brass-soft); font-size: 0.8em; }
+      .menu-panel {
+        position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
+        min-width: 100%;
+        display: flex; flex-direction: column;
+        background: linear-gradient(180deg, var(--felt-700), var(--felt-800));
+        border: 1px solid var(--brass-soft);
+        border-radius: 4px;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+        padding: 0.25rem;
+        animation: rise 0.14s ease both;
+      }
+      .menu-option {
+        text-align: left; white-space: nowrap;
+        background: transparent; color: var(--cream);
+        border: none; border-radius: 3px; box-shadow: none;
+        padding: 0.42rem 0.7rem;
+        font: 500 0.9rem var(--sans);
+      }
+      .menu-option.highlight { background: var(--felt-600); filter: none; }
+      .menu-option.selected { color: var(--brass); font-weight: 700; }
+      .menu-option.selected::before { content: '♠ '; color: var(--brass-soft); }
 
       /* ---------- surfaces ---------- */
       .card {
@@ -163,6 +201,45 @@
         margin-bottom: 1rem;
       }
       .strapline { font: 500 0.8rem var(--sans); letter-spacing: 0.22em; text-transform: uppercase; color: var(--brass); margin-top: 0.15rem; }
+
+      /* ---------- the pitch ---------- */
+      .hero-pitch {
+        font-family: var(--serif);
+        font-size: 1.06rem;
+        line-height: 1.6;
+        color: var(--cream-dim);
+        margin: 0.4rem 0 1rem;
+        max-width: 64ch;
+      }
+      .hero-pitch strong { color: var(--cream); }
+      .hero-pitch a { color: var(--brass); }
+      .howit {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.7rem;
+        margin: 0 0 0.6rem;
+      }
+      .howit-step {
+        position: relative;
+        background: var(--felt-700);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 0.75rem 0.9rem 0.8rem 2.6rem;
+        font-size: 0.86rem;
+        color: var(--cream-dim);
+      }
+      .howit-step strong { display: block; color: var(--cream); font-family: var(--serif); margin-bottom: 0.15rem; }
+      .howit-step em { color: var(--brass); font-style: normal; font-weight: 700; }
+      .howit-num {
+        position: absolute; left: 0.75rem; top: 0.8rem;
+        width: 1.35rem; height: 1.35rem;
+        display: flex; align-items: center; justify-content: center;
+        font: 700 0.85rem var(--serif);
+        color: var(--ink);
+        background: radial-gradient(circle at 35% 30%, #f0d97c, var(--brass) 60%, #8a6f15);
+        border: 1px solid #8a6f15;
+        border-radius: 50%;
+      }
       .colophon { margin-top: 3rem; padding-top: 0.8rem; border-top: 1px solid var(--line); font: 500 0.78rem var(--sans); color: #79927f; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
       .colophon a { color: var(--brass-soft); }
 
@@ -229,6 +306,8 @@
       .receipt table td { border-bottom: 1px dashed #c9bda0; padding: 0.3rem 0.4rem; vertical-align: top; }
       .receipt .muted { color: #857a60; }
       .receipt .mono { color: #3c372a; }
+      .receipt a, .card .receipt a { color: #7a6420; text-decoration-color: rgba(122, 100, 32, 0.5); }
+      .receipt a:hover, .card .receipt a:hover { color: #5c4a12; }
       .stamp {
         display: inline-block;
         margin-top: 0.7rem;
@@ -261,6 +340,59 @@
       .house-rules ul { margin: 0.6rem 0; padding-left: 1.1rem; }
       .house-rules a { color: var(--brass); }
       .rules-ack { font: 600 0.78rem var(--sans); letter-spacing: 0.05em; color: var(--ok); }
+
+      /* ---------- provenance: when it happened + where to check it ---------- */
+      .card-meta {
+        margin-top: 0.55rem;
+        font: 500 0.74rem var(--mono);
+        color: #79927f;
+        display: flex; flex-wrap: wrap; gap: 0.25rem 1.1rem;
+      }
+      td.card-meta { display: table-cell; margin-top: 0; }
+      .card-meta a { color: var(--brass-soft); text-decoration-color: rgba(138, 118, 52, 0.5); }
+      .card-meta a:hover { color: var(--brass); }
+      .card-meta-label { color: #8aa492; text-transform: uppercase; letter-spacing: 0.07em; font-size: 0.92em; }
+      .card a { color: var(--cream); text-decoration-color: rgba(138, 118, 52, 0.6); }
+      .card a:hover { color: var(--brass); }
+
+      /* ---------- the info dot (where does this come from?) ---------- */
+      .info-dot { position: relative; display: inline-flex; margin-left: 0.15rem; }
+      .info-trigger {
+        width: 1.15rem; height: 1.15rem; padding: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        font: 700 0.7rem var(--serif);
+        font-style: italic;
+        color: var(--brass);
+        background: transparent;
+        border: 1px solid var(--brass-soft);
+        border-radius: 50%;
+        box-shadow: none;
+        cursor: help;
+      }
+      .info-trigger:hover:not(:disabled) { background: rgba(201, 162, 39, 0.12); filter: none; }
+      .info-pop {
+        visibility: hidden; opacity: 0;
+        position: absolute; z-index: 40; top: calc(100% + 8px); left: 50%;
+        transform: translateX(-50%);
+        width: min(330px, 78vw);
+        background: linear-gradient(180deg, var(--felt-700), var(--felt-800));
+        border: 1px solid var(--brass-soft);
+        border-radius: 6px;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
+        padding: 0.7rem 0.85rem;
+        font: 400 0.8rem/1.5 var(--sans);
+        letter-spacing: normal;
+        text-transform: none;
+        color: var(--cream-dim);
+        transition: opacity 0.15s ease;
+      }
+      /* hover bridge so the pointer can travel from the dot into the popover */
+      .info-pop::before { content: ''; position: absolute; top: -10px; left: 0; right: 0; height: 10px; }
+      .info-pop strong { color: var(--cream); }
+      .info-pop a { color: var(--brass); }
+      .info-dot:hover .info-pop,
+      .info-dot:focus-within .info-pop { visibility: visible; opacity: 1; }
+      h2 .info-pop { font-family: var(--sans); font-weight: 400; }
     </style>
   </head>
   <body>

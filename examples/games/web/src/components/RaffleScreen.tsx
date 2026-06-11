@@ -9,8 +9,8 @@ import { saveSalt, loadSalt, exportBackup, importBackup } from '../model/salts'
 import { sendGameTx, nextHeatLocations } from '../tx'
 import { publicClientFor } from '../wallet'
 import { RaffleVerifyPanel } from './VerifyPanel'
-
-const short = (a: viem.Hex) => `${a.slice(0, 6)}…${a.slice(-4)}`
+import { Menu } from './Menu'
+import { AddressLink, Provenance, SourceNote, explorerUrl, formatWhen } from './Meta'
 
 const commitmentFor = (guess: bigint, salt: viem.Hex, player: viem.Hex): viem.Hex =>
   viem.keccak256(
@@ -146,32 +146,31 @@ export const RaffleScreen = ({
   return (
     <div>
       <div className="card">
-        <h3>Commit a hidden guess</h3>
+        <h3>Play a number</h3>
         <div className="row">
-          <select value={presetIndex} onChange={(e) => setPresetIndex(Number(e.target.value))}>
-            {presets.map((p, i) => (
-              <option key={p.label} value={i}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+          <Menu
+            label="stake"
+            options={presets.map((p) => p.label)}
+            value={presetIndex}
+            onChange={setPresetIndex}
+          />
           <input
             type="number"
             min={1}
             max={256}
-            placeholder="guess 1–256"
+            placeholder="your number 1–256"
             value={guess}
             onChange={(e) => setGuess(e.target.value)}
-            style={{ width: '8rem' }}
+            style={{ width: '9rem' }}
           />
           <button onClick={() => void commit()} disabled={!canPlay || guess === ''}>
             {busy ? 'Sending…' : 'Commit'}
           </button>
           {!walletClient && <span className="muted">connect a wallet to play</span>}
-          {walletClient && !trustAcknowledged && <span className="muted">acknowledge the trust note above first</span>}
+          {walletClient && !trustAcknowledged && <span className="muted">acknowledge the house rules above first</span>}
         </div>
         <p className="muted">
-          Your guess stays hidden until you reveal it. The salt that proves your guess is stored in THIS
+          Your number stays hidden until you reveal it. The salt that proves your guess is stored in THIS
           browser — if you lose it before revealing, your stake is forfeited to the pot. Keep the backup
           string safe.
         </p>
@@ -212,8 +211,11 @@ export const RaffleScreen = ({
         {error && <p className="bad">{error}</p>}
       </div>
 
-      <h2>Rounds</h2>
-      {data.rounds.length === 0 && <p className="muted">No rounds yet — commit a guess to open one.</p>}
+      <h2>
+        Rounds
+        <SourceNote deployment={deployment} contract={deployment.raffle} contractLabel="Raffle" />
+      </h2>
+      {data.rounds.length === 0 && <p className="muted">No rounds yet — play a number to open one.</p>}
       {[...data.rounds].reverse().map((round) => (
         <div key={round.roundId} className="card">
           <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -242,43 +244,81 @@ export const RaffleScreen = ({
           </div>
           {round.phase === 'paid' && (
             <p className="ok">
-              winner {short(round.winner!)} took {viem.formatEther(round.payout!)}
+              winner <AddressLink deployment={deployment} address={round.winner!} /> took{' '}
+              {viem.formatEther(round.payout!)}
             </p>
           )}
+          <Provenance
+            deployment={deployment}
+            timestamps={data.timestamps}
+            items={[
+              { label: 'opened', block: round.openedAtBlock },
+              { label: 'armed', block: round.armedAtBlock, tx: round.armTx },
+              { label: 'drawn', block: round.drawnAtBlock, tx: round.drawTx },
+              { label: 'paid', block: round.finalisedAtBlock, tx: round.finaliseTx },
+            ]}
+          />
           <table>
             <tbody>
-              {round.tickets.map((ticket) => (
-                <tr key={ticket.ticketId.toString()}>
-                  <td>#{ticket.ticketId.toString()}</td>
-                  <td className="mono">{short(ticket.player)}</td>
-                  <td>
-                    {ticket.cancelled && <span className="muted">cancelled</span>}
-                    {ticket.refunded && <span className="muted">refunded</span>}
-                    {ticket.revealed && (
-                      <span>
-                        guess {ticket.guess!.toString()} (distance {ticket.distance!.toString()})
-                        {ticket.leading && <span className="tag ok">leading</span>}
-                      </span>
-                    )}
-                    {!ticket.revealed && !ticket.cancelled && !ticket.refunded && <span className="muted">hidden</span>}
-                  </td>
-                  <td>
-                    {ticket.mine && round.phase === 'claiming' && round.revealOpen && !ticket.revealed && (
-                      <button onClick={() => void reveal(ticket.ticketId)} disabled={!canPlay}>
-                        Reveal
-                      </button>
-                    )}
-                    {ticket.mine && round.staleRefundCandidate && !ticket.refunded && (
-                      <button className="danger" onClick={() => void refund(ticket.ticketId)} disabled={!canPlay}>
-                        Refund stake
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {round.tickets.map((ticket) => {
+                const commitWhen = formatWhen(data.timestamps[ticket.committedAtBlock.toString()])
+                const commitUrl = ticket.commitTx ? explorerUrl(deployment, 'tx', ticket.commitTx) : undefined
+                const revealUrl = ticket.revealTx ? explorerUrl(deployment, 'tx', ticket.revealTx) : undefined
+                return (
+                  <tr key={ticket.ticketId.toString()}>
+                    <td>#{ticket.ticketId.toString()}</td>
+                    <td>
+                      <AddressLink deployment={deployment} address={ticket.player} />
+                      {ticket.mine && <span className="tag ok">you</span>}
+                    </td>
+                    <td>
+                      {ticket.cancelled && <span className="muted">cancelled</span>}
+                      {ticket.refunded && <span className="muted">refunded</span>}
+                      {ticket.revealed && (
+                        <span>
+                          guess {ticket.guess!.toString()} (distance {ticket.distance!.toString()})
+                          {ticket.leading && <span className="tag ok">leading</span>}
+                        </span>
+                      )}
+                      {!ticket.revealed && !ticket.cancelled && !ticket.refunded && <span className="muted">hidden</span>}
+                    </td>
+                    <td className="card-meta">
+                      {commitWhen && <span title={`committed at block ${ticket.committedAtBlock}`}>{commitWhen}</span>}
+                      {commitUrl && (
+                        <span>
+                          {' · '}
+                          <a href={commitUrl} target="_blank" rel="noreferrer">
+                            commit ↗
+                          </a>
+                        </span>
+                      )}
+                      {revealUrl && (
+                        <span>
+                          {' · '}
+                          <a href={revealUrl} target="_blank" rel="noreferrer">
+                            reveal ↗
+                          </a>
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      {ticket.mine && round.phase === 'claiming' && round.revealOpen && !ticket.revealed && (
+                        <button onClick={() => void reveal(ticket.ticketId)} disabled={!canPlay}>
+                          Reveal
+                        </button>
+                      )}
+                      {ticket.mine && round.staleRefundCandidate && !ticket.refunded && (
+                        <button className="danger" onClick={() => void refund(ticket.ticketId)} disabled={!canPlay}>
+                          Refund stake
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
-          <RaffleVerifyPanel round={round} seed={seeds[round.roundId]} />
+          <RaffleVerifyPanel round={round} seed={seeds[round.roundId]} deployment={deployment} />
         </div>
       ))}
     </div>

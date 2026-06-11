@@ -157,3 +157,37 @@ describe('deriveRaffleRounds', () => {
     expect(make(220n).staleRefundCandidate).to.equal(true)
   })
 })
+
+describe('provenance threading', () => {
+  it('carries block numbers and tx hashes from the logs onto rounds and tickets', () => {
+    const commitTx = viem.keccak256(viem.toHex('tx-commit'))
+    const revealTx = viem.keccak256(viem.toHex('tx-reveal'))
+    const armTx = viem.keccak256(viem.toHex('tx-arm'))
+    const drawTx = viem.keccak256(viem.toHex('tx-draw'))
+    const finaliseTx = viem.keccak256(viem.toHex('tx-finalise'))
+    const rounds = deriveRaffleRounds(
+      {
+        ...base,
+        opened: [{ ...openedRound, blockNumber: 9n }],
+        committed: [{ ...commit(1n, A, 10n), transactionHash: commitTx }],
+        armed: [{ roundId: ROUND, key: viem.keccak256(viem.toHex('key')), blockNumber: 12n, transactionHash: armTx }],
+        drawn: [{ roundId: ROUND, draw: 7n, claimDeadline: 20n, blockNumber: 13n, transactionHash: drawTx }],
+        revealed: [
+          { ticketId: 1n, roundId: ROUND, guess: 7n, distance: 0n, leading: true, blockNumber: 14n, transactionHash: revealTx },
+        ],
+        finalised: [{ roundId: ROUND, winner: A, payout: stake, fee: 0n, blockNumber: 21n, transactionHash: finaliseTx }],
+      },
+      A,
+      22n,
+    )
+    expect(rounds[0]).to.deep.include({
+      openedAtBlock: 9n,
+      armTx,
+      drawnAtBlock: 13n,
+      drawTx,
+      finalisedAtBlock: 21n,
+      finaliseTx,
+    })
+    expect(rounds[0]!.tickets[0]).to.deep.include({ commitTx, revealTx, revealedAtBlock: 14n })
+  })
+})

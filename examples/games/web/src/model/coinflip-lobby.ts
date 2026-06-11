@@ -1,13 +1,16 @@
 import * as viem from 'viem'
 import { coinflip } from '@gibs/coinflip'
 
+/** Log provenance carried on every event so the UI can prove where each fact came from. */
+export type EventMeta = { blockNumber?: bigint; transactionHash?: viem.Hex }
+
 /** Decoded event args the lobby derivation consumes — plain data, no clients. */
 export type CoinFlipEvents = {
-  entered: { id: bigint; player: viem.Hex; side: number | 'heads' | 'tails'; stake: bigint; subsetHash: viem.Hex }[]
+  entered: ({ id: bigint; player: viem.Hex; side: number | 'heads' | 'tails'; stake: bigint; subsetHash: viem.Hex } & EventMeta)[]
   cancelled: { id: bigint }[]
-  paired: { flipId: viem.Hex; heads: viem.Hex; tails: viem.Hex; stake: bigint }[]
+  paired: ({ flipId: viem.Hex; heads: viem.Hex; tails: viem.Hex; stake: bigint } & EventMeta)[]
   heated: { flipId: viem.Hex; key: viem.Hex }[]
-  settled: { flipId: viem.Hex; winner: viem.Hex; winningSide: number | 'heads' | 'tails'; payout: bigint; seed: viem.Hex }[]
+  settled: ({ flipId: viem.Hex; winner: viem.Hex; winningSide: number | 'heads' | 'tails'; payout: bigint; seed: viem.Hex } & EventMeta)[]
 }
 
 export type OpenEntry = {
@@ -17,6 +20,8 @@ export type OpenEntry = {
   stake: bigint
   subsetHash: viem.Hex
   mine: boolean
+  enteredAtBlock?: bigint
+  enterTx?: viem.Hex
 }
 
 export type FlipView = {
@@ -31,6 +36,10 @@ export type FlipView = {
   payout?: bigint
   seed?: viem.Hex
   mine: boolean
+  pairedAtBlock?: bigint
+  pairTx?: viem.Hex
+  settledAtBlock?: bigint
+  settleTx?: viem.Hex
 }
 
 export type CoinFlipLobby = { openEntries: OpenEntry[]; flips: FlipView[] }
@@ -78,6 +87,10 @@ export const deriveCoinFlipLobby = (events: CoinFlipEvents, myAddress?: viem.Hex
       payout: settled?.payout,
       seed: settled?.seed,
       mine: myAddress !== undefined && (sameAddress(pair.heads, myAddress) || sameAddress(pair.tails, myAddress)),
+      pairedAtBlock: pair.blockNumber,
+      pairTx: pair.transactionHash,
+      settledAtBlock: settled?.blockNumber,
+      settleTx: settled?.transactionHash,
     }
   })
 
@@ -91,6 +104,8 @@ export const deriveCoinFlipLobby = (events: CoinFlipEvents, myAddress?: viem.Hex
         stake: e.stake,
         subsetHash: e.subsetHash,
         mine: myAddress !== undefined && sameAddress(e.player, myAddress),
+        enteredAtBlock: e.blockNumber,
+        enterTx: e.transactionHash,
       })),
     flips,
   }

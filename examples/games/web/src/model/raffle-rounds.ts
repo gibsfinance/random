@@ -3,15 +3,18 @@ import * as viem from 'viem'
 /** GameBase.STALE_BLOCKS — the liveness timeout after which an armed-but-seedless round refunds. */
 const STALE_BLOCKS = 200n
 
+/** Log provenance carried on every event so the UI can prove where each fact came from. */
+export type EventMeta = { blockNumber?: bigint; transactionHash?: viem.Hex }
+
 /** Decoded event args the round derivation consumes. blockNumber fields come from the logs. */
 export type RaffleEvents = {
-  opened: { roundId: viem.Hex; stake: bigint; threshold: bigint; period: bigint; subsetHash: viem.Hex }[]
-  committed: { ticketId: bigint; roundId: viem.Hex; player: viem.Hex; commitment: viem.Hex; blockNumber: bigint }[]
+  opened: ({ roundId: viem.Hex; stake: bigint; threshold: bigint; period: bigint; subsetHash: viem.Hex } & EventMeta)[]
+  committed: ({ ticketId: bigint; roundId: viem.Hex; player: viem.Hex; commitment: viem.Hex; blockNumber: bigint } & EventMeta)[]
   ticketCancelled: { ticketId: bigint }[]
-  armed: { roundId: viem.Hex; key: viem.Hex; blockNumber: bigint }[]
-  drawn: { roundId: viem.Hex; draw: bigint; claimDeadline: bigint }[]
-  revealed: { ticketId: bigint; roundId: viem.Hex; guess: bigint; distance: bigint; leading: boolean }[]
-  finalised: { roundId: viem.Hex; winner: viem.Hex; payout: bigint; fee: bigint }[]
+  armed: ({ roundId: viem.Hex; key: viem.Hex; blockNumber: bigint } & EventMeta)[]
+  drawn: ({ roundId: viem.Hex; draw: bigint; claimDeadline: bigint } & EventMeta)[]
+  revealed: ({ ticketId: bigint; roundId: viem.Hex; guess: bigint; distance: bigint; leading: boolean } & EventMeta)[]
+  finalised: ({ roundId: viem.Hex; winner: viem.Hex; payout: bigint; fee: bigint } & EventMeta)[]
   noContest: { roundId: viem.Hex; potPerValidator: bigint }[]
   ticketRefunded: { ticketId: bigint }[]
 }
@@ -29,6 +32,9 @@ export type TicketView = {
   distance?: bigint
   /** Whether this ticket is the CURRENT provisional winner (the last leading reveal). */
   leading: boolean
+  commitTx?: viem.Hex
+  revealTx?: viem.Hex
+  revealedAtBlock?: bigint
 }
 
 export type RaffleRoundView = {
@@ -55,6 +61,12 @@ export type RaffleRoundView = {
   payout?: bigint
   /** Armed with no draw for STALE_BLOCKS — surface the per-ticket refund path. */
   staleRefundCandidate: boolean
+  openedAtBlock?: bigint
+  armTx?: viem.Hex
+  drawnAtBlock?: bigint
+  drawTx?: viem.Hex
+  finalisedAtBlock?: bigint
+  finaliseTx?: viem.Hex
 }
 
 const sameAddress = (a: viem.Hex, b: viem.Hex) => a.toLowerCase() === b.toLowerCase()
@@ -95,6 +107,9 @@ export const deriveRaffleRounds = (
           guess: reveal?.guess,
           distance: reveal?.distance,
           leading: leaderByRound.get(opened.roundId) === c.ticketId,
+          commitTx: c.transactionHash,
+          revealTx: reveal?.transactionHash,
+          revealedAtBlock: reveal?.blockNumber,
         }
       })
 
@@ -134,6 +149,12 @@ export const deriveRaffleRounds = (
         : undefined,
       winner: finalised?.winner,
       payout: finalised?.payout,
+      openedAtBlock: opened.blockNumber,
+      armTx: armed?.transactionHash,
+      drawnAtBlock: drawn?.blockNumber,
+      drawTx: drawn?.transactionHash,
+      finalisedAtBlock: finalised?.blockNumber,
+      finaliseTx: finalised?.transactionHash,
       staleRefundCandidate:
         phase === 'drawing' && armed !== undefined && currentBlock >= armed.blockNumber + STALE_BLOCKS,
     }

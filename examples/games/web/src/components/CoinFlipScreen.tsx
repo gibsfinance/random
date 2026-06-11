@@ -6,8 +6,8 @@ import type { GameDeployment } from '../config'
 import type { ChainData } from '../hooks/useChainData'
 import { sendGameTx, nextHeatLocations } from '../tx'
 import { CoinFlipVerifyPanel } from './VerifyPanel'
-
-const short = (a: viem.Hex) => `${a.slice(0, 6)}…${a.slice(-4)}`
+import { Menu } from './Menu'
+import { AddressLink, Provenance, SourceNote } from './Meta'
 
 export const CoinFlipScreen = ({
   deployment,
@@ -76,15 +76,14 @@ export const CoinFlipScreen = ({
   return (
     <div>
       <div className="card">
-        <h3>Enter a flip</h3>
+        <h3>Call it in the air</h3>
         <div className="row">
-          <select value={presetIndex} onChange={(e) => setPresetIndex(Number(e.target.value))}>
-            {presets.map((p, i) => (
-              <option key={p.label} value={i}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+          <Menu
+            label="stake"
+            options={presets.map((p) => p.label)}
+            value={presetIndex}
+            onChange={setPresetIndex}
+          />
           <span className="side-picker">
             <button type="button" className={side === 0 ? 'sel-heads' : ''} onClick={() => setSide(0)}>
               heads
@@ -97,42 +96,57 @@ export const CoinFlipScreen = ({
             {busy ? 'Sending…' : `Enter ${side === 0 ? 'heads' : 'tails'}`}
           </button>
           {!walletClient && <span className="muted">connect a wallet to play</span>}
-          {walletClient && !trustAcknowledged && <span className="muted">acknowledge the trust note above first</span>}
+          {walletClient && !trustAcknowledged && <span className="muted">acknowledge the house rules above first</span>}
         </div>
         {error && <p className="bad">{error}</p>}
       </div>
 
-      <h2>Waiting entries</h2>
-      {data.lobby.openEntries.length === 0 && <p className="muted">Nobody is waiting — enter and you'll queue.</p>}
+      <h2>
+        Open action
+        <SourceNote deployment={deployment} contract={deployment.coinFlip} contractLabel="CoinFlip" />
+      </h2>
+      {data.lobby.openEntries.length === 0 && (
+        <p className="muted">Nobody's at the table — your entry opens the action.</p>
+      )}
       {data.lobby.openEntries.map((entry) => (
-        <div key={entry.id.toString()} className="card row" style={{ justifyContent: 'space-between' }}>
-          <span>
-            <span className="tag">{entry.side}</span>
-            <span className="mono">{short(entry.player)}</span>
-            {entry.mine && <span className="tag ok">you</span>}
-          </span>
-          <span className="row">
-            <span>{viem.formatEther(entry.stake)} staked</span>
-            {entry.mine && (
-              <button className="danger" onClick={() => void cancel(entry.id)} disabled={busy}>
-                Cancel
-              </button>
-            )}
-          </span>
+        <div key={entry.id.toString()} className="card">
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <span>
+              <span className="tag">{entry.side}</span>
+              <AddressLink deployment={deployment} address={entry.player} />
+              {entry.mine && <span className="tag ok">you</span>}
+            </span>
+            <span className="row">
+              <span>{viem.formatEther(entry.stake)} staked</span>
+              {entry.mine && (
+                <button className="danger" onClick={() => void cancel(entry.id)} disabled={busy}>
+                  Cancel
+                </button>
+              )}
+            </span>
+          </div>
+          <Provenance
+            deployment={deployment}
+            timestamps={data.timestamps}
+            items={[{ label: 'entered', block: entry.enteredAtBlock, tx: entry.enterTx }]}
+          />
         </div>
       ))}
 
-      <h2>Flips</h2>
+      <h2>
+        Flips
+        <SourceNote deployment={deployment} contract={deployment.coinFlip} contractLabel="CoinFlip" />
+      </h2>
       {data.lobby.flips.length === 0 && <p className="muted">No flips yet.</p>}
       {[...data.lobby.flips].reverse().map((flip) => (
         <div key={flip.flipId} className="card">
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <span>
               <span className="tag">heads</span>
-              <span className="mono">{short(flip.heads)}</span>
+              <AddressLink deployment={deployment} address={flip.heads} />
               <span className="muted"> vs </span>
               <span className="tag">tails</span>
-              <span className="mono">{short(flip.tails)}</span>
+              <AddressLink deployment={deployment} address={flip.tails} />
               {flip.mine && <span className="tag ok">you</span>}
             </span>
             <span>
@@ -140,12 +154,21 @@ export const CoinFlipScreen = ({
                 <span className="muted flipping"><span className="coin" />waiting for the validators' cast…</span>
               ) : (
                 <span className="ok">
-                  {flip.winningSide} wins — {short(flip.winner!)} takes {viem.formatEther(flip.stake * 2n)}
+                  {flip.winningSide} wins — <AddressLink deployment={deployment} address={flip.winner!} /> takes{' '}
+                  {viem.formatEther(flip.stake * 2n)}
                 </span>
               )}
             </span>
           </div>
-          <CoinFlipVerifyPanel flip={flip} />
+          <Provenance
+            deployment={deployment}
+            timestamps={data.timestamps}
+            items={[
+              { label: 'paired', block: flip.pairedAtBlock, tx: flip.pairTx },
+              { label: 'settled', block: flip.settledAtBlock, tx: flip.settleTx },
+            ]}
+          />
+          <CoinFlipVerifyPanel flip={flip} deployment={deployment} />
         </div>
       ))}
     </div>
