@@ -157,6 +157,15 @@ remains the historical reference for the funding and gas-cap patterns.
 
 ## Run log
 
+### Run 2026-06-11 (chain 369)
+
+- Random: `0x87fc31413534733a09df5dc5aa33b4dba1f64b61`
+- CoinFlip: `0x66bdacfdd918f9d4c29f0a7d26609912ab478f4d`
+- Raffle: `0x004564d44E6921FFA68936F44ae58988Cd146b10`
+- Duel: seed `0xc723d413c3503c39e2063ec1dff03c9693c48e7af477e1773429132470e83a85`, winner `0x21D9FF00c90BDd06B0F87A186A64BB8713C6AB3B` (tails) — off-chain == on-chain ✓
+- Raffle: draw 147, winning ticket 2 (`0x7eF899A02762AC1A65DFaA1D162Ef296a97Fe870`) — off-chain == on-chain ✓; finalised, payout 0.3 PLS to 0x7eF899A02762AC1A65DFaA1D162Ef296a97Fe870
+
+
 ### Run 2026-06-10 (chain 943)
 
 - Random: `0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217`

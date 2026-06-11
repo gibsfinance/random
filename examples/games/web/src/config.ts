@@ -57,4 +57,28 @@ export const deployments: GameDeployment[] = [
     explorer: 'https://scan.v4.testnet.pulsechain.com/#',
     archive: 'https://archive.msgboard.xyz',
   },
+  // Deployed by the 2026-06-11 mainnet bring-up (gate run + ink-pools; e2e/scripts/369-deployment.json).
+  // deployBlock = the web pools' ink block so the site and the cast watcher count heats
+  // from the same origin (the gate's own bring-up games predate it on purpose).
+  {
+    chainId: 369,
+    label: 'PulseChain',
+    coinFlip: '0x66bdacfdd918f9d4c29f0a7d26609912ab478f4d',
+    raffle: '0x004564d44E6921FFA68936F44ae58988Cd146b10',
+    random: '0x87fc31413534733a09df5dc5aa33b4dba1f64b61',
+    canonicalSubset: [
+      '0xAe96b0748f933914867d59486251043790cB2896',
+      '0x2a638D7135966a5cA1973c930bD0317cd7d6874c',
+      '0x0D3148A85608708Fe944EE71E13B4C9181b7cc83',
+    ],
+    poolOffsets: {
+      '0xae96b0748f933914867d59486251043790cb2896': '4',
+      '0x2a638d7135966a5ca1973c930bd0317cd7d6874c': '2',
+      '0x0d3148a85608708fe944ee71e13b4c9181b7cc83': '2',
+    },
+    deployBlock: '26757758',
+    poolSize: 64,
+    explorer: 'https://scan.pulsechain.com/#',
+    archive: 'https://archive.msgboard.xyz',
+  },
 ]
