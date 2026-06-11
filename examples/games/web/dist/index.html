@@ -138,7 +138,28 @@
       }
       .menu-option.highlight { background: var(--felt-600); filter: none; }
       .menu-option.selected { color: var(--brass); font-weight: 700; }
-      .menu-option.selected::before { content: '♠ '; color: var(--brass-soft); }
+      .menu-icon { width: 1.1em; height: 1.1em; border-radius: 50%; vertical-align: -0.18em; margin-right: 0.45em; }
+      .menu-trigger .menu-icon, .menu-option .menu-icon { margin-right: 0; }
+      .menu-trigger, .menu-option { gap: 0.5rem; }
+      .menu-option { display: inline-flex; align-items: center; }
+
+      /* ---------- manual stake + threshold ---------- */
+      .stake-input { display: inline-flex; align-items: center; gap: 0.35rem; }
+      .chip {
+        font: 600 0.78rem var(--sans);
+        color: var(--cream-dim);
+        background: var(--felt-900);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.22rem 0.65rem;
+        box-shadow: none;
+      }
+      .chip:hover:not(:disabled) { border-color: var(--brass-soft); color: var(--brass); filter: none; }
+      .chip.active { color: var(--ink); background: linear-gradient(180deg, #dcc26a, var(--brass)); border-color: #9a7d1f; }
+      .threshold-label {
+        display: inline-flex; align-items: center; gap: 0.45rem;
+        font: 600 0.82rem var(--sans); color: var(--cream-dim);
+      }
 
       /* ---------- surfaces ---------- */
       .card {
@@ -202,7 +223,39 @@
       }
       .strapline { font: 500 0.8rem var(--sans); letter-spacing: 0.22em; text-transform: uppercase; color: var(--brass); margin-top: 0.15rem; }
 
-      /* ---------- the pitch ---------- */
+      /* ---------- the pitch (collapsible explainer) ---------- */
+      .pitch { border: 1px solid var(--line); border-radius: 6px; background: var(--felt-700); margin: 0.6rem 0 0.8rem; overflow: hidden; }
+      .pitch > summary {
+        list-style: none; cursor: pointer; user-select: none;
+        display: flex; align-items: center; gap: 0.6rem;
+        padding: 0.55rem 1rem;
+        font: 700 0.92rem var(--serif);
+        color: var(--cream-dim);
+      }
+      .pitch > summary:hover { color: var(--brass); }
+      .pitch > summary::-webkit-details-marker { display: none; }
+      .pitch > summary::after { content: '▾'; margin-left: auto; transition: transform 0.2s; color: var(--brass-soft); }
+      .pitch[open] > summary::after { transform: rotate(180deg); }
+      .pitch .pitch-body { padding: 0 1rem 0.9rem; border-top: 1px solid var(--line); }
+
+      /* ---------- the record (collapsed history) ---------- */
+      .history { margin: 0.7rem 0; }
+      .history > summary {
+        list-style: none; cursor: pointer; user-select: none;
+        display: flex; align-items: baseline; gap: 0.7rem; flex-wrap: wrap;
+        background: linear-gradient(180deg, var(--felt-700), var(--felt-800));
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 0.7rem 1rem;
+        font: 600 0.92rem var(--sans);
+        color: var(--cream);
+      }
+      .history > summary::-webkit-details-marker { display: none; }
+      .history > summary::before { content: '▸'; color: var(--brass-soft); }
+      .history[open] > summary::before { content: '▾'; }
+      .history > summary:hover { border-color: var(--brass-soft); }
+      .history-hint { margin-left: auto; font: 500 0.78rem var(--sans); }
+
       .hero-pitch {
         font-family: var(--serif);
         font-size: 1.06rem;
@@ -394,7 +447,7 @@
       .info-dot:focus-within .info-pop { visibility: visible; opacity: 1; }
       h2 .info-pop { font-family: var(--sans); font-weight: 400; }
     </style>
-    <script type="module" crossorigin src="/assets/index-Bh-4cAuA.js"></script>
+    <script type="module" crossorigin src="/assets/index-Bxv949UR.js"></script>
   </head>
   <body>
     <div id="root"></div>

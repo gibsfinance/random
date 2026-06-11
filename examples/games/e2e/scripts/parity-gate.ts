@@ -29,6 +29,8 @@
  *   RAFFLE       reuse an already-deployed Raffle instead of deploying.
  *   RANDOM_ADDRESS  override the core Random address (NOT named RANDOM because shells
  *                special-case that variable). On 31337 a fresh Random is deployed when unset.
+ *   DEPLOY_RANDOM  'true' => deploy a fresh core Random on a LIVE chain too when no address
+ *                is known (first-time chain bring-up, e.g. pulsechain mainnet).
  *   EXPECTED_PROVIDER  the address account 0 must derive to (guards against a wrong
  *                mnemonic). Defaults to the known funded account on 943 only; set it
  *                explicitly on other live chains, or empty to skip.
@@ -258,8 +260,9 @@ const main = async () => {
   // --- Resolve core Random ---------------------------------------------------------------
   let random = (env.RANDOM_ADDRESS as viem.Hex | undefined) ?? (knownRandom as Record<number, viem.Hex | undefined>)[CHAIN_ID]
   if (!random) {
-    if (!IS_DEV) throw new Error(`no core Random address for chain ${CHAIN_ID}; supply RANDOM_ADDRESS`)
-    console.log('[deploy] development chain: deploying a fresh core Random')
+    if (!IS_DEV && env.DEPLOY_RANDOM !== 'true')
+      throw new Error(`no core Random address for chain ${CHAIN_ID}; supply RANDOM_ADDRESS or DEPLOY_RANDOM=true`)
+    console.log(`[deploy] ${IS_DEV ? 'development chain' : 'first-time chain bring-up'}: deploying a fresh core Random`)
     const hash = await wallet.deployContract({
       abi: RandomArtifact.abi as viem.Abi,
       bytecode: RandomArtifact.bytecode as viem.Hex,

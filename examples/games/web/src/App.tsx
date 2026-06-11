@@ -10,6 +10,11 @@ import { Menu } from './components/Menu'
 
 const short = (a?: viem.Hex) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '')
 
+const PITCH_KEY = 'msgboard-games:pitch-collapsed'
+
+const chainIcon = (chainId: number): string | undefined =>
+  chainId === 31337 ? undefined : `https://gib.show/image/${chainId}?w=32&h=32&format=webp`
+
 export const App = () => {
   const [deploymentIndex, setDeploymentIndex] = useState(0)
   const [tab, setTab] = useState<'coinflip' | 'raffle'>('coinflip')
@@ -19,6 +24,7 @@ export const App = () => {
   const [trustAcknowledged, setTrustAcknowledged] = useState(() =>
     deployment ? isTrustAcknowledged(deployment.chainId) : false,
   )
+  const [pitchOpen, setPitchOpen] = useState(() => localStorage.getItem(PITCH_KEY) !== 'true')
 
   if (!deployment) {
     return (
@@ -45,7 +51,7 @@ export const App = () => {
         <div className="row">
           <Menu
             label="chain"
-            options={deployments.map((d) => d.label)}
+            options={deployments.map((d) => ({ label: d.label, icon: chainIcon(d.chainId) }))}
             value={deploymentIndex}
             onChange={setDeploymentIndex}
           />
@@ -63,33 +69,54 @@ export const App = () => {
           )}
         </div>
       </div>
-      <p className="hero-pitch">
-        Coin flips and a numbers game where <strong>nobody can cook the draw</strong> — not the house, not the
-        player across the table, not even{' '}
-        <a href="https://msgboard.xyz" target="_blank" rel="noreferrer">
-          MsgBoard
-        </a>
-        , the platform this venue runs on. Every result comes from validator secrets locked in before you play, and
-        your own browser re-runs the count on every settled game. A trust-me casino asks you to believe the odds;
-        this table hands you the books.
-      </p>
-      <div className="howit">
-        <div className="howit-step">
-          <span className="howit-num">1</span>
-          <strong>Secrets go in before the action.</strong> Validators ink hashed secrets on chain ahead of every
-          game, and your entry pins that exact set — no late swaps, no reshuffles.
+      <details
+        className="pitch"
+        open={pitchOpen}
+        onToggle={(e) => {
+          const isOpen = (e.target as HTMLDetailsElement).open
+          setPitchOpen(isOpen)
+          localStorage.setItem(PITCH_KEY, isOpen ? 'false' : 'true')
+        }}
+      >
+        <summary>How the back room stays honest — and cheap</summary>
+        <div className="pitch-body">
+          <p className="hero-pitch">
+            Coin flips and a numbers game where <strong>nobody can cook the draw</strong> — not the house, not the
+            player across the table, not even{' '}
+            <a href="https://msgboard.xyz" target="_blank" rel="noreferrer">
+              MsgBoard
+            </a>
+            . Every result comes from validator secrets locked in before you play, and your own browser re-runs the
+            count on every settled game. A trust-me casino asks you to believe the odds; this table hands you the
+            books.
+          </p>
+          <div className="howit">
+            <div className="howit-step">
+              <span className="howit-num">1</span>
+              <strong>Secrets go in before the action.</strong> Validators ink hashed secrets on chain ahead of every
+              game, and your entry pins that exact set — no late swaps, no reshuffles.
+            </div>
+            <div className="howit-step">
+              <span className="howit-num">2</span>
+              <strong>The reveal is the draw.</strong> The seed is the hash of all the validators' revealed secrets
+              together. If even one of them is honest, no cartel — house included — can steer the result. Don't
+              trust any of them? Bring your own: anyone can ink secrets and join the set, you and the house
+              included.
+            </div>
+            <div className="howit-step">
+              <span className="howit-num">3</span>
+              <strong>You keep the books.</strong> Your browser recomputes every outcome from the seed and stamps the
+              slip <em>on the level</em> — or calls it crooked. Don't trust the table; audit it.
+            </div>
+            <div className="howit-step">
+              <span className="howit-num">4</span>
+              <strong>Supercharged by MsgBoard.</strong> Validators coordinate over MsgBoard, where a message costs a
+              proof-of-work stamp instead of gas — near-zero overhead to keep the entropy flowing, so the odds
+              aren't bled dry by fees.
+            </div>
+          </div>
         </div>
-        <div className="howit-step">
-          <span className="howit-num">2</span>
-          <strong>The reveal is the draw.</strong> The seed is the hash of all the validators' revealed secrets
-          together. If even one of them is honest, no cartel — house included — can steer the result.
-        </div>
-        <div className="howit-step">
-          <span className="howit-num">3</span>
-          <strong>You keep the books.</strong> Your browser recomputes every outcome from the seed and stamps the
-          slip <em>on the level</em> — or calls it crooked. Don't trust the table; audit it.
-        </div>
-      </div>
+      </details>
       {wallet.error && <div className="banner bad">{wallet.error}</div>}
       {data.error && <div className="banner bad">chain read failed: {data.error}</div>}
       <div className="tabs">
@@ -126,9 +153,12 @@ export const App = () => {
           venue · run by valve
         </span>
         <span>
-          randomness contracts by{' '}
           <a href="https://github.com/gibsfinance/random" target="_blank" rel="noreferrer">
-            gibs.finance
+            contracts
+          </a>
+          {' · '}
+          <a href="https://github.com/valve-tech/msgboard" target="_blank" rel="noreferrer">
+            msgboard
           </a>
         </span>
       </div>

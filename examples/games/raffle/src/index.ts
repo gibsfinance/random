@@ -77,8 +77,8 @@ export const raffle: Game<RaffleParams, RaffleEntry, RaffleOutcome | null> = {
 }
 
 const STAKE_LADDER = [viem.parseEther('0.1'), viem.parseEther('1'), viem.parseEther('10')] as const
-const CANONICAL_THRESHOLD = 3n
-const CANONICAL_PERIOD = 30n // blocks a round fills before it may arm — long enough to gather entries
+export const CANONICAL_THRESHOLD = 3n
+export const CANONICAL_PERIOD = 30n // blocks a round fills before it may arm — long enough to gather entries
 
 /**
  * The canonical presets for a chain's recommended validator subset. One threshold/period shape

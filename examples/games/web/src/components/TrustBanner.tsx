@@ -32,7 +32,9 @@ export const TrustBanner = ({
           player, or this website. <strong>A draw is safe as long as at least one of the chosen validators
           is honest.</strong> If every validator colluded, they could grind the result; if even one is
           honest, nobody can. The contracts pin the validator set when you enter, so it cannot be swapped
-          afterwards — and every settled round below comes with a receipt you can verify yourself.
+          afterwards — and every settled round below comes with a receipt you can verify yourself. Don't
+          trust this set? Anyone can ink secrets and contribute randomness — a player, or even the house —
+          and if the honest one is <em>you</em>, the draw is safe for you by construction.
         </p>
         <ul>
           {deployment.canonicalSubset.map((v) => (

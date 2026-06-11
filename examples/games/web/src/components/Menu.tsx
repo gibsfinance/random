@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 
+export type MenuOption = { label: string; icon?: string }
+
 /**
  * The house menu — a div-reveal replacement for native <select> (the venue doesn't do
  * native selects). Trigger button + positioned options panel, click-outside and Escape
- * close, arrow keys move, Enter/Space picks. Same onChange shape as the selects it replaced.
+ * close, arrow keys move, Enter/Space picks. Options may carry an icon URL.
  */
 export const Menu = ({
   label,
@@ -12,13 +14,14 @@ export const Menu = ({
   onChange,
 }: {
   label: string
-  options: string[]
+  options: (string | MenuOption)[]
   value: number
   onChange: (index: number) => void
 }) => {
   const [open, setOpen] = useState(false)
   const [highlight, setHighlight] = useState(value)
   const rootRef = useRef<HTMLSpanElement>(null)
+  const items: MenuOption[] = options.map((o) => (typeof o === 'string' ? { label: o } : o))
 
   useEffect(() => {
     if (!open) return
@@ -48,7 +51,7 @@ export const Menu = ({
     if (!open) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setHighlight((h) => Math.min(h + 1, options.length - 1))
+      setHighlight((h) => Math.min(h + 1, items.length - 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setHighlight((h) => Math.max(h - 1, 0))
@@ -57,6 +60,13 @@ export const Menu = ({
       pick(highlight)
     }
   }
+
+  const OptionFace = ({ option }: { option: MenuOption }) => (
+    <>
+      {option.icon && <img className="menu-icon" src={option.icon} alt="" loading="lazy" />}
+      <span>{option.label}</span>
+    </>
+  )
 
   return (
     <span className="menu" ref={rootRef} onKeyDown={onKeyDown}>
@@ -71,16 +81,16 @@ export const Menu = ({
           setOpen((o) => !o)
         }}
       >
-        <span>{options[value]}</span>
+        <OptionFace option={items[value] ?? { label: '' }} />
         <span className="menu-caret" aria-hidden>
           ▾
         </span>
       </button>
       {open && (
         <span className="menu-panel" role="listbox" aria-label={label}>
-          {options.map((option, i) => (
+          {items.map((option, i) => (
             <button
-              key={option}
+              key={option.label}
               type="button"
               role="option"
               aria-selected={i === value}
@@ -88,7 +98,7 @@ export const Menu = ({
               onPointerEnter={() => setHighlight(i)}
               onClick={() => pick(i)}
             >
-              {option}
+              <OptionFace option={option} />
             </button>
           ))}
         </span>

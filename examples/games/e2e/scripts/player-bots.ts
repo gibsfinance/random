@@ -4,17 +4,21 @@
  * re-derive deterministically from (bot key, commit ordinal), so restarts lose nothing.
  *
  * Per tick (with jitter):
- *   coin flip  — if ANY open entry waits at the canonical stake (a bot's or a human's), a bot
- *                enters the opposite side and pairs it (humans on the site always find a
- *                counterparty); otherwise, sometimes queue a fresh entry.
- *   raffle     — fill the canonical round one bot-commit at a time; arm at threshold once the
- *                period elapses; reveal own tickets during the claim window; finalise after.
+ *   coin flip  — if ANY open entry waits at a stake up to MAX_STAKE (a bot's or a human's —
+ *                stakes are manual inputs on the site now), a bot with the balance for it
+ *                enters the opposite side and pairs it (humans always find a counterparty);
+ *                otherwise, sometimes queue a fresh canonical entry.
+ *   raffle     — fill ANY filling round on the canonical subset with stake up to MAX_STAKE
+ *                (custom stake/threshold tuples included), one bot-commit at a time; arm at
+ *                threshold once the period elapses; reveal own tickets during the claim
+ *                window; finalise after.
  *
  * The cast-watcher (separate process) finalizes seeds; this script never casts.
  *
  * Env: MNEMONIC (funded; bots are addressIndex 20..20+BOTS-1, topped up from account 0),
  *      SEEDS0 (bot guess/salt derivation), CHAIN (default 943), RPC, CONFIG,
  *      BOTS (default 3), INTERVAL_MS (default 90000), ENTER_PROBABILITY (default 0.35),
+ *      MAX_STAKE (coins, default 25 — the biggest human stake a bot will take on),
  *      ONCE=true for a single pass.
  */
 import * as viem from 'viem'
@@ -37,8 +41,10 @@ const FIRST_BOT_INDEX = 20 // clear of validators (1-3) and the gate's players (
 const BOT_KEY_BASE = 50_000_000 // reserved seeds0 range for bot salt derivation
 const INTERVAL_MS = env.INTERVAL_MS ? Number(env.INTERVAL_MS) : 90_000
 const ENTER_PROBABILITY = env.ENTER_PROBABILITY ? Number(env.ENTER_PROBABILITY) : 0.35
-const TOP_UP_BELOW = viem.parseEther('0.5')
-const TOP_UP_TO = viem.parseEther('2')
+const MAX_STAKE = viem.parseEther(env.MAX_STAKE || '25') // biggest entry/ticket a bot takes on
+const GAS_CUSHION = viem.parseEther('1') // keep enough aside to always afford the gas
+const TOP_UP_BELOW = viem.parseEther('50')
+const TOP_UP_TO = viem.parseEther('200')
 const COMMIT_GAS = 1_000_000n
 const ENTER_GAS = 4_000_000n
 const REVEAL_GAS = 500_000n
@@ -122,7 +128,7 @@ const main = async () => {
     const open: { id: bigint; player: viem.Hex; side: number; stake: bigint }[] = []
     for (const log of entered.slice(-40)) {
       const args = log.args as { id: bigint; player: viem.Hex; side: number; stake: bigint }
-      if (args.stake !== flipParams.stake) continue
+      if (args.stake > MAX_STAKE) continue // manual stakes on the site — bounded spend per take
       const entry = (await publicClient.readContract({
         address: config.coinFlip,
         abi: coinFlipAbi,
@@ -134,7 +140,13 @@ const main = async () => {
 
     if (open.length > 0) {
       const target = open[0]!
-      const taker = randomPick(bots.filter((b) => b.account.address.toLowerCase() !== target.player.toLowerCase()))
+      const candidates = bots.filter((b) => b.account.address.toLowerCase() !== target.player.toLowerCase())
+      const funded: typeof candidates = []
+      for (const b of candidates) {
+        const balance = await publicClient.getBalance({ address: b.account.address })
+        if (balance >= target.stake + GAS_CUSHION) funded.push(b)
+      }
+      const taker = randomPick(funded)
       if (!taker) return
       const opposite = Number(target.side) === 0 ? 1 : 0
       await sendAs(taker.publicClient, taker.wallet, {
@@ -142,7 +154,7 @@ const main = async () => {
         abi: coinFlipAbi,
         functionName: 'enterAndMatch',
         args: [opposite, subset, await heatLocations()],
-        value: flipParams.stake,
+        value: target.stake,
         gas: ENTER_GAS,
       })
       console.log(`flip: ${taker.account.address} took the ${opposite === 0 ? 'heads' : 'tails'} side vs ${target.player}`)
@@ -166,18 +178,6 @@ const main = async () => {
   // --- raffle ------------------------------------------------------------------------------
   const tickRaffle = async () => {
     const subsetHash = viem.keccak256(viem.encodeAbiParameters([{ type: 'address[]' }], [subset]))
-    const tupleHash = viem.keccak256(
-      viem.encodeAbiParameters(
-        [{ type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'bytes32' }],
-        [raffleParams.stake, raffleParams.threshold, raffleParams.period, subsetHash],
-      ),
-    )
-    const activeRoundId = (await publicClient.readContract({
-      address: config.raffle,
-      abi: raffleAbi,
-      functionName: 'activeRound',
-      args: [tupleHash],
-    })) as viem.Hex
     const currentBlock = await publicClient.getBlockNumber()
     const committedLogs = await publicClient.getContractEvents({
       address: config.raffle,
@@ -193,47 +193,59 @@ const main = async () => {
       commitsByBot.set(key, [...(commitsByBot.get(key) ?? []), { ticketId: args.ticketId, roundId: args.roundId }])
     }
 
-    // 1. fill / arm the active round
-    if (activeRoundId !== viem.padHex('0x0', { size: 32 })) {
+    // 1. fill / arm ANY filling round on our subset — manual stake/threshold tuples included,
+    // capped at MAX_STAKE per ticket so a whale round can't drain the bots
+    const openedLogs = await publicClient.getContractEvents({
+      address: config.raffle,
+      abi: raffleAbi,
+      eventName: 'RoundOpened',
+      fromBlock: from,
+    })
+    let sawFillable = false
+    for (const log of openedLogs) {
+      const opened = log.args as { roundId: viem.Hex; stake: bigint; threshold: bigint; period: bigint; subsetHash: viem.Hex }
+      if (opened.subsetHash !== subsetHash || opened.stake > MAX_STAKE) continue
       const round = (await publicClient.readContract({
         address: config.raffle,
         abi: raffleAbi,
         functionName: 'rounds',
-        args: [activeRoundId],
+        args: [opened.roundId],
       })) as unknown[]
-      const status = Number(round[7]) // 1 = Filling
+      if (Number(round[7]) !== 1) continue // 1 = Filling
+      sawFillable = true
       const commitCount = round[5] as bigint
       const createdAtBlock = round[4] as bigint
-      if (status === 1 && commitCount < raffleParams.threshold) {
-        const fresh = bots.find(
-          (b) => !(commitsByBot.get(b.account.address.toLowerCase()) ?? []).some((c) => c.roundId === activeRoundId),
-        )
-        if (fresh) {
-          const ordinal = (commitsByBot.get(fresh.account.address.toLowerCase()) ?? []).length
+      if (commitCount < opened.threshold) {
+        for (const fresh of bots) {
+          const mine = commitsByBot.get(fresh.account.address.toLowerCase()) ?? []
+          if (mine.some((c) => c.roundId === opened.roundId)) continue
+          const balance = await publicClient.getBalance({ address: fresh.account.address })
+          if (balance < opened.stake + GAS_CUSHION) continue
+          const ordinal = mine.length
           const { salt, guess } = ticketPlan(fresh.saltKey, ordinal)
           await sendAs(fresh.publicClient, fresh.wallet, {
             address: config.raffle,
             abi: raffleAbi,
             functionName: 'commit',
-            args: [raffleParams.stake, raffleParams.threshold, raffleParams.period, subset, commitmentFor(guess, salt, fresh.account.address)],
-            value: raffleParams.stake,
+            args: [opened.stake, opened.threshold, opened.period, subset, commitmentFor(guess, salt, fresh.account.address)],
+            value: opened.stake,
             gas: COMMIT_GAS,
           })
-          console.log(`raffle: ${fresh.account.address} committed (ordinal ${ordinal}) to ${activeRoundId.slice(0, 10)}`)
+          console.log(`raffle: ${fresh.account.address} committed (ordinal ${ordinal}) to ${opened.roundId.slice(0, 10)}`)
           return
         }
-      }
-      if (status === 1 && commitCount >= raffleParams.threshold && currentBlock >= createdAtBlock + raffleParams.period) {
+      } else if (currentBlock >= createdAtBlock + opened.period) {
         await sendAs(funder.publicClient, funder.wallet, {
           address: config.raffle,
           abi: raffleAbi,
           functionName: 'arm',
-          args: [activeRoundId, await heatLocations()],
+          args: [opened.roundId, await heatLocations()],
         })
-        console.log(`raffle: armed ${activeRoundId.slice(0, 10)}`)
+        console.log(`raffle: armed ${opened.roundId.slice(0, 10)}`)
         return
       }
-    } else if (Math.random() < ENTER_PROBABILITY) {
+    }
+    if (!sawFillable && Math.random() < ENTER_PROBABILITY) {
       // no active round — open one
       const bot = randomPick(bots)
       const ordinal = (commitsByBot.get(bot.account.address.toLowerCase()) ?? []).length
