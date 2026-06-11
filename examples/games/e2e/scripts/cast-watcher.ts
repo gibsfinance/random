@@ -30,7 +30,10 @@ const env = process.env
 const CHAIN = (env.CHAIN ? Number(env.CHAIN) : 943) as GamesChainId
 const INTERVAL_MS = env.INTERVAL_MS ? Number(env.INTERVAL_MS) : 5_000
 const VAULT_FLOOR = viem.parseEther(env.VAULT_FLOOR || '100')
-const MSGBOARD_CATEGORY = 'msgboard-games'
+// padded-bytes32 text, NOT a plain string: the sdk's categoryHash passes 32-byte hex
+// through but keccaks plain strings — a hashed category archives with category_text NULL
+// and the site's prefilled archive queries (category_text = "msgboard-games") miss it.
+const MSGBOARD_CATEGORY = viem.stringToHex('msgboard-games', { size: 32 })
 const ZERO32 = viem.padHex('0x0', { size: 32 })
 /** Ink pool n+1 once fewer than this many slots remain in pool n. */
 const INK_AHEAD = 8n
