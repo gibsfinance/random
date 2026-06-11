@@ -11,6 +11,7 @@ import { publicClientFor } from '../wallet'
 import { RaffleVerifyPanel } from './VerifyPanel'
 import { AddressLink, Provenance, SourceNote, archiveTrailUrl, explorerUrl, formatWhen } from './Meta'
 import { StakeInput, parseStake } from './StakeInput'
+import { involvement } from '../model/participation'
 
 const commitmentFor = (guess: bigint, salt: viem.Hex, player: viem.Hex): viem.Hex =>
   viem.keccak256(
@@ -37,6 +38,7 @@ onFinalise,
 onLoadSeed,
 onReveal,
 onRefund,
+validated,
 }: {
 round: RaffleRoundView
 deployment: GameDeployment
@@ -50,6 +52,7 @@ onFinalise: (round: RaffleRoundView) => void
 onLoadSeed: (round: RaffleRoundView) => void
 onReveal: (ticketId: bigint) => void
 onRefund: (ticketId: bigint) => void
+validated?: boolean
 }) => (
   <div className="card">
     <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -58,6 +61,7 @@ onRefund: (ticketId: bigint) => void
         {viem.formatEther(round.stake)} per ticket · {round.threshold.toString()} players ·{' '}
         pot {viem.formatEther(round.stake * round.commitCount)}
         {round.draw !== undefined && <span className="tag">draw: {round.draw.toString()}</span>}
+        {validated && <span className="tag gold">you validated</span>}
       </span>
       <span className="row">
         {round.phase === 'filling' && round.commitCount >= round.threshold && (
@@ -163,11 +167,13 @@ export const RaffleScreen = ({
   data,
   walletClient,
   trustAcknowledged,
+  myAddress,
 }: {
   deployment: GameDeployment
   data: ChainData
   walletClient?: viem.WalletClient
   trustAcknowledged: boolean
+  myAddress?: viem.Hex
 }) => {
   const [amount, setAmount] = useState('0.1')
   const [threshold, setThreshold] = useState(CANONICAL_THRESHOLD.toString())
@@ -296,6 +302,23 @@ export const RaffleScreen = ({
 
   const liveRounds = data.rounds.filter((r) => ACTIVE_PHASES.has(r.phase))
   const doneRounds = data.rounds.filter((r) => !ACTIVE_PHASES.has(r.phase))
+
+  // the connected wallet's history — rounds they hold a ticket in, or validated entropy for
+  const mineByRound = new Map(
+    data.rounds.map((r) => [
+      r.roundId,
+      involvement({ mine: r.tickets.some((t) => t.mine), subsetHash: r.subsetHash }, deployment.canonicalSubset, myAddress),
+    ]),
+  )
+  const myRounds = data.rounds.filter((r) => {
+    const inv = mineByRound.get(r.roundId)!
+    return inv.played || inv.validated
+  })
+  const myFinished = myRounds.filter((r) => !ACTIVE_PHASES.has(r.phase) && mineByRound.get(r.roundId)!.played)
+  const myWon = myFinished.filter(
+    (r) => r.winner && myAddress && r.winner.toLowerCase() === myAddress.toLowerCase(),
+  )
+  const myTakings = myWon.reduce((sum, r) => sum + (r.payout ?? 0n), 0n)
   const paidOut = doneRounds.reduce((sum, r) => sum + (r.payout ?? 0n), 0n)
   const lastDone = doneRounds.at(-1)
   const lastDoneWhen =
@@ -411,6 +434,49 @@ export const RaffleScreen = ({
           onRefund={(t) => void refund(t)}
         />
       ))}
+
+      {myAddress && (
+        <>
+          <h2>
+            Your book
+            <SourceNote deployment={deployment} contract={deployment.raffle} contractLabel="Raffle" />
+          </h2>
+          {myRounds.length === 0 && (
+            <p className="muted">Nothing under your name yet — every round you play or validate lands here.</p>
+          )}
+          {myRounds.length > 0 && (
+            <details className="history" open>
+              <summary>
+                {myRounds.length} round{myRounds.length === 1 ? '' : 's'}
+                {myFinished.length > 0 && (
+                  <span className="muted">
+                    {' '}
+                    · {myWon.length}/{myFinished.length} won · {viem.formatEther(myTakings)} taken
+                  </span>
+                )}
+              </summary>
+              {[...myRounds].reverse().map((round) => (
+                <RoundCard
+                  key={round.roundId}
+                  round={round}
+                  deployment={deployment}
+                  data={data}
+                  seed={seeds[round.roundId]}
+                  busy={busy}
+                  canPlay={canPlay}
+                  phaseTag={phaseTag}
+                  onArm={(r) => void arm(r)}
+                  onFinalise={(r) => void finalise(r)}
+                  onLoadSeed={(r) => void loadSeed(r)}
+                  onReveal={(t) => void reveal(t)}
+                  onRefund={(t) => void refund(t)}
+                  validated={mineByRound.get(round.roundId)!.validated}
+                />
+              ))}
+            </details>
+          )}
+        </>
+      )}
 
       <h2>
         The record

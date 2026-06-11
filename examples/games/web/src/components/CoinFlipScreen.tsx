@@ -8,6 +8,7 @@ import { sendGameTx, nextHeatLocations } from '../tx'
 import { CoinFlipVerifyPanel } from './VerifyPanel'
 import { AddressLink, Provenance, SourceNote, archiveTrailUrl, formatWhen } from './Meta'
 import { StakeInput, parseStake } from './StakeInput'
+import { involvement } from '../model/participation'
 
 /**
  * Hoisted to module level on purpose: defining this inside the screen gave it a fresh
@@ -18,10 +19,12 @@ const FlipCard = ({
   flip,
   deployment,
   timestamps,
+  validated,
 }: {
   flip: FlipView
   deployment: GameDeployment
   timestamps: Record<string, number>
+  validated?: boolean
 }) => (
   <div className="card">
     <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -32,6 +35,7 @@ const FlipCard = ({
         <span className="tag">tails</span>
         <AddressLink deployment={deployment} address={flip.tails} />
         {flip.mine && <span className="tag ok">you</span>}
+        {validated && <span className="tag gold">you validated</span>}
       </span>
       <span>
         {flip.status === 'pending' ? (
@@ -61,11 +65,13 @@ export const CoinFlipScreen = ({
   data,
   walletClient,
   trustAcknowledged,
+  myAddress,
 }: {
   deployment: GameDeployment
   data: ChainData
   walletClient?: viem.WalletClient
   trustAcknowledged: boolean
+  myAddress?: viem.Hex
 }) => {
   const [amount, setAmount] = useState('0.1')
   const [side, setSide] = useState<0 | 1>(0)
@@ -125,6 +131,18 @@ export const CoinFlipScreen = ({
 
   const pending = data.lobby.flips.filter((f) => f.status === 'pending')
   const settled = data.lobby.flips.filter((f) => f.status === 'settled')
+
+  // the connected wallet's history — every flip they played, or validated entropy for
+  const mineByFlip = new Map(
+    data.lobby.flips.map((f) => [f.flipId, involvement(f, deployment.canonicalSubset, myAddress)]),
+  )
+  const myFlips = data.lobby.flips.filter((f) => {
+    const inv = mineByFlip.get(f.flipId)!
+    return inv.played || inv.validated
+  })
+  const myPlayed = myFlips.filter((f) => mineByFlip.get(f.flipId)!.played && f.status === 'settled')
+  const myWins = myPlayed.filter((f) => f.winner && myAddress && f.winner.toLowerCase() === myAddress.toLowerCase())
+  const myTakings = myWins.reduce((sum, f) => sum + (f.payout ?? f.stake * 2n), 0n)
   const settledPot = settled.reduce((sum, f) => sum + f.stake * 2n, 0n)
   const lastSettled = settled.at(-1)
   const lastSettledWhen =
@@ -194,6 +212,40 @@ export const CoinFlipScreen = ({
       {[...pending].reverse().map((flip) => (
         <FlipCard key={flip.flipId} flip={flip} deployment={deployment} timestamps={data.timestamps} />
       ))}
+
+      {myAddress && (
+        <>
+          <h2>
+            Your book
+            <SourceNote deployment={deployment} contract={deployment.coinFlip} contractLabel="CoinFlip" />
+          </h2>
+          {myFlips.length === 0 && (
+            <p className="muted">Nothing under your name yet — every flip you play or validate lands here.</p>
+          )}
+          {myFlips.length > 0 && (
+            <details className="history" open>
+              <summary>
+                {myFlips.length} flip{myFlips.length === 1 ? '' : 's'}
+                {myPlayed.length > 0 && (
+                  <span className="muted">
+                    {' '}
+                    · {myWins.length}/{myPlayed.length} won · {viem.formatEther(myTakings)} taken
+                  </span>
+                )}
+              </summary>
+              {[...myFlips].reverse().map((flip) => (
+                <FlipCard
+                  key={flip.flipId}
+                  flip={flip}
+                  deployment={deployment}
+                  timestamps={data.timestamps}
+                  validated={mineByFlip.get(flip.flipId)!.validated}
+                />
+              ))}
+            </details>
+          )}
+        </>
+      )}
 
       <h2>
         The record

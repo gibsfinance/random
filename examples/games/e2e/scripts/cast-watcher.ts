@@ -10,7 +10,10 @@
  *
  * Env: MNEMONIC (funded caster/payer), SEEDS0, CHAIN (default 943), RPC, CONFIG (path to
  *      <chain>-deployment.json), INTERVAL_MS (default 5000), ONCE=true for a single pass.
- *      VAULT_FLOOR (coins, default 100): below this funder balance the watcher stops
+ *      OPS_INDEX (default 10): HD index of the OPERATIONS wallet that signs casts and
+ *      inks. Account 0 is the treasury/vault — it only ever tops the ops wallet up, so the
+ *      explorer never shows the treasury touching game contracts.
+ *      VAULT_FLOOR (coins, default 100): below this VAULT (account 0) balance the watcher stops
  *      SPENDING on pool maintenance — casts still go out (settling open games is an
  *      obligation), but no new pools are inked until the vault is refilled.
  *      MSGBOARD_RPC (default the keyed vk_demo valve endpoint for CHAIN): a node running
@@ -38,13 +41,35 @@ const ZERO32 = viem.padHex('0x0', { size: 32 })
 /** Ink pool n+1 once fewer than this many slots remain in pool n. */
 const INK_AHEAD = 8n
 
+const OPS_INDEX = env.OPS_INDEX ? Number(env.OPS_INDEX) : 10
+const OPS_TOP_UP_BELOW = viem.parseEther('20')
+const OPS_TOP_UP_TO = viem.parseEther('100')
+
 const main = async () => {
-  if (!env.MNEMONIC) throw new Error('MNEMONIC (funded caster) required')
+  if (!env.MNEMONIC) throw new Error('MNEMONIC (funded treasury) required')
   if (!env.SEEDS0) throw new Error('SEEDS0 required')
   const config = loadDeployment(CHAIN, env.CONFIG)
-  const { account, publicClient, wallet } = makeActor(CHAIN, env.MNEMONIC, 0, env.RPC)
+  const treasury = makeActor(CHAIN, env.MNEMONIC, 0, env.RPC)
+  const { account, publicClient, wallet } = makeActor(CHAIN, env.MNEMONIC, OPS_INDEX, env.RPC)
   const poolSize = BigInt(config.poolSize)
-  console.log(`cast watcher on chain ${CHAIN} as ${account.address}; origin block ${config.deployBlock}, pool size ${poolSize}`)
+  console.log(`cast watcher on chain ${CHAIN} as ${account.address} (ops; treasury ${treasury.account.address}); origin block ${config.deployBlock}, pool size ${poolSize}`)
+
+  /** Keep the ops wallet runnable off the vault — the treasury's only job is transfers. */
+  const topUpOps = async () => {
+    const balance = await publicClient.getBalance({ address: account.address })
+    if (balance >= OPS_TOP_UP_BELOW) return
+    const vault = await publicClient.getBalance({ address: treasury.account.address })
+    if (vault < VAULT_FLOOR) return // dry vault: don't scrape the bottom
+    const gasPrice = await publicClient.getGasPrice()
+    const hash = await treasury.wallet.sendTransaction({
+      to: account.address,
+      value: OPS_TOP_UP_TO - balance,
+      maxFeePerGas: gasPrice * 2n,
+      maxPriorityFeePerGas: gasPrice / 10n || 1n,
+    })
+    await publicClient.waitForTransactionReceipt({ hash })
+    console.log(`ops wallet topped up to ${viem.formatEther(OPS_TOP_UP_TO)}`)
+  }
 
   // The venue's town crier: a PoW-stamped MsgBoard notice per settlement — costs work, not
   // gas, so it keeps running even when the vault is too dry to spend.
@@ -81,7 +106,7 @@ const main = async () => {
   const maintainPools = async (heatCount: bigint) => {
     const remaining = poolSize - (heatCount % poolSize)
     if (remaining > INK_AHEAD) return
-    const vault = await publicClient.getBalance({ address: account.address })
+    const vault = await publicClient.getBalance({ address: treasury.account.address })
     if (vault < VAULT_FLOOR) {
       console.log(`vault below floor (${viem.formatEther(vault)} < ${viem.formatEther(VAULT_FLOOR)}) — pool inking paused until refilled`)
       return
@@ -121,6 +146,7 @@ const main = async () => {
   }
 
   const pass = async () => {
+    await topUpOps()
     const heats = await heatsSince(publicClient, config)
     await maintainPools(BigInt(heats.length))
     for (const [index, heat] of heats.entries()) {

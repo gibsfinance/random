@@ -134,6 +134,7 @@ export const App = () => {
           data={data}
           walletClient={wallet.walletClient}
           trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
         />
       ) : (
         <RaffleScreen
@@ -141,6 +142,7 @@ export const App = () => {
           data={data}
           walletClient={wallet.walletClient}
           trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
         />
       )}
       <div className="colophon">

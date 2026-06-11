@@ -15,7 +15,9 @@
  *
  * The cast-watcher (separate process) finalizes seeds; this script never casts.
  *
- * Env: MNEMONIC (funded; bots are addressIndex 20..20+BOTS-1, topped up from account 0),
+ * Env: MNEMONIC (funded; bots are addressIndex 20..20+BOTS-1, topped up from account 0 —
+ *      the treasury, which only ever transfers; arms/finalises sign from the OPS wallet
+ *      at OPS_INDEX, default 11, also topped from the treasury),
  *      SEEDS0 (bot guess/salt derivation), CHAIN (default 943), RPC, CONFIG,
  *      BOTS (default 3), INTERVAL_MS (default 90000), ENTER_PROBABILITY (default 0.35),
  *      MAX_STAKE (coins, default 25 — the biggest human stake a bot will take on),
@@ -64,6 +66,9 @@ const main = async () => {
   if (!env.SEEDS0) throw new Error('SEEDS0 required')
   const config = loadDeployment(CHAIN, env.CONFIG)
   const funder = makeActor(CHAIN, env.MNEMONIC, 0, env.RPC)
+  // arms/finalises sign from ops, never from the treasury (index 11 ≠ the watcher's 10 — two
+  // processes sharing a signer would race nonces)
+  const ops = makeActor(CHAIN, env.MNEMONIC!, env.OPS_INDEX ? Number(env.OPS_INDEX) : 11, env.RPC)
   const bots = Array.from({ length: BOT_COUNT }, (_b, i) => ({
     ...makeActor(CHAIN, env.MNEMONIC!, FIRST_BOT_INDEX + i, env.RPC),
     saltKey: seeds0Secret(env.SEEDS0!, BOT_KEY_BASE + i),
@@ -119,7 +124,7 @@ const main = async () => {
 
   const topUp = async () => {
     if (vaultPaused) return
-    for (const bot of bots) {
+    for (const bot of [...bots, ops]) {
       const balance = await publicClient.getBalance({ address: bot.account.address })
       if (balance >= TOP_UP_BELOW) continue
       const gasPrice = await publicClient.getGasPrice()
@@ -266,7 +271,7 @@ const main = async () => {
           return
         }
       } else if (currentBlock >= createdAtBlock + opened.period) {
-        await sendAs(funder.publicClient, funder.wallet, {
+        await sendAs(ops.publicClient, ops.wallet, {
           address: config.raffle,
           abi: raffleAbi,
           functionName: 'arm',
@@ -332,7 +337,7 @@ const main = async () => {
           console.log(`raffle: ${bot.account.address} revealed ticket ${commit.ticketId} (guess ${guess})`)
         } else if (status === 3 && currentBlock > claimDeadline && !seenRounds.has(commit.roundId) && !vaultPaused) {
           seenRounds.add(commit.roundId)
-          await sendAs(funder.publicClient, funder.wallet, {
+          await sendAs(ops.publicClient, ops.wallet, {
             address: config.raffle,
             abi: raffleAbi,
             functionName: 'finalise',

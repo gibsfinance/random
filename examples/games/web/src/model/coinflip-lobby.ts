@@ -36,6 +36,8 @@ export type FlipView = {
   payout?: bigint
   seed?: viem.Hex
   mine: boolean
+  /** The pinned validator subset's hash, recovered from the consumed entries. */
+  subsetHash?: viem.Hex
   pairedAtBlock?: bigint
   pairTx?: viem.Hex
   settledAtBlock?: bigint
@@ -59,6 +61,7 @@ export const deriveCoinFlipLobby = (events: CoinFlipEvents, myAddress?: viem.Hex
     .sort((a, b) => (a.id < b.id ? -1 : 1))
 
   const consumed = new Set<bigint>()
+  const subsetByFlip = new Map<viem.Hex, viem.Hex>()
   for (const pair of events.paired) {
     for (const [player, side] of [
       [pair.heads, 'heads'],
@@ -67,7 +70,10 @@ export const deriveCoinFlipLobby = (events: CoinFlipEvents, myAddress?: viem.Hex
       const match = open.find(
         (e) => !consumed.has(e.id) && e.side === side && e.stake === pair.stake && sameAddress(e.player, player),
       )
-      if (match) consumed.add(match.id)
+      if (match) {
+        consumed.add(match.id)
+        subsetByFlip.set(pair.flipId, match.subsetHash) // both sides share it — the contract only pairs equal hashes
+      }
     }
   }
 
@@ -87,6 +93,7 @@ export const deriveCoinFlipLobby = (events: CoinFlipEvents, myAddress?: viem.Hex
       payout: settled?.payout,
       seed: settled?.seed,
       mine: myAddress !== undefined && (sameAddress(pair.heads, myAddress) || sameAddress(pair.tails, myAddress)),
+      subsetHash: subsetByFlip.get(pair.flipId),
       pairedAtBlock: pair.blockNumber,
       pairTx: pair.transactionHash,
       settledAtBlock: settled?.blockNumber,
