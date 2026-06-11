@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { GameDeployment } from '../config'
 
-const ackKey = (chainId: number) => `gibs-games:${chainId}:trust-acknowledged`
+const ackKey = (chainId: number) => `msgboard-games:${chainId}:trust-acknowledged`
 
 export const isTrustAcknowledged = (chainId: number) => localStorage.getItem(ackKey(chainId)) === 'true'
 

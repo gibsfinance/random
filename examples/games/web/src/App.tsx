@@ -22,7 +22,7 @@ export const App = () => {
   if (!deployment) {
     return (
       <div>
-        <h1>Gibs Games</h1>
+        <h1>MsgBoard Games</h1>
         <div className="banner">
           No deployment configured. For local play run <span className="mono">pnpm dev:seed</span> with anvil up,
           then reload. For PulseChain testnet v4, fill <span className="mono">src/config.ts</span> from the parity
@@ -37,7 +37,7 @@ export const App = () => {
       <div className="marquee">
         <div>
           <h1>
-            Gibs <span className="gold">Games</span>
+            MsgBoard <span className="gold">Games</span>
           </h1>
           <div className="strapline">provably fair · verify every draw</div>
         </div>
@@ -90,6 +90,15 @@ export const App = () => {
           trustAcknowledged={trustAcknowledged}
         />
       )}
+      <div className="colophon">
+        <span>a MsgBoard venue · run by valve</span>
+        <span>
+          randomness contracts by{' '}
+          <a href="https://github.com/gibsfinance/random" target="_blank" rel="noreferrer">
+            gibs.finance
+          </a>
+        </span>
+      </div>
     </div>
   )
 }

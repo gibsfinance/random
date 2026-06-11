@@ -10,7 +10,7 @@ export type SaltStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 
 export type SaltRecord = { guess: bigint; salt: viem.Hex }
 
-const PREFIX = 'gibs-games'
+const PREFIX = 'msgboard-games'
 const key = (chainId: number, raffle: viem.Hex, ticketId: bigint) =>
   `${PREFIX}:${chainId}:${raffle.toLowerCase()}:ticket:${ticketId}`
 const manifestKey = (chainId: number, raffle: viem.Hex) => `${PREFIX}:${chainId}:${raffle.toLowerCase()}:tickets`
