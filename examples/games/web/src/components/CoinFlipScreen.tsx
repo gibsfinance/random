@@ -85,10 +85,14 @@ export const CoinFlipScreen = ({
               </option>
             ))}
           </select>
-          <select value={side} onChange={(e) => setSide(Number(e.target.value) as 0 | 1)}>
-            <option value={0}>heads</option>
-            <option value={1}>tails</option>
-          </select>
+          <span className="side-picker">
+            <button type="button" className={side === 0 ? 'sel-heads' : ''} onClick={() => setSide(0)}>
+              heads
+            </button>
+            <button type="button" className={side === 1 ? 'sel-tails' : ''} onClick={() => setSide(1)}>
+              tails
+            </button>
+          </span>
           <button onClick={() => void enter()} disabled={!canPlay}>
             {busy ? 'Sending…' : `Enter ${side === 0 ? 'heads' : 'tails'}`}
           </button>
@@ -133,7 +137,7 @@ export const CoinFlipScreen = ({
             </span>
             <span>
               {flip.status === 'pending' ? (
-                <span className="muted">waiting for the validators' cast (12-block window)…</span>
+                <span className="muted flipping"><span className="coin" />waiting for the validators' cast…</span>
               ) : (
                 <span className="ok">
                   {flip.winningSide} wins — {short(flip.winner!)} takes {viem.formatEther(flip.stake * 2n)}

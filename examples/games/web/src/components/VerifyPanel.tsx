@@ -11,7 +11,11 @@ import type { RaffleRoundView } from '../model/raffle-rounds'
  */
 
 const Badge = ({ matches }: { matches: boolean }) =>
-  matches ? <span className="ok">✓ MATCHES the on-chain result</span> : <span className="bad">✗ MISMATCH — do not trust this round</span>
+  matches ? (
+    <span className="stamp ok">✓ verified — matches on-chain</span>
+  ) : (
+    <span className="stamp bad">✗ mismatch — do not trust</span>
+  )
 
 export const CoinFlipVerifyPanel = ({ flip }: { flip: FlipView }) => {
   if (flip.status !== 'settled' || !flip.seed || !flip.winner) return null
@@ -22,8 +26,8 @@ export const CoinFlipVerifyPanel = ({ flip }: { flip: FlipView }) => {
     onChainWinner: flip.winner,
   })
   return (
-    <div className="card">
-      <h3>Verify this draw yourself</h3>
+    <div className="receipt">
+      <h3>Draw receipt — verify it yourself</h3>
       <table>
         <tbody>
           <tr>
@@ -61,8 +65,8 @@ export const RaffleVerifyPanel = ({ round, seed }: { round: RaffleRoundView; see
   const onChainBest = round.tickets.find((t) => t.leading)?.ticketId ?? 0n
   const verification = verifyRaffle({ seed, entries, onChainBestTicket: onChainBest })
   return (
-    <div className="card">
-      <h3>Verify this draw yourself</h3>
+    <div className="receipt">
+      <h3>Draw receipt — verify it yourself</h3>
       <table>
         <tbody>
           <tr>

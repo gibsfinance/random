@@ -34,8 +34,13 @@ export const App = () => {
 
   return (
     <div>
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h1>Gibs Games</h1>
+      <div className="marquee">
+        <div>
+          <h1>
+            Gibs <span className="gold">Games</span>
+          </h1>
+          <div className="strapline">provably fair · verify every draw</div>
+        </div>
         <div className="row">
           <select value={deploymentIndex} onChange={(e) => setDeploymentIndex(Number(e.target.value))}>
             {deployments.map((d, i) => (
@@ -60,14 +65,14 @@ export const App = () => {
       </div>
       {wallet.error && <div className="banner bad">{wallet.error}</div>}
       {data.error && <div className="banner bad">chain read failed: {data.error}</div>}
-      <div className="row">
-        <button className={tab === 'coinflip' ? '' : 'secondary'} onClick={() => setTab('coinflip')}>
-          Coin Flip
+      <div className="tabs">
+        <button className={tab === 'coinflip' ? 'tab active' : 'tab'} onClick={() => setTab('coinflip')}>
+          <span className="coin" /> Coin Flip
         </button>
-        <button className={tab === 'raffle' ? '' : 'secondary'} onClick={() => setTab('raffle')}>
-          Raffle
+        <button className={tab === 'raffle' ? 'tab active' : 'tab'} onClick={() => setTab('raffle')}>
+          🎟 Raffle
         </button>
-        <span className="muted">block {data.blockNumber.toString()}</span>
+        <span className="blockline">block {data.blockNumber.toString()}</span>
       </div>
       <TrustBanner deployment={deployment} onAcknowledged={() => setTrustAcknowledged(true)} />
       {tab === 'coinflip' ? (
