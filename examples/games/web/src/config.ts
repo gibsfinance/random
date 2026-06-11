@@ -46,12 +46,12 @@ export const deployments: GameDeployment[] = [
       '0x0D3148A85608708Fe944EE71E13B4C9181b7cc83',
     ],
     poolOffsets: {
-      '0xae96b0748f933914867d59486251043790cb2896': '2',
-      '0x2a638d7135966a5ca1973c930bd0317cd7d6874c': '2',
-      '0x0d3148a85608708fe944ee71e13b4c9181b7cc83': '2',
+      '0xae96b0748f933914867d59486251043790cb2896': '34',
+      '0x2a638d7135966a5ca1973c930bd0317cd7d6874c': '34',
+      '0x0d3148a85608708fe944ee71e13b4c9181b7cc83': '18',
     },
-    deployBlock: '24643476',
-    poolSize: 16,
+    deployBlock: '24645214',
+    poolSize: 64,
     explorer: 'https://scan.v4.testnet.pulsechain.com/#',
   },
 ]
