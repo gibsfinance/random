@@ -60,6 +60,9 @@ importers:
       '@gibs/random':
         specifier: workspace:*
         version: link:../../../packages/contracts
+      '@msgboard/sdk':
+        specifier: ^0.0.31
+        version: 0.0.31(typescript@5.8.3)
       viem:
         specifier: ^2.25.0
         version: 2.52.2(typescript@5.8.3)
@@ -1442,6 +1445,12 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.9':
     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==}
+
+  '@msgboard/core@0.0.31':
+    resolution: {integrity: sha512-bNk7YdpLKx8Nw99XedchEkSr0ftHhnTF9BeF1h259EnLLJjWh9Vfva45coqIY5SQ8Qy7gyusSqzo/IzOVHLlzw==}
+
+  '@msgboard/sdk@0.0.31':
+    resolution: {integrity: sha512-yJj/5RTo0fIVrJtRKzuY2ifFOVSCBW7qB4uyde/i0Dav9kw5G8R45LsIrPw7urHg+ru44a6AtI/UWcXLTaGbfg==}
 
   '@noble/ciphers@1.3.0':
     resolution: {integrity: sha512-2I0gnIVPtfnMw9ee9h1dJG7tp81+8Ob3OJb3Mv37rx5L40/b0i7djjCVvGOVqc9AEIQyvyu1i6ypKdFw8R8gQw==}
@@ -6776,6 +6785,31 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@msgboard/core@0.0.31(typescript@5.8.3)':
+    dependencies:
+      bn.js: 5.2.3
+      elliptic: 6.6.1
+      viem: 2.52.2(typescript@5.8.3)
+    transitivePeerDependencies:
+      - bufferutil
+      - typescript
+      - utf-8-validate
+      - zod
+
+  '@msgboard/sdk@0.0.31(typescript@5.8.3)':
+    dependencies:
+      '@msgboard/core': 0.0.31(typescript@5.8.3)
+      bn.js: 5.2.3
+      debug: 4.4.3(supports-color@8.1.1)
+      elliptic: 6.6.1
+      viem: 2.52.2(typescript@5.8.3)
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - typescript
+      - utf-8-validate
+      - zod
 
   '@noble/ciphers@1.3.0': {}
 
