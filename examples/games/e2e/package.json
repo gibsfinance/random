@@ -10,7 +10,8 @@
     "raffle": "tsx scripts/raffle.ts",
     "gate": "tsx scripts/parity-gate.ts",
     "ink-pools": "tsx scripts/ink-pools.ts",
-    "cast-watcher": "tsx scripts/cast-watcher.ts"
+    "cast-watcher": "tsx scripts/cast-watcher.ts",
+    "player-bots": "tsx scripts/player-bots.ts"
   },
   "dependencies": {
     "@gibs/games-core": "workspace:*",

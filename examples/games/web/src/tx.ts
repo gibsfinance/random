@@ -1,5 +1,6 @@
 import * as viem from 'viem'
 import { buildHeatLocations, type Info } from '@gibs/games-core'
+import { poolLocationFor } from './model/pools'
 import { publicClientFor } from './wallet'
 import type { GameDeployment } from './config'
 import type { CoinFlipLobby } from './model/coinflip-lobby'
@@ -41,20 +42,25 @@ const translateError = (error: unknown): string => {
 /**
  * The heat locations for the canonical subset, pointing at the NEXT unconsumed preimage. Every
  * pairing (Heated) and arming (Armed) consumes exactly one preimage per validator from the
- * canonical pools, so the next index is the count of prior heats. A stale index (raced by a
- * concurrent heat) fails in simulation and the player just retries.
+ * canonical pools, so the next slot is the count of prior heats, mapped through the
+ * pool-rotation arithmetic (pools chain at base + n*poolSize; see model/pools.ts — the
+ * off-chain actors keep the next pool inked). A stale slot (raced by a concurrent heat) fails
+ * in simulation and the player just retries.
  */
 export const nextHeatLocations = (
   deployment: GameDeployment,
   lobby: CoinFlipLobby,
   rounds: RaffleRoundView[],
 ): Info[] => {
-  const consumed = lobby.flips.length + rounds.filter((r) => r.phase !== 'filling').length
+  const consumed = BigInt(lobby.flips.length + rounds.filter((r) => r.phase !== 'filling').length)
+  const poolSize = BigInt(deployment.poolSize)
   const offsets = Object.fromEntries(
-    Object.entries(deployment.poolOffsets).map(([provider, offset]) => [provider, BigInt(offset)]),
+    Object.entries(deployment.poolOffsets).map(([provider, base]) => {
+      return [provider, poolLocationFor(consumed, BigInt(base), poolSize).offset]
+    }),
   )
   return buildHeatLocations(deployment.canonicalSubset, offsets).map((location) => ({
     ...location,
-    index: BigInt(consumed),
+    index: consumed % poolSize,
   }))
 }

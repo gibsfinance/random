@@ -68,3 +68,19 @@ export const inkPool = async (
   })
   return walletClient.writeContract(request)
 }
+
+/**
+ * Pool-rotation arithmetic shared by the web app and the off-chain actors. Pools are inked
+ * back-to-back at a fixed size, and core Random assigns each new pool an offset equal to the
+ * provider's cumulative preimage count — so the k-th heat since the deployment origin lands at
+ * offset base + floor(k/poolSize)*poolSize, index k mod poolSize, with no config change when a
+ * pool fills (the actors keep the next pool inked ahead of the boundary).
+ */
+export const poolLocationFor = (k: bigint, baseOffset: bigint, poolSize: bigint): { offset: bigint; index: bigint } => {
+  if (poolSize <= 0n) throw new Error('poolSize must be positive')
+  if (k < 0n) throw new Error('heat count cannot be negative')
+  return {
+    offset: baseOffset + (k / poolSize) * poolSize,
+    index: k % poolSize,
+  }
+}

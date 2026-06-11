@@ -33,7 +33,7 @@ import {
 const env = process.env
 const CHAIN = (env.CHAIN ? Number(env.CHAIN) : 943) as GamesChainId
 const VALIDATOR_COUNT = env.VALIDATORS ? Number(env.VALIDATORS) : 3
-const POOL_SIZE = env.POOL_SIZE ? Number(env.POOL_SIZE) : 16
+const POOL_SIZE = env.POOL_SIZE ? Number(env.POOL_SIZE) : 64
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 
 const main = async () => {

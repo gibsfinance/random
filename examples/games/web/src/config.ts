@@ -10,8 +10,10 @@ export type GameDeployment = {
   random: viem.Hex
   /** The recommended subset fed to makePresets — the spec's liquidity nudge, not a whitelist. */
   canonicalSubset: viem.Hex[]
-  /** Per-provider pool offsets for building heat locations (advances as preimages are consumed). */
+  /** Per-provider BASE pool offsets; pools chain at base + n*poolSize (model/pools.ts). */
   poolOffsets: Record<string, string>
+  /** Preimages per pool — the rotation modulus shared with the off-chain actors. */
+  poolSize: number
   /** Scan events from here (the deploy block) to keep live-chain scans cheap. */
   deployBlock: string
   /** Override the read RPC (e.g. the valve.city fleet endpoint); defaults to the core registry's. */
@@ -49,6 +51,7 @@ export const deployments: GameDeployment[] = [
       '0x0d3148a85608708fe944ee71e13b4c9181b7cc83': '2',
     },
     deployBlock: '24643476',
+    poolSize: 16,
     explorer: 'https://scan.v4.testnet.pulsechain.com/#',
   },
 ]

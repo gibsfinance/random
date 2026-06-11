@@ -134,6 +134,7 @@ const main = async () => {
         random,
         canonicalSubset,
         poolOffsets: Object.fromEntries(canonicalSubset.map((v) => [v.toLowerCase(), '0'])),
+        poolSize: POOL_SIZE,
         deployBlock: '0',
       },
       null,
