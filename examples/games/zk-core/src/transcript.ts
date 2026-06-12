@@ -1,4 +1,4 @@
-import { keccak256, stringToHex, recoverMessageAddress, type Hex } from 'viem'
+import { keccak256, concat, stringToHex, recoverMessageAddress, type Hex } from 'viem'
 
 export interface Envelope {
   tableId: Hex
@@ -62,41 +62,48 @@ export async function verifyEnvelope(e: Envelope): Promise<boolean> {
 }
 
 export class Transcript {
-  entries: Envelope[] = []
+  private _entries: Envelope[] = []
   head: Hex = GENESIS
   constructor(public tableId: Hex) {}
 
+  get entries(): readonly Envelope[] {
+    return this._entries
+  }
+
   append(e: Envelope): void {
     if (e.tableId !== this.tableId) throw new Error('transcript: wrong table')
-    if (e.seq !== this.entries.length)
-      throw new Error(`transcript: seq must be ${this.entries.length}`)
+    if (e.seq !== this._entries.length)
+      throw new Error(`transcript: seq must be ${this._entries.length}`)
     if (e.prev !== this.head) throw new Error('transcript: chain break (prev != head)')
-    this.entries.push(e)
-    this.head = keccak256(`${this.head}${entryDigest(e).slice(2)}` as Hex)
+    this._entries.push(e)
+    this.head = keccak256(concat([this.head, entryDigest(e)]))
   }
 
   /** Full re-verification: chain links, seqs, signatures, signer membership. */
   async verify(parties: { A: Hex; B: Hex }): Promise<boolean> {
     let head: Hex = GENESIS
     const ok = new Set([parties.A.toLowerCase(), parties.B.toLowerCase()])
-    for (const [i, e] of this.entries.entries()) {
+    for (const [i, e] of this._entries.entries()) {
       if (e.seq !== i || e.prev !== head || e.tableId !== this.tableId) return false
       if (!ok.has(e.from.toLowerCase())) return false
       if (!(await verifyEnvelope(e))) return false
-      head = keccak256(`${head}${entryDigest(e).slice(2)}` as Hex)
+      head = keccak256(concat([head, entryDigest(e)]))
     }
     return head === this.head
   }
 
   toJSON(): string {
-    return JSON.stringify({ tableId: this.tableId, head: this.head, entries: this.entries })
+    return JSON.stringify({ tableId: this.tableId, head: this.head, entries: this._entries })
   }
 
   static fromJSON(s: string): Transcript {
-    const o = JSON.parse(s) as { tableId: Hex; head: Hex; entries: Envelope[] }
-    const t = new Transcript(o.tableId)
-    t.entries = o.entries
-    t.head = o.head
+    const o = JSON.parse(s) as { tableId: unknown; head: unknown; entries: unknown }
+    if (typeof o.tableId !== 'string' || !Array.isArray(o.entries))
+      throw new Error('transcript: malformed JSON payload')
+    const t = new Transcript(o.tableId as Hex)
+    for (const e of o.entries) t.append(e as Envelope)   // re-derives head, validates chain/seq
+    if (typeof o.head === 'string' && o.head !== t.head)
+      throw new Error('transcript: serialized head does not match derived head')
     return t
   }
 }

@@ -33,11 +33,16 @@ describe('transcript', () => {
     expect(await verifyEnvelope(t.entries[0]!)).toBe(false)
     expect(await t.verify({ A: A.address, B: B.address })).toBe(false)
   })
-  it('round-trips through JSON', async () => {
+  it('round-trips through JSON and rejects a forged head', async () => {
     const t = new Transcript(tableId)
     t.append(await makeEnvelope(A, tableId, 0, t.head, 'X', { v: 1 }))
     const t2 = Transcript.fromJSON(t.toJSON())
     expect(await t2.verify({ A: A.address, B: B.address })).toBe(true)
+
+    // Forged head must throw
+    const raw = JSON.parse(t.toJSON())
+    raw.head = '0x' + 'aa'.repeat(32)
+    expect(() => Transcript.fromJSON(JSON.stringify(raw))).toThrow(/head/)
   })
 })
 
@@ -56,5 +61,18 @@ describe('local transport', () => {
     await new Promise((r) => setTimeout(r, 10))
     expect(got).toEqual(['one', 'three'])
     expect(back).toEqual(['back'])
+  })
+  it('delayMs defers delivery past the next microtask but arrives after the delay', async () => {
+    const [ta, tb] = LocalTransport.pair()
+    const got: string[] = []
+    tb.onMessage((m) => got.push(m as string))
+    ta.delayMs = 5
+    await ta.send('delayed')
+    // Not yet delivered after one microtask tick
+    await Promise.resolve()
+    expect(got).toHaveLength(0)
+    // Delivered after the timer fires
+    await new Promise((r) => setTimeout(r, 15))
+    expect(got).toEqual(['delayed'])
   })
 })

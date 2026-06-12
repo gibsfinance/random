@@ -1,6 +1,7 @@
 import type { CoSignedState } from './channel'
 import type { ChannelState } from './stateSig'
 import type { Envelope, Transcript } from './transcript'
+import type { Hex } from 'viem'
 
 export interface Demand {
   from: 'A' | 'B'
@@ -9,6 +10,8 @@ export interface Demand {
 }
 
 export interface DisputeEvidence {
+  tableId: Hex           // anchors this slice to a specific table
+  transcriptHead: Hex    // anchors this slice to a specific chain position
   state: ChannelState
   sigA: string
   sigB: string
@@ -24,10 +27,14 @@ export function buildEvidence(args: {
   demand: Demand
 }): DisputeEvidence {
   const { coSigned, transcript, sinceSeq, demand } = args
+  if (!Number.isInteger(sinceSeq) || sinceSeq < 0 || sinceSeq > transcript.entries.length)
+    throw new Error('dispute: sinceSeq out of range')
   if (!coSigned.sigA || !coSigned.sigB)
     throw new Error('dispute: latest state must be fully co-signed')
   const messages = transcript.entries.filter((e) => e.seq >= sinceSeq)
   const body = {
+    tableId: transcript.tableId,
+    transcriptHead: transcript.head,
     state: coSigned.state,
     sigA: coSigned.sigA,
     sigB: coSigned.sigB,
@@ -35,6 +42,8 @@ export function buildEvidence(args: {
     demand,
   }
   return {
+    tableId: transcript.tableId,
+    transcriptHead: transcript.head,
     state: coSigned.state,
     sigA: coSigned.sigA,
     sigB: coSigned.sigB,

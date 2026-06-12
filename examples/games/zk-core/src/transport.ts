@@ -24,12 +24,21 @@ export class LocalTransport implements Transport {
     this.drops += n
   }
 
+  /**
+   * Resolves at hand-off, not delivery.
+   *
+   * Delivery is async: a microtask when delayMs === 0, or a timer when
+   * delayMs > 0. The clone is taken here, at the call site, so non-cloneable
+   * payloads throw synchronously even on the delayed path. Fault injection
+   * (drops/delay) is the point of this class.
+   */
   async send(msg: unknown): Promise<void> {
+    const snapshot = structuredClone(msg)
     if (this.drops > 0) {
       this.drops--
       return
     }
-    const deliver = () => this.peer.handler(structuredClone(msg))
+    const deliver = () => this.peer.handler(snapshot)
     if (this.delayMs > 0) setTimeout(deliver, this.delayMs)
     else queueMicrotask(deliver)
   }

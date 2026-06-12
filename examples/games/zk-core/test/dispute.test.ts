@@ -28,11 +28,25 @@ describe('dispute evidence', () => {
     expect(ev.demand.from).toBe('B')
     expect(JSON.parse(ev.serialized).demand.kind).toBe('DEAL_SHARE')
     expect(JSON.parse(ev.serialized).state.nonce).toBe('4')
+    expect(ev.transcriptHead).toBe(t.head)
+    expect(ev.tableId).toBe(tableId)
   })
   it('refuses to build evidence from a half-signed state', () => {
     expect(() => buildEvidence({
       coSigned: { ...coSigned, sigB: undefined }, transcript: new Transcript(tableId),
       sinceSeq: 0, demand: { from: 'A', kind: 'X', detail: '' },
     })).toThrow(/co-signed/)
+  })
+  it('rejects sinceSeq out of range', async () => {
+    const t = new Transcript(tableId)
+    t.append(await makeEnvelope(A, tableId, 0, t.head, 'X', {}))
+    expect(() => buildEvidence({
+      coSigned, transcript: t, sinceSeq: -1,
+      demand: { from: 'A', kind: 'X', detail: '' },
+    })).toThrow(/range/)
+    expect(() => buildEvidence({
+      coSigned, transcript: t, sinceSeq: t.entries.length + 1,
+      demand: { from: 'A', kind: 'X', detail: '' },
+    })).toThrow(/range/)
   })
 })
