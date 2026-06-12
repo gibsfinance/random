@@ -11,7 +11,7 @@ function assertIndex(i: number): void {
 }
 /** rank 2..14 (ace high); index = (rank-2)*4 + suit */
 export function rankOf(i: number): number { assertIndex(i); return Math.floor(i / 4) + 2 }
-export function suitOf(i: number): Suit { assertIndex(i); return SUITS[i % 4] }
+export function suitOf(i: number): Suit { assertIndex(i); return SUITS[i % 4]! }
 export function cardFromIndex(i: number): Card { return { index: i, rank: rankOf(i), suit: suitOf(i) } }
 /** >0 if a outranks b, <0 if b outranks a, 0 on equal rank (suits never break ties) */
 export function compareRanks(a: number, b: number): number { return rankOf(a) - rankOf(b) }
