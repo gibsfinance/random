@@ -77,6 +77,51 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      // ZkTable family targets 943 like the other games contracts — Shanghai, no MCOPY.
+      'contracts/zk/ChannelState.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/zk/IGameRules.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/zk/ZkTable.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/test/MockGameRules.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
       // ShuffleVerifier52 wraps the vendored verifier — must share its compiler settings so
       // the function-pointer type for _verifyKey resolves identically across the call boundary.
       'contracts/zk/ShuffleVerifier52.sol': {

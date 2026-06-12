@@ -1,4 +1,10 @@
 {
+  "ts-node": {
+    "moduleTypes": {
+      "../../examples/games/zk-core/**": "cjs",
+      "../../examples/games/hilo-war/**": "cjs"
+    }
+  },
   "compilerOptions": {
     "target": "es2020",
     "module": "commonjs",
