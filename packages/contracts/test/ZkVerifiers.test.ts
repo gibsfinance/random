@@ -1,7 +1,10 @@
 import { expect } from 'chai'
 import hre from 'hardhat'
+// joint and revealSample keys are unused here but retained because the fixture is a
+// byte-exact provenance artifact from the pinned wasm.
 import shuffleFixture from './fixtures/zypher-shuffle-head.json'
 import revealFixture from './fixtures/zypher-reveal-snark.json'
+import { revertedWithCustomError } from './expectations'
 
 // Flatten a 52-card deck (each card is 4 field elements) into a flat uint256[] array.
 // Mirrors the spike bench: `deck.flat().map(BigInt)`.
@@ -40,7 +43,8 @@ describe('ZkVerifiers', () => {
     const tampered = (good.slice(0, -2) + (good.slice(-2) === 'ff' ? '00' : 'ff')) as `0x${string}`
 
     const publicClient = await hre.viem.getPublicClient()
-    await expect(
+    await revertedWithCustomError(
+      shuffler,
       publicClient.simulateContract({
         address: shuffler.address,
         abi: shuffler.abi,
@@ -48,13 +52,14 @@ describe('ZkVerifiers', () => {
         args: [tampered, pi, pkc],
         gas: 30_000_000n,
       }),
-    ).to.be.rejected
+      'InvalidShuffleProof',
+    )
   })
 
   it('verifyRevealWithSnark: accepts a real Groth16 reveal proof', async () => {
     const reveal = await hre.viem.deployContract('RevealVerifier')
 
-    const pi = revealFixture.pi.map((v) => BigInt(v)) as readonly [
+    const pi = revealFixture.pi.map((v) => BigInt(v)) as unknown as readonly [
       bigint,
       bigint,
       bigint,
@@ -62,7 +67,7 @@ describe('ZkVerifiers', () => {
       bigint,
       bigint,
     ]
-    const zkproof = revealFixture.zkproof.map((v) => BigInt(v)) as readonly [
+    const zkproof = revealFixture.zkproof.map((v) => BigInt(v)) as unknown as readonly [
       bigint,
       bigint,
       bigint,

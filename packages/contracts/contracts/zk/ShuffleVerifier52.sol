@@ -16,10 +16,16 @@ contract ShuffleVerifier52 is ShuffleVerifier {
 
     function verify52(bytes calldata proof, uint256[] calldata pi, uint256[] calldata pkc)
         external
-        returns (bool ok)
+        returns (bool)
     {
         _verifyKey = VerifierKey_52.load;
-        ok = this.verifyShuffle(proof, pi, pkc);
-        if (!ok) revert InvalidShuffleProof();
+        try this.verifyShuffle(proof, pi, pkc) returns (bool ok) {
+            if (ok) return true;
+            revert InvalidShuffleProof();
+        } catch {
+            // PlonkVerifier reverts bare on invalid proofs (never returns false);
+            // re-throw a named selector so dispute tooling can match on it.
+            revert InvalidShuffleProof();
+        }
     }
 }
