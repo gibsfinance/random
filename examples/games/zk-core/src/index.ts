@@ -1,3 +1,5 @@
 export * from './cards'
 export * from './elgamal'
 export * from './chaumPedersen'
+export * from './maskedDeck'
+export * from './attestedDeck'
