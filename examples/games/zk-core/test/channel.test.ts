@@ -45,7 +45,10 @@ describe('channel co-signing', () => {
   })
   it('rejects bad proposer signature', async () => {
     const p = await chA.propose(next(chA.latest!.state, { pot: 2n, balanceA: 99n, balanceB: 99n }))
-    p.sigA = (p.sigA!.slice(0, -2) + (p.sigA!.endsWith('00') ? '01' : '00')) as `0x${string}`
+    // corrupt a byte of r (never the trailing v byte: v=27→0 can still
+    // recover the same signer when yParity is 0)
+    const c = p.sigA![10] === 'a' ? 'b' : 'a'
+    p.sigA = (p.sigA!.slice(0, 10) + c + p.sigA!.slice(11)) as `0x${string}`
     await expect(chB.accept(p)).rejects.toThrow(/signature/)
   })
   it('rejects when game legality callback vetoes', async () => {
