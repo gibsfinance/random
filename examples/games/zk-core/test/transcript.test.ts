@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
-import { Transcript, makeEnvelope, verifyEnvelope } from '../src/transcript'
+import { keccak256, encodeAbiParameters, parseAbiParameters, stringToHex } from 'viem'
+import { Transcript, makeEnvelope, verifyEnvelope, entryDigest } from '../src/transcript'
 import { LocalTransport } from '../src/transport'
+
+const GENESIS: `0x${string}` = `0x${'00'.repeat(32)}`
 
 const A = privateKeyToAccount(generatePrivateKey())
 const B = privateKeyToAccount(generatePrivateKey())
@@ -43,6 +46,20 @@ describe('transcript', () => {
     const raw = JSON.parse(t.toJSON())
     raw.head = '0x' + 'aa'.repeat(32)
     expect(() => Transcript.fromJSON(JSON.stringify(raw))).toThrow(/head/)
+  })
+})
+
+describe('entryDigest abi structure', () => {
+  it('entryDigest is abi-structured (recomputable from parts)', () => {
+    const body = { hello: 1 }
+    const entry = { tableId, seq: 0, prev: GENESIS, kind: 'KEYGEN', body }
+    const expected = keccak256(
+      encodeAbiParameters(
+        parseAbiParameters('bytes32, uint64, bytes32, bytes32, bytes32'),
+        [tableId, 0n, GENESIS, keccak256(stringToHex('KEYGEN')), keccak256(stringToHex(JSON.stringify(body)))],
+      ),
+    )
+    expect(entryDigest(entry)).toBe(expected)
   })
 })
 

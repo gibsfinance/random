@@ -1,4 +1,4 @@
-import { keccak256, concat, stringToHex, recoverMessageAddress, type Hex } from 'viem'
+import { keccak256, encodeAbiParameters, parseAbiParameters, concat, stringToHex, recoverMessageAddress, type Hex } from 'viem'
 
 export interface Envelope {
   tableId: Hex
@@ -18,25 +18,17 @@ export interface EnvelopeSigner {
 const GENESIS: Hex = `0x${'00'.repeat(32)}`
 
 /**
- * Digest is keccak256 of a deterministic JSON serialisation.
- * Key order is fixed by the object literal — body keys are produced and
- * consumed by the same code, so ordering is stable for v0.
- * DEBT (contracts plan): JSON hashing is NOT Solidity-reproducible — an
- * on-chain adjudicator cannot recompute this digest to ecrecover envelope
- * signatures. Replace with abi.encodePacked-style encoding before ZkTable.
+ * abi-structured: an on-chain adjudicator can recompute this digest and
+ * ecrecover the envelope signature given (tableId, seq, prev, kind, bodyBytes).
+ * Body payloads remain canonical-JSON bytes for now — the v1 ZkTable dispute
+ * machine never reads bodies (responses are tx-authenticated), so per-kind abi
+ * body codecs are deferred until a dispute path needs one.
  */
 export function entryDigest(e: Omit<Envelope, 'sig' | 'from'>): Hex {
-  return keccak256(
-    stringToHex(
-      JSON.stringify({
-        tableId: e.tableId,
-        seq: e.seq,
-        prev: e.prev,
-        kind: e.kind,
-        body: e.body,
-      }),
-    ),
-  )
+  return keccak256(encodeAbiParameters(
+    parseAbiParameters('bytes32, uint64, bytes32, bytes32, bytes32'),
+    [e.tableId, BigInt(e.seq), e.prev, keccak256(stringToHex(e.kind)), keccak256(stringToHex(JSON.stringify(e.body)))],
+  ))
 }
 
 export async function makeEnvelope(

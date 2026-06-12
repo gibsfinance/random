@@ -93,4 +93,11 @@ export class Channel {
   }
 
   fullySigned(s: CoSignedState): boolean { return Boolean(s.sigA && s.sigB) }
+
+  /** Mirror of ZkTable.topUp: both parties call this when the TopUp event lands;
+   *  conservation (A+B+pot == escrow) is checked against the bumped total. */
+  applyTopUp(amount: bigint): void {
+    if (amount <= 0n) throw new Error('channel: top-up must be positive')
+    this.cfg.escrow += amount
+  }
 }

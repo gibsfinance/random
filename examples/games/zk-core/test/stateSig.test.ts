@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
-import { signState, verifyStateSig, hashState, TEST_DOMAIN, type ChannelState } from '../src/stateSig'
+import { signState, verifyStateSig, hashState, makeDomain, TEST_DOMAIN, type ChannelState } from '../src/stateSig'
 
 const acct = privateKeyToAccount(generatePrivateKey())
 const state: ChannelState = {
@@ -33,5 +33,17 @@ describe('channel state signing', () => {
   it('hashState is stable and field-sensitive', () => {
     expect(hashState(TEST_DOMAIN, state)).toBe(hashState(TEST_DOMAIN, { ...state }))
     expect(hashState(TEST_DOMAIN, state)).not.toBe(hashState(TEST_DOMAIN, { ...state, phase: 4 }))
+  })
+})
+
+describe('makeDomain', () => {
+  it('makeDomain builds the production domain', () => {
+    const addr = '0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF' as `0x${string}`
+    expect(makeDomain(369, addr)).toEqual({
+      name: 'ZkTable',
+      version: '1',
+      chainId: 369,
+      verifyingContract: addr,
+    })
   })
 })

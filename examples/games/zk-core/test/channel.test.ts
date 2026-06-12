@@ -76,3 +76,34 @@ describe('channel co-signing', () => {
     await expect(chA.propose(next(chA.latest!.state, { phase: 256 }))).rejects.toThrow(/uint8/)
   })
 })
+
+describe('channel applyTopUp', () => {
+  it('applyTopUp raises escrow and conservation tracks it', async () => {
+    // Both channels mirror the on-chain top-up
+    chA.applyTopUp(10n)
+    chB.applyTopUp(10n)
+    // Propose a state whose balances sum to ESCROW + 10n (balanceA gains the top-up)
+    const topped = next(chA.latest!.state, { balanceA: 110n, balanceB: 100n, pot: 0n })
+    const p = await chA.propose(topped)
+    const c = await chB.accept(p)
+    await chA.finalize(c)
+    expect(chA.latest!.state.balanceA).toBe(110n)
+  })
+
+  it('channel WITHOUT applyTopUp rejects state that assumes a top-up', async () => {
+    // Only chA gets the top-up; chB does not — so chB must reject
+    chA.applyTopUp(10n)
+    const topped = next(chA.latest!.state, { balanceA: 110n, balanceB: 100n, pot: 0n })
+    const p = await chA.propose(topped)
+    // chB still has ESCROW=200n, so A+B+pot=210n != 200n → conservation error
+    await expect(chB.accept(p)).rejects.toThrow(/conservation/)
+  })
+
+  it('applyTopUp(0n) throws', () => {
+    expect(() => chA.applyTopUp(0n)).toThrow()
+  })
+
+  it('applyTopUp with negative amount throws', () => {
+    expect(() => chA.applyTopUp(-1n)).toThrow()
+  })
+})

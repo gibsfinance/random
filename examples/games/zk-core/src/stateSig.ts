@@ -38,6 +38,11 @@ export interface StateSigner {
   signTypedData(args: any): Promise<Hex>
 }
 
+/** The production domain: bind to the deployed ZkTable. Matches EIP712("ZkTable","1") on-chain. */
+export function makeDomain(chainId: number, verifyingContract: Hex): ChannelDomain {
+  return { name: 'ZkTable', version: '1', chainId, verifyingContract }
+}
+
 export function hashState(domain: ChannelDomain, state: ChannelState): Hex {
   return hashTypedData({ domain, types: CHANNEL_STATE_TYPES, primaryType: 'ChannelState', message: state as any })
 }
