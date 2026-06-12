@@ -1,4 +1,4 @@
-import { keccak256, concatHex, type Hex } from 'viem'
+import { keccak256, concatHex, bytesToHex, type Hex } from 'viem'
 import {
   Channel, Transcript, makeEnvelope, verifyEnvelope, hashState,
   type ChannelDomain, type ChannelState, type CoSignedState, type Envelope,
@@ -53,6 +53,20 @@ export class Player {
   private waiters = new Map<string, Waiter[]>()
   private rxChain: Promise<void> = Promise.resolve()
 
+  /**
+   * Errors from invalid envelopes that arrived before a waiter registered.
+   * Sessions are abort-on-error in v0 (no retry/recovery semantics), so a
+   * poisoned kind rejecting the next waiter is the desired failure mode.
+   */
+  private pendingRejections = new Map<string, Error>()
+
+  /**
+   * Expected sequence number for the next valid envelope from peer.
+   * Peer envelopes come from the peer's own monotone transcript, so seq must
+   * equal the count of valid peer envelopes received so far.
+   */
+  private peerNextSeq = 0
+
   // deck crypto state, populated during setup()
   private deckSecret!: Hex
   private deckPub!: Hex
@@ -82,10 +96,30 @@ export class Player {
     if (!valid) {
       // do not make invalid mail waitable; fail any pending waiter so callers see rejection
       this.rejected.push(e)
+      const err = new Error(`session: invalid envelope of kind ${e.kind}`)
       const ws = this.waiters.get(e.kind)
-      if (ws && ws.length > 0) ws.shift()!.reject(new Error(`session: invalid envelope of kind ${e.kind}`))
+      if (ws && ws.length > 0) {
+        ws.shift()!.reject(err)
+      } else if (!this.pendingRejections.has(e.kind)) {
+        // store first error only; next waiter for this kind will see it
+        this.pendingRejections.set(e.kind, err)
+      }
       return
     }
+
+    // seq must be exactly the count of valid peer envelopes received so far
+    if (e.seq !== this.peerNextSeq) {
+      const err = new Error(`session: out-of-order or replayed envelope (seq ${e.seq}, expected ${this.peerNextSeq})`)
+      const ws = this.waiters.get(e.kind)
+      if (ws && ws.length > 0) {
+        ws.shift()!.reject(err)
+      } else if (!this.pendingRejections.has(e.kind)) {
+        this.pendingRejections.set(e.kind, err)
+      }
+      return
+    }
+    this.peerNextSeq++
+
     const ws = this.waiters.get(e.kind)
     if (ws && ws.length > 0) {
       this.inbox.push({ env: e, consumed: true })
@@ -97,6 +131,13 @@ export class Player {
 
   /** next unconsumed envelope of this kind, or await one */
   private waitFor(kind: string): Promise<Envelope> {
+    // sessions are abort-on-error in v0 (no retry/recovery semantics), so a
+    // poisoned kind rejecting the next waiter is the desired failure mode.
+    if (this.pendingRejections.has(kind)) {
+      const err = this.pendingRejections.get(kind)!
+      this.pendingRejections.delete(kind)
+      return Promise.reject(err)
+    }
     const hit = this.inbox.find((x) => !x.consumed && x.env.kind === kind)
     if (hit) {
       hit.consumed = true
@@ -261,6 +302,7 @@ export class Player {
     const theirSlot = deckIndex + (me === 'A' ? 1 : 0)
     const myMasked = this.deckState[mySlot]!
     const theirMasked = this.deckState[theirSlot]!
+    const tableTag = `session[${this.cfg.tableId.slice(0, 12)}…]`
 
     // 1. private deal: exchange shares of EACH OTHER's cards; my share of my
     //    own card is computed locally and never sent (it is the showdown reveal).
@@ -268,9 +310,10 @@ export class Player {
     await this.post('DEAL_SHARE', { slot: theirSlot, share: myShareOfTheirs })
     const dealEnv = await this.waitFor('DEAL_SHARE')
     const dealBody = dealEnv.body as { slot: number; share: WireShare }
-    if (dealBody.slot !== mySlot) throw new Error('bad deal share from peer')
+    if (dealBody.slot !== mySlot)
+      throw new Error(`${tableTag}: deal share for wrong slot (got ${dealBody.slot}, expected ${mySlot}, deckIndex ${deckIndex})`)
     if (!(await this.cfg.deck.verifyShare(this.peerDeckPub, myMasked, dealBody.share, this.slotCtx(mySlot))))
-      throw new Error('bad deal share from peer')
+      throw new Error(`${tableTag}: bad deal share from peer (slot ${mySlot}, deckIndex ${deckIndex})`)
     const myOwnShare = await this.cfg.deck.share(this.deckSecret, myMasked, this.slotCtx(mySlot))
     const myCard = this.cfg.deck.unmask(myMasked, [dealBody.share, myOwnShare])
     flip = mustApply(flip, { kind: 'DEAL_DONE' })
@@ -321,9 +364,10 @@ export class Player {
       await this.post('REVEAL_SHARE', { slot: mySlot, share: myOwnShare })
       const revealEnv = await this.waitFor('REVEAL_SHARE')
       const revealBody = revealEnv.body as { slot: number; share: WireShare }
-      if (revealBody.slot !== theirSlot) throw new Error('bad reveal share from peer')
+      if (revealBody.slot !== theirSlot)
+        throw new Error(`${tableTag}: reveal for wrong slot (got ${revealBody.slot}, expected ${theirSlot}, deckIndex ${deckIndex})`)
       if (!(await this.cfg.deck.verifyShare(this.peerDeckPub, theirMasked, revealBody.share, this.slotCtx(theirSlot))))
-        throw new Error('bad reveal share from peer')
+        throw new Error(`${tableTag}: bad reveal share from peer (slot ${theirSlot}, deckIndex ${deckIndex})`)
       opponentCard = this.cfg.deck.unmask(theirMasked, [revealBody.share, myShareOfTheirs])
       const cardA = me === 'A' ? myCard : opponentCard
       const cardB = me === 'A' ? opponentCard : myCard
@@ -405,9 +449,17 @@ function serializeCo(c: CoSignedState): unknown {
 }
 
 function deserializeCo(raw: unknown): CoSignedState {
-  const c = raw as { state: Record<string, string>; sigA?: Hex; sigB?: Hex }
+  const c = raw as { state: Record<string, string | undefined | null>; sigA?: Hex; sigB?: Hex }
   const s = c.state
-  return { ...c, state: { ...s, nonce: BigInt(s.nonce!), balanceA: BigInt(s.balanceA!), balanceB: BigInt(s.balanceB!), pot: BigInt(s.pot!) } } as CoSignedState
+  if (s.tableId == null) throw new Error('session: malformed coSigned — missing tableId')
+  if (s.nonce == null) throw new Error('session: malformed coSigned — missing nonce')
+  if (s.balanceA == null) throw new Error('session: malformed coSigned — missing balanceA')
+  if (s.balanceB == null) throw new Error('session: malformed coSigned — missing balanceB')
+  if (s.pot == null) throw new Error('session: malformed coSigned — missing pot')
+  if (s.deckCommitment == null) throw new Error('session: malformed coSigned — missing deckCommitment')
+  if (s.phase == null) throw new Error('session: malformed coSigned — missing phase')
+  if (s.gameStateHash == null) throw new Error('session: malformed coSigned — missing gameStateHash')
+  return { ...c, state: { ...s, nonce: BigInt(s.nonce), balanceA: BigInt(s.balanceA), balanceB: BigInt(s.balanceB), pot: BigInt(s.pot) } } as CoSignedState
 }
 
 function mustApply(state: HiLoState, move: Move): HiLoState {
@@ -421,6 +473,5 @@ function other(seat: Seat): Seat {
 }
 
 function randomSalt(): Hex {
-  const bytes = crypto.getRandomValues(new Uint8Array(32))
-  return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}` as Hex
+  return bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
 }
