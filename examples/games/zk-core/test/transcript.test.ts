@@ -30,6 +30,7 @@ describe('transcript', () => {
     const t = new Transcript(tableId)
     t.append(await makeEnvelope(A, tableId, 0, t.head, 'X', { v: 1 }))
     ;(t.entries[0]!.body as any).v = 2
+    expect(await verifyEnvelope(t.entries[0]!)).toBe(false)
     expect(await t.verify({ A: A.address, B: B.address })).toBe(false)
   })
   it('round-trips through JSON', async () => {
@@ -44,12 +45,16 @@ describe('local transport', () => {
   it('delivers both directions; drop injection loses messages', async () => {
     const [ta, tb] = LocalTransport.pair()
     const got: string[] = []
+    const back: string[] = []
     tb.onMessage((m) => got.push(m as string))
+    ta.onMessage((m) => back.push(m as string))
     await ta.send('one')
     ta.dropNext()
     await ta.send('two')
     await ta.send('three')
+    await tb.send('back')
     await new Promise((r) => setTimeout(r, 10))
     expect(got).toEqual(['one', 'three'])
+    expect(back).toEqual(['back'])
   })
 })

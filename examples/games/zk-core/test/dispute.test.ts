@@ -27,6 +27,7 @@ describe('dispute evidence', () => {
     expect(ev.messages).toHaveLength(1)
     expect(ev.demand.from).toBe('B')
     expect(JSON.parse(ev.serialized).demand.kind).toBe('DEAL_SHARE')
+    expect(JSON.parse(ev.serialized).state.nonce).toBe('4')
   })
   it('refuses to build evidence from a half-signed state', () => {
     expect(() => buildEvidence({
