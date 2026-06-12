@@ -72,6 +72,7 @@ describe('AttestedElGamalDeck', () => {
     const bad = await deck.share(evil.secret, d0[0]!, 'ctx')
     expect(await deck.verifyShare(a.pub, d0[0]!, bad, 'ctx')).toBe(false)
     const good = await deck.share(a.secret, d0[0]!, 'ctx')
+    expect(await deck.verifyShare(a.pub, d0[0]!, good, 'wrong-ctx')).toBe(false)
     expect(() => deck.unmask(d0[0]!, [good, bad])).toThrow(/not a card point/)
   })
 })

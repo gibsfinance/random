@@ -1,5 +1,5 @@
 import { secp256k1 } from '@noble/curves/secp256k1'
-import { bytesToHex, hexToBytes, type Hex } from 'viem'
+import { bytesToHex, hexToBytes, hexToBigInt, type Hex } from 'viem'
 
 // secp256k1.Point is the WeierstrassPointCons in v1.x (ProjectivePoint is deprecated alias)
 export type Point = ReturnType<typeof secp256k1.Point.fromHex>
@@ -51,7 +51,7 @@ export function serializeScalar(s: bigint): Hex {
   return bytesToHex(hexToBytes(`0x${s.toString(16).padStart(64, '0')}`))
 }
 
-export function deserializeScalar(h: Hex): bigint { return BigInt(h) }
+export function deserializeScalar(h: Hex): bigint { return hexToBigInt(h) }
 
 export function serializeMasked(m: MaskedCard): { c1: Hex; c2: Hex } {
   return { c1: serializePoint(m.c1), c2: serializePoint(m.c2) }

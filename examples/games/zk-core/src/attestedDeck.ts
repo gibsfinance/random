@@ -44,7 +44,10 @@ export class AttestedElGamalDeck implements MaskedDeckProvider {
     const proof = await signer.signMessage({ message: { raw: shuffleDigest(deck, out) } })
     return { deck: out, proof }
   }
-  async verifyShuffle(agg: Hex, before: WireMasked[], after: WireShuffle, signerAddr: Hex): Promise<boolean> {
+  // v0: agg is not cryptographically bound to the shuffle proof; the signature
+  // only attests deck-before/after integrity. The SNARK provider will enforce
+  // agg-binding via the shuffle argument.
+  async verifyShuffle(_agg: Hex, before: WireMasked[], after: WireShuffle, signerAddr: Hex): Promise<boolean> {
     if (after.deck.length !== before.length) return false
     try {
       const rec = await recoverMessageAddress({
