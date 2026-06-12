@@ -10,6 +10,8 @@ import { Player, openSession } from '../src/session'
 
 const ANTE = 5n, ESCROW_EACH = 100n
 
+const bothFlip = (pa: Player, pb: Player) => Promise.all([pa.playFlip({ bet: 'HOLD', onRaise: 'CALL' }), pb.playFlip({ bet: 'HOLD', onRaise: 'CALL' })])
+
 function freshPair(opts: { deckA?: MaskedDeckProvider; deckB?: MaskedDeckProvider; escrowEach?: bigint } = {}) {
   const escrowEach = opts.escrowEach ?? ESCROW_EACH
   const [ta, tb] = LocalTransport.pair()
@@ -26,7 +28,7 @@ function freshPair(opts: { deckA?: MaskedDeckProvider; deckB?: MaskedDeckProvide
 class GarbageShareDeck extends AttestedElGamalDeck {
   override async share(secret: Hex, card: WireMasked, ctx: string): Promise<WireShare> {
     const good = await super.share(secret, card, ctx)
-    // a share for a DIFFERENT ciphertext: proof won't verify against `card`
+    // proof is for the original card, but share is computed from swapped ciphertext: verifyShare rejects the pair
     const other = await super.share(secret, { c1: card.c2, c2: card.c1 }, ctx)
     return { share: other.share, proof: good.proof }
   }
@@ -56,16 +58,13 @@ describe('adversarial sessions', () => {
   it('bad deal share is rejected with a thrown error', async () => {
     const { a, b } = freshPair({ deckB: new GarbageShareDeck() })
     await openSession(a, b)
-    await expect(Promise.all([
-      a.playFlip({ bet: 'HOLD', onRaise: 'CALL' }),
-      b.playFlip({ bet: 'HOLD', onRaise: 'CALL' }),
-    ])).rejects.toThrow(/bad deal share/)
+    await expect(bothFlip(a, b)).rejects.toThrow(/bad deal share/)
   })
 
   it('stall mid-flip yields dispute evidence with the right demand', async () => {
     const { a, b, tb } = freshPair({})
     await openSession(a, b)
-    tb.dropNext(99) // B's outbound black-holes; A will stall awaiting the deal share
+    tb.dropNext(99) // large enough that B never delivers anything for the life of this test
     const flip = a.playFlip({ bet: 'HOLD', onRaise: 'CALL' })
     const outcome = await Promise.race([
       flip.then(() => 'DONE'),
@@ -78,16 +77,16 @@ describe('adversarial sessions', () => {
     })
     expect(ev.state.nonce).toBe(0n)         // stalled before any flip co-sign
     expect(ev.demand.from).toBe('B')
-    expect(ev.messages.length).toBeGreaterThanOrEqual(1) // A's outbound deal share is in her log
-    flip.catch(() => {})                     // park the pending promise
+    expect(ev.messages.at(-1)?.kind).toBe('DEAL_SHARE') // proves A actually posted her deal share before stalling — the property an adjudicator needs
+    flip.catch(() => {})                     // waiter stays pending for the life of the test process by design (abort-on-error v0; no cancellation API)
   })
 
   it('replayed stale co-signed state is rejected by the channel', async () => {
     const { a, b } = freshPair({})
     await openSession(a, b)
-    await Promise.all([a.playFlip({ bet: 'HOLD', onRaise: 'CALL' }), b.playFlip({ bet: 'HOLD', onRaise: 'CALL' })])
+    await bothFlip(a, b)
     const stale = a.channel.latest!
-    await Promise.all([a.playFlip({ bet: 'HOLD', onRaise: 'CALL' }), b.playFlip({ bet: 'HOLD', onRaise: 'CALL' })])
+    await bothFlip(a, b)
     await expect(b.channel.accept(stale)).rejects.toThrow(/nonce/)
   })
 
@@ -98,10 +97,7 @@ describe('adversarial sessions', () => {
     // identity shuffle → slots (0,1)=2♣/2♦, (2,3)=2♥/2♠, (4,5)=3♣/3♦: all ties
     const expectations = [10n, 20n, 30n]
     for (const expectedWarPot of expectations) {
-      const [ra] = await Promise.all([
-        a.playFlip({ bet: 'HOLD', onRaise: 'CALL' }),
-        b.playFlip({ bet: 'HOLD', onRaise: 'CALL' }),
-      ])
+      const [ra] = await bothFlip(a, b)
       expect(ra.flip.result).toBeNull()
       expect(ra.flip.warPot).toBe(expectedWarPot)
       const s = a.channel.latest!.state
@@ -113,11 +109,11 @@ describe('adversarial sessions', () => {
   it('session pipelining: a second table opens while the first is unsettled', async () => {
     const { a, b } = freshPair({})
     await openSession(a, b)
-    await Promise.all([a.playFlip({ bet: 'HOLD', onRaise: 'CALL' }), b.playFlip({ bet: 'HOLD', onRaise: 'CALL' })])
+    await bothFlip(a, b)
     // no settle for table 1 — open table 2 immediately
     const second = freshPair({})
     await openSession(second.a, second.b)
-    expect(second.a.channel.latest!.state.nonce).toBe(0n)
+    expect(second.a.channel.latest?.state.nonce).toBe(0n)
     expect(a.channel.latest!.state.nonce).toBeGreaterThan(0n)  // table 1 untouched, unsettled, independent
     // cfg is private on Player; the tableId comparison is test-only introspection
     expect((second.a as any).cfg.tableId).not.toBe((a as any).cfg.tableId)
@@ -129,7 +125,7 @@ describe('adversarial sessions', () => {
     const { a, b } = freshPair({ escrowEach: 1000n })
     await openSession(a, b)
     for (let k = 0; k < 27; k++) {
-      await Promise.all([a.playFlip({ bet: 'HOLD', onRaise: 'CALL' }), b.playFlip({ bet: 'HOLD', onRaise: 'CALL' })])
+      await bothFlip(a, b)
     }
     const s = a.channel.latest!.state
     expect(s.balanceA + s.balanceB + s.pot).toBe(2000n)
