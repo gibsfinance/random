@@ -77,6 +77,128 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      // uzkge vendored verifiers — viaIR:false reproduces spike-measured gas and avoids
+      // slow viaIR compile of the ~100KB PlonkVerifier; runs:200 matches spike settings.
+      'contracts/vendor/uzkge/shuffle/ShuffleVerifier.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/shuffle/ExternalTranscript.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/shuffle/VerifierKey_20.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/shuffle/VerifierKey_52.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/shuffle/VerifierKeyExtra1_52.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/shuffle/VerifierKeyExtra2_52.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/shuffle/RevealVerifier.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/verifier/PlonkVerifier.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/verifier/Groth16Verifier.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/verifier/ChaumPedersenDLVerifier.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/libraries/EdOnBN254.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/libraries/BN254.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/libraries/Transcript.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/libraries/BytesLib.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
+      'contracts/vendor/uzkge/libraries/Utils.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
     },
   },
   paths: {
