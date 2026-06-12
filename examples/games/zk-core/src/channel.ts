@@ -21,7 +21,8 @@ export class Channel {
   latest: CoSignedState | null = null
   private legality: Legality = () => null
   private pendingHash: Hex | null = null
-  constructor(private cfg: ChannelConfig) {}
+  private cfg: ChannelConfig
+  constructor(cfg: ChannelConfig) { this.cfg = { ...cfg } }
 
   setLegality(fn: Legality): void { this.legality = fn }
 

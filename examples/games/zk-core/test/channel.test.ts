@@ -90,6 +90,20 @@ describe('channel applyTopUp', () => {
     expect(chA.latest!.state.balanceA).toBe(110n)
   })
 
+  it('cumulative applyTopUp: two top-ups are additive, not replacement', async () => {
+    // Both channels receive two separate top-up events
+    chA.applyTopUp(10n)
+    chA.applyTopUp(20n)
+    chB.applyTopUp(10n)
+    chB.applyTopUp(20n)
+    // State must sum to ESCROW + 30n (200n + 30n = 230n)
+    const topped = next(chA.latest!.state, { balanceA: 130n, balanceB: 100n, pot: 0n })
+    const p = await chA.propose(topped)
+    const c = await chB.accept(p)
+    await chA.finalize(c)
+    expect(chA.latest!.state.balanceA).toBe(130n)
+  })
+
   it('channel WITHOUT applyTopUp rejects state that assumes a top-up', async () => {
     // Only chA gets the top-up; chB does not — so chB must reject
     chA.applyTopUp(10n)
