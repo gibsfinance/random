@@ -5,13 +5,12 @@ import { bytesToHex, hexToBytes, type Hex } from 'viem'
 export type Point = ReturnType<typeof secp256k1.Point.fromHex>
 const Pt = secp256k1.Point
 export const G: Point = Pt.BASE
-// secp256k1.CURVE.n is the scalar field order (same as Pt.Fn.ORDER)
-export const ORDER: bigint = secp256k1.CURVE.n
+export const ORDER: bigint = Pt.Fn.ORDER
 
 export interface MaskedCard { c1: Point; c2: Point }
 
 export function randomScalar(): bigint {
-  return secp256k1.utils.normPrivateKeyToScalar(secp256k1.utils.randomPrivateKey())
+  return Pt.Fn.fromBytes(secp256k1.utils.randomSecretKey())
 }
 
 export function pubKeyOf(sk: bigint): Point { return G.multiply(sk) }

@@ -11,7 +11,8 @@ function challenge(pk: Point, m: MaskedCard, d: Point, t1: Point, t2: Point, ctx
     stringToHex('zk-cards/chaum-pedersen/v1'),
     serializePoint(pk), serializePoint(m.c1), serializePoint(m.c2),
     serializePoint(d), serializePoint(t1), serializePoint(t2),
-    stringToHex(ctx),
+    // ctx is hashed to fixed width so the transcript encoding is unambiguous
+    keccak256(stringToHex(ctx)),
   ]))
   return BigInt(h) % ORDER
 }
