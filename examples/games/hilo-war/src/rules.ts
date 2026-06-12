@@ -1,5 +1,7 @@
 import { keccak256, stringToHex, concatHex, type Hex } from 'viem'
 
+// SETTLED belongs to the channel-level lifecycle (ChannelState.phase at cooperative settle);
+// HiLoState transitions never produce it.
 export enum Phase { SETUP = 0, DEAL = 1, BET_COMMIT = 2, BET_OPEN = 3, CALL_OR_FOLD = 4, SHOWDOWN = 5, FLIP_DONE = 6, SETTLED = 7 }
 export type Seat = 'A' | 'B'
 export type Bet = 'RAISE' | 'HOLD'
@@ -7,6 +9,7 @@ export type Bet = 'RAISE' | 'HOLD'
 export interface HiLoState {
   phase: Phase
   deckIndex: number            // next undealt slot; this flip uses deckIndex (A) and deckIndex+1 (B)
+  ante: bigint                 // ante for this flip, carried in state
   pot: bigint                  // this flip's pot (antes + raises); war carry lives in warPot until payout
   warPot: bigint               // carried from tied flips
   contributed: { A: bigint; B: bigint }
@@ -33,7 +36,7 @@ export function hashBetCommit(bet: Bet, salt: Hex): Hex {
 
 export function initialFlipState(args: { ante: bigint; deckIndex: number; warPot: bigint }): HiLoState {
   return {
-    phase: Phase.DEAL, deckIndex: args.deckIndex, pot: 0n, warPot: args.warPot,
+    phase: Phase.DEAL, deckIndex: args.deckIndex, ante: args.ante, pot: 0n, warPot: args.warPot,
     contributed: { A: 0n, B: 0n }, commits: {}, bets: {}, raiser: null,
     result: null, foldedCardHidden: false,
   }
@@ -41,8 +44,10 @@ export function initialFlipState(args: { ante: bigint; deckIndex: number; warPot
 
 const rankOf = (i: number) => Math.floor(i / 4) + 2  // tiny local helper keeps rules dependency-free (mirrors zk-core cards.ts)
 
-export function applyMove(s: HiLoState, m: Move, ante: bigint): MoveResult {
+export function applyMove(s: HiLoState, m: Move): MoveResult {
   const err = (e: string): MoveResult => ({ error: `hilo-war: ${e}` })
+  if (s.phase === Phase.FLIP_DONE || s.phase === Phase.SETTLED) return err('no moves on a terminal flip state')
+  const ante = s.ante
   switch (m.kind) {
     case 'DEAL_DONE': {
       if (s.phase !== Phase.DEAL) return err(`DEAL_DONE in phase ${s.phase}`)
@@ -94,17 +99,20 @@ export function applyMove(s: HiLoState, m: Move, ante: bigint): MoveResult {
       const winner = s.raiser!
       return { state: {
         ...s, phase: Phase.FLIP_DONE, foldedCardHidden: true,
-        result: { winner, amount: s.pot + s.warPot }, warPot: 0n,
+        result: { winner, amount: s.pot + s.warPot }, warPot: 0n, pot: 0n,
       } }
     }
     case 'SHOWDOWN': {
       if (s.phase !== Phase.SHOWDOWN) return err(`SHOWDOWN in phase ${s.phase}`)
+      if (!Number.isInteger(m.cardA) || m.cardA < 0 || m.cardA > 51) return err('card index out of range')
+      if (!Number.isInteger(m.cardB) || m.cardB < 0 || m.cardB > 51) return err('card index out of range')
+      if (m.cardA === m.cardB) return err('cards must be distinct')
       const ra = rankOf(m.cardA), rb = rankOf(m.cardB)
       if (ra === rb) {
         return { state: { ...s, phase: Phase.FLIP_DONE, result: null, warPot: s.warPot + s.pot, pot: 0n } }
       }
       const winner: Seat = ra > rb ? 'A' : 'B'
-      return { state: { ...s, phase: Phase.FLIP_DONE, result: { winner, amount: s.pot + s.warPot }, warPot: 0n } }
+      return { state: { ...s, phase: Phase.FLIP_DONE, result: { winner, amount: s.pot + s.warPot }, warPot: 0n, pot: 0n } }
     }
   }
 }
