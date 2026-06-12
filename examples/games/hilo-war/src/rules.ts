@@ -117,6 +117,11 @@ export function applyMove(s: HiLoState, m: Move): MoveResult {
   }
 }
 
+/**
+ * DEBT (contracts plan): JSON hashing is NOT Solidity-reproducible. The
+ * channel signs this as an opaque bytes32, so v0 is sound off-chain, but the
+ * HiLoWarRules dispute contract will need an abi.encodePacked equivalent.
+ */
 export function hashGameState(s: HiLoState): Hex {
   return keccak256(stringToHex(JSON.stringify(s, (_, v) => (typeof v === 'bigint' ? v.toString() : v))))
 }

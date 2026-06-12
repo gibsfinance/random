@@ -21,6 +21,9 @@ const GENESIS: Hex = `0x${'00'.repeat(32)}`
  * Digest is keccak256 of a deterministic JSON serialisation.
  * Key order is fixed by the object literal — body keys are produced and
  * consumed by the same code, so ordering is stable for v0.
+ * DEBT (contracts plan): JSON hashing is NOT Solidity-reproducible — an
+ * on-chain adjudicator cannot recompute this digest to ecrecover envelope
+ * signatures. Replace with abi.encodePacked-style encoding before ZkTable.
  */
 export function entryDigest(e: Omit<Envelope, 'sig' | 'from'>): Hex {
   return keccak256(
