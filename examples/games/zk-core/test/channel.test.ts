@@ -17,8 +17,8 @@ const next = (s: ChannelState, patch: Partial<ChannelState>): ChannelState =>
 
 let chA: Channel, chB: Channel
 beforeEach(async () => {
-  chA = new Channel({ domain: TEST_DOMAIN, me: A, peer: B.address, role: 'A', escrow: ESCROW })
-  chB = new Channel({ domain: TEST_DOMAIN, me: B, peer: A.address, role: 'B', escrow: ESCROW })
+  chA = new Channel({ domain: TEST_DOMAIN, tableId: base.tableId, me: A, peer: B.address, role: 'A', escrow: ESCROW })
+  chB = new Channel({ domain: TEST_DOMAIN, tableId: base.tableId, me: B, peer: A.address, role: 'B', escrow: ESCROW })
   const genesis = await chA.propose(base)
   const counter = await chB.accept(genesis)
   await chA.finalize(counter)
@@ -60,5 +60,19 @@ describe('channel co-signing', () => {
     await expect(
       chA.propose(next(chA.latest!.state, { balanceA: -1n, pot: 101n }))
     ).rejects.toThrow(/negative/)
+  })
+  it('finalize rejects a countersigned state that differs from the proposal', async () => {
+    const p = await chA.propose(next(chA.latest!.state, { pot: 2n, balanceA: 99n, balanceB: 99n }))
+    const tampered = { ...p.state, balanceA: 98n, balanceB: 100n }
+    await expect(chA.finalize({ state: tampered, sigA: p.sigA })).rejects.toThrow(/does not match pending|signature/)
+  })
+  it('rejects a proposal for the wrong table', async () => {
+    await expect(
+      chA.propose({ ...next(chA.latest!.state, {}), tableId: ('0x' + 'ff'.repeat(32)) as `0x${string}` })
+    ).rejects.toThrow(/tableId/)
+  })
+  it('rejects uint64/uint8 overflow', async () => {
+    await expect(chA.propose({ ...chA.latest!.state, nonce: (1n << 64n) })).rejects.toThrow(/uint64/)
+    await expect(chA.propose(next(chA.latest!.state, { phase: 256 }))).rejects.toThrow(/uint8/)
   })
 })
