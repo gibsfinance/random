@@ -31,6 +31,7 @@ export const GAME_STATE_ABI = [
 ] as const
 
 export function encodeGameState(s: HiLoState): Hex {
+  // `as any`: TS cannot infer GAME_STATE_ABI's 16-tuple against viem's AbiParametersToPrimitiveTypes without a verbose explicit annotation; runtime values are correct per the ABI comment above.
   return encodeAbiParameters(GAME_STATE_ABI as any, [
     s.phase, s.deckIndex, s.ante, s.pot, s.warPot,
     s.contributed.A, s.contributed.B,
@@ -46,7 +47,7 @@ export function hashGameStateAbi(s: HiLoState): Hex {
   return keccak256(encodeGameState(s))
 }
 
-const MOVE_KIND = { DEAL_DONE: 0, BET_COMMIT: 1, BET_OPEN: 2, CALL: 3, FOLD: 4, SHOWDOWN: 5 } as const
+export const MOVE_KIND = { DEAL_DONE: 0, BET_COMMIT: 1, BET_OPEN: 2, CALL: 3, FOLD: 4, SHOWDOWN: 5 } as const
 
 export function encodeMove(m: Move): Hex {
   const payload = (() => {
