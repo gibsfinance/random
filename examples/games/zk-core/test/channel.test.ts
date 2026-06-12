@@ -1,0 +1,61 @@
+import { describe, it, expect, beforeEach } from 'vitest'
+import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
+import { Channel } from '../src/channel'
+import { TEST_DOMAIN, type ChannelState } from '../src/stateSig'
+
+const A = privateKeyToAccount(generatePrivateKey())
+const B = privateKeyToAccount(generatePrivateKey())
+const ESCROW = 200n
+const base: ChannelState = {
+  tableId: ('0x' + 'ab'.repeat(32)) as `0x${string}`,
+  nonce: 0n, balanceA: 100n, balanceB: 100n, pot: 0n,
+  deckCommitment: ('0x' + '00'.repeat(32)) as `0x${string}`,
+  phase: 0, gameStateHash: ('0x' + '00'.repeat(32)) as `0x${string}`,
+}
+const next = (s: ChannelState, patch: Partial<ChannelState>): ChannelState =>
+  ({ ...s, ...patch, nonce: s.nonce + 1n })
+
+let chA: Channel, chB: Channel
+beforeEach(async () => {
+  chA = new Channel({ domain: TEST_DOMAIN, me: A, peer: B.address, role: 'A', escrow: ESCROW })
+  chB = new Channel({ domain: TEST_DOMAIN, me: B, peer: A.address, role: 'B', escrow: ESCROW })
+  const genesis = await chA.propose(base)
+  const counter = await chB.accept(genesis)
+  await chA.finalize(counter)
+})
+
+describe('channel co-signing', () => {
+  it('advances on propose → accept → finalize', async () => {
+    const p = await chA.propose(next(chA.latest!.state, { pot: 2n, balanceA: 99n, balanceB: 99n }))
+    const c = await chB.accept(p)
+    await chA.finalize(c)
+    expect(chA.latest!.state.nonce).toBe(1n)
+    expect(chB.latest!.state.nonce).toBe(1n)
+    expect(chA.latest!.sigA && chA.latest!.sigB).toBeTruthy()
+  })
+  it('rejects non-incrementing nonce', async () => {
+    const p = await chA.propose(next(chA.latest!.state, { pot: 2n, balanceA: 99n, balanceB: 99n }))
+    const c = await chB.accept(p); await chA.finalize(c)
+    await expect(chB.accept(p)).rejects.toThrow(/nonce/)
+  })
+  it('rejects conservation violation', async () => {
+    await expect(
+      chA.propose(next(chA.latest!.state, { balanceA: 150n })) // A+B+pot > escrow
+    ).rejects.toThrow(/conservation/)
+  })
+  it('rejects bad proposer signature', async () => {
+    const p = await chA.propose(next(chA.latest!.state, { pot: 2n, balanceA: 99n, balanceB: 99n }))
+    p.sigA = (p.sigA!.slice(0, -2) + (p.sigA!.endsWith('00') ? '01' : '00')) as `0x${string}`
+    await expect(chB.accept(p)).rejects.toThrow(/signature/)
+  })
+  it('rejects when game legality callback vetoes', async () => {
+    chB.setLegality(() => 'illegal: phase skip')
+    const p = await chA.propose(next(chA.latest!.state, { phase: 9 }))
+    await expect(chB.accept(p)).rejects.toThrow(/illegal: phase skip/)
+  })
+  it('negative balances are impossible', async () => {
+    await expect(
+      chA.propose(next(chA.latest!.state, { balanceA: -1n, pot: 101n }))
+    ).rejects.toThrow(/negative/)
+  })
+})
