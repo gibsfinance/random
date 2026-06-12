@@ -14,7 +14,7 @@
   monetization. PRE-MAINNET BLOCKERS: regenerate the KZG SRS from a public ceremony
   and re-derive these VerifierKey constants with uzkge's gen-params; get upstream
   license clarification. No audit exists.
-- Generated files (VerifierKey_52, VerifierKeyExtra{1,2}_52) come from uzkge's own
+- Generated files (VerifierKey_20, VerifierKey_52, VerifierKeyExtra{1,2}_52) come from uzkge's own
   gen-params tooling at the pinned commit.
 - Extra sibling files copied to satisfy imports (not in original task list):
   `uzkge/shuffle/ExternalTranscript.sol` (imported by ShuffleVerifier.sol),

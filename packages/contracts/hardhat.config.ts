@@ -77,8 +77,19 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      // ShuffleVerifier52 wraps the vendored verifier — must share its compiler settings so
+      // the function-pointer type for _verifyKey resolves identically across the call boundary.
+      'contracts/zk/ShuffleVerifier52.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: { enabled: true, runs: 200 },
+        },
+      },
       // uzkge vendored verifiers — viaIR:false reproduces spike-measured gas and avoids
-      // slow viaIR compile of the ~100KB PlonkVerifier; runs:200 matches spike settings.
+      // slow viaIR compile of the ~100KB PlonkVerifier; runs:200 matches spike gas measurements
+      // (repo default elsewhere is 1_000).
       'contracts/vendor/uzkge/shuffle/ShuffleVerifier.sol': {
         version: '0.8.25',
         settings: {
