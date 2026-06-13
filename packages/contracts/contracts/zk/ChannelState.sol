@@ -24,4 +24,13 @@ library ChannelStateLib {
             s.deckCommitment, s.phase, s.gameStateHash
         ));
     }
+
+    /// Identical body for a `memory` state — lets Solidity callers (tests, other
+    /// contracts holding a memory struct) hash without a calldata source.
+    function structHashMem(ChannelState memory s) internal pure returns (bytes32) {
+        return keccak256(abi.encode(
+            TYPEHASH, s.tableId, s.nonce, s.balanceA, s.balanceB, s.pot,
+            s.deckCommitment, s.phase, s.gameStateHash
+        ));
+    }
 }

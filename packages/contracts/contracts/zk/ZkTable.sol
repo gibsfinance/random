@@ -166,9 +166,12 @@ contract ZkTable is EIP712 {
         _payout(t, tableId, state.balanceA, state.balanceB);
     }
 
-    /// Public so off-chain code can parity-test the EIP-712 digest.
-    function stateDigest(ChannelState calldata state) public view returns (bytes32) {
-        return _hashTypedData(state.structHash());
+    /// Public so off-chain code can parity-test the EIP-712 digest. Takes `memory` (not
+    /// calldata) so Solidity callers holding a memory struct — fuzz/invariant tests, other
+    /// contracts — can compute the digest directly; the external ABI signature is unchanged
+    /// (memory vs calldata is internal codegen only), so viem/TS callers keep working.
+    function stateDigest(ChannelState memory state) public view returns (bytes32) {
+        return _hashTypedData(state.structHashMem());
     }
 
     /// Every state the contract accepts must conserve the CURRENT escrow total —
@@ -177,7 +180,8 @@ contract ZkTable is EIP712 {
     function _checkCoSigned(Table storage t, bytes32 tableId, ChannelState calldata state, bytes calldata sigA, bytes calldata sigB) internal view {
         if (state.tableId != tableId) revert WrongTable();
         if (state.balanceA + state.balanceB + state.pot != t.escrowA + t.escrowB) revert ConservationViolated();
-        bytes32 digest = stateDigest(state);
+        // hot path: hash the calldata struct directly (no calldata->memory copy)
+        bytes32 digest = _hashTypedData(state.structHash());
         // Solady ECDSA does not enforce low-s; sigs are never used as identifiers here (replay
         // safety = status + tableId pin + nonce checkpoint), so malleability is benign — do not
         // use sig bytes as dedup keys off-chain.
