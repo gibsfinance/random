@@ -133,6 +133,29 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      'contracts/test/MockRevealVerifier.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      // Test-only reentrancy probe in the ZkTable family — Shanghai like its siblings.
+      'contracts/test/ReenteringReceiver.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
       // ShuffleVerifier52 wraps the vendored verifier — must share its compiler settings so
       // the function-pointer type for _verifyKey resolves identically across the call boundary.
       'contracts/zk/ShuffleVerifier52.sol': {

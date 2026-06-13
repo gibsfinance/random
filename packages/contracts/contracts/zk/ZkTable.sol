@@ -26,6 +26,17 @@ contract ZkTable is EIP712 {
     error ConservationViolated();
     error StaleNonce();
     error BadRules();
+    error ClockNotExpired();
+    error NotYourDispute();
+    error NotDemanded();
+    error NotYourTurn();
+    error BadGameState();
+    error BadDeck();
+    error BadProof();
+    error BadDemand();
+
+    uint8 internal constant DEMAND_MOVE = 1;
+    uint8 internal constant DEMAND_SHARE = 2;
 
     enum Status { None, Created, Live, Disputed, Settled, Cancelled }
 
@@ -63,6 +74,15 @@ contract ZkTable is EIP712 {
     event TableCancelled(bytes32 indexed tableId);
     event ToppedUp(bytes32 indexed tableId, uint8 seat, uint256 amount);
     event TableSettled(bytes32 indexed tableId, uint256 payoutA, uint256 payoutB);
+    event DisputeOpened(bytes32 indexed tableId, uint8 disputant, uint8 demandKind, uint32 demandSlot, uint64 deadline);
+    event SetupDisputeOpened(bytes32 indexed tableId, uint8 disputant, uint64 deadline);
+    event DisputeAnsweredWithState(bytes32 indexed tableId, uint64 nonce);
+    event DisputeAnsweredWithMove(bytes32 indexed tableId, bytes move, bytes32 newGameStateHash);
+    event DisputeAnsweredWithShare(bytes32 indexed tableId, uint32 slot, uint256 revealX, uint256 revealY);
+    // `winner` carries `t.disputant` (the seat that opened the dispute and is awarded the pot on
+    // timeout) — NOT a game winner; indexers must not read it as a game result.
+    event DisputeForfeited(bytes32 indexed tableId, uint8 winner, uint256 payoutA, uint256 payoutB);
+    event SetupDisputeRefunded(bytes32 indexed tableId);
 
     /// Matches makeDomain() in zk-cards-core: { name: 'ZkTable', version: '1' }.
     /// (Solady EIP712 rather than OZ: OZ 5.6's Strings->Bytes dependency uses MCOPY
@@ -169,6 +189,158 @@ contract ZkTable is EIP712 {
         if (who == t.playerA || who == t.keyA) return 1;
         if (who == t.playerB || who == t.keyB) return 2;
         revert NotPlayer();
+    }
+
+    // ── Dispute machine (ForceMove-style adjudication) ───────────────────────
+
+    /// Stall before state 0 (spec edge case): no co-signed state exists yet.
+    /// If the counterparty produces ANY valid co-signed state before the clock
+    /// expires the table goes back to Live; otherwise both escrows refund in full.
+    function disputeSetup(bytes32 tableId) external {
+        Table storage t = tables[tableId];
+        if (t.status != Status.Live) revert BadStatus();
+        if (t.hasCheckpoint) revert BadDemand(); // a state exists: use openDispute
+        uint8 seat = _seatOf(t, msg.sender);
+        t.status = Status.Disputed;
+        t.disputant = seat;
+        t.demandKind = 0;
+        t.disputeDeadline = uint64(block.number) + t.clockBlocks;
+        emit SetupDisputeOpened(tableId, seat, t.disputeDeadline);
+    }
+
+    /// Post your latest co-signed state and demand the owed protocol action.
+    /// gameState must be the preimage of state.gameStateHash; the demand must
+    /// target a seat that actually owes per the rules (ForceMove-style guard:
+    /// you cannot demand from someone whose turn it is not).
+    function openDispute(
+        bytes32 tableId,
+        ChannelState calldata state,
+        bytes calldata sigA,
+        bytes calldata sigB,
+        bytes calldata gameState,
+        uint8 demandKind,
+        uint32 demandSlot
+    ) external {
+        Table storage t = tables[tableId];
+        if (t.status != Status.Live) revert BadStatus();
+        uint8 seat = _seatOf(t, msg.sender);
+        _checkCoSigned(t, tableId, state, sigA, sigB);
+        if (t.hasCheckpoint && state.nonce < t.checkpointNonce) revert StaleNonce();
+        if (t.rules.hashGameState(gameState) != state.gameStateHash) revert BadGameState();
+        if (demandKind != DEMAND_MOVE && demandKind != DEMAND_SHARE) revert BadDemand();
+        uint8 counterparty = seat == 1 ? 2 : 1;
+        if (t.rules.whoseTurn(gameState) & counterparty == 0) revert NotYourTurn();
+        t.status = Status.Disputed;
+        t.disputant = seat;
+        t.demandKind = demandKind;
+        // demandSlot is trusted as-supplied: legitimacy (is this slot revealable now?) is NOT
+        // adjudicated on-chain — see the respondWithShare @dev note.
+        t.demandSlot = demandSlot;
+        t.disputeState = state;
+        t.checkpointNonce = state.nonce;
+        t.hasCheckpoint = true;
+        t.disputeDeadline = uint64(block.number) + t.clockBlocks;
+        emit DisputeOpened(tableId, seat, demandKind, demandSlot, t.disputeDeadline);
+    }
+
+    /// Universal answer: a co-signed state newer than the contested one.
+    function respondWithState(bytes32 tableId, ChannelState calldata state, bytes calldata sigA, bytes calldata sigB) external {
+        Table storage t = tables[tableId];
+        if (t.status != Status.Disputed) revert BadStatus();
+        _seatOf(t, msg.sender);
+        _checkCoSigned(t, tableId, state, sigA, sigB);
+        // setup dispute (demandKind 0): any co-signed state proves liveness;
+        // move/share disputes need strictly newer than the contested state.
+        if (t.demandKind != 0 && state.nonce <= t.disputeState.nonce) revert StaleNonce();
+        t.checkpointNonce = state.nonce;
+        t.hasCheckpoint = true;
+        _clearDispute(t);
+        emit DisputeAnsweredWithState(tableId, state.nonce);
+    }
+
+    /// Answer a MOVE demand: the owing seat publishes the demanded move on-chain.
+    /// The rules contract is the judge; an illegal move reverts there.
+    function respondWithMove(bytes32 tableId, bytes calldata gameState, bytes calldata move) external {
+        Table storage t = tables[tableId];
+        if (t.status != Status.Disputed) revert BadStatus();
+        if (t.demandKind != DEMAND_MOVE) revert NotDemanded();
+        uint8 seat = _seatOf(t, msg.sender);
+        if (seat == t.disputant) revert NotYourDispute();
+        if (t.rules.hashGameState(gameState) != t.disputeState.gameStateHash) revert BadGameState();
+        bytes memory newState = t.rules.applyMove(gameState, move);
+        _clearDispute(t);
+        emit DisputeAnsweredWithMove(tableId, move, t.rules.hashGameState(newState));
+    }
+
+    /// Answer a SHARE demand: a Groth16 snark-reveal for the demanded deck slot
+    /// (the CP-DL form is rejected by design — 15.6M gas; spike addendum risk 5).
+    /// deck = 208 words (52 cards x [c1.x, c1.y, c2.x, c2.y]) matching the
+    /// contested state's deckCommitment; pi layout per vendored RevealVerifier:
+    /// [masked.e1.x, masked.e1.y, reveal.x, reveal.y, pk.x, pk.y].
+    /// @dev KNOWN v1 LIMITATION — demandSlot legitimacy is not adjudicated on-chain. openDispute
+    /// proves (via whoseTurn & counterparty) that the counterparty owes *some* action, but NOT
+    /// that `demandSlot` is a slot they can legitimately reveal at the current phase — the rules
+    /// contract cannot cheaply prove a slot is revealable. A counterparty who cannot produce the
+    /// demanded share must instead answer via respondWithState with a strictly-newer co-signed
+    /// state. This is forfeit-only: an illegitimate demand can at worst force a state response or
+    /// run the chess clock, and can never move funds beyond the staked escrow. Revisit with an
+    /// IGameRules.owesShare(gameState, slot, seat) hook if SHARE disputes become adversarially
+    /// load-bearing (out of scope for v1 — would ripple into IGameRules/HiLoWarRules).
+    function respondWithShare(
+        bytes32 tableId,
+        uint256[] calldata deck,
+        uint256[2] calldata reveal,
+        uint256[8] calldata zkproof
+    ) external {
+        Table storage t = tables[tableId];
+        if (t.status != Status.Disputed) revert BadStatus();
+        if (t.demandKind != DEMAND_SHARE) revert NotDemanded();
+        uint8 seat = _seatOf(t, msg.sender);
+        if (seat == t.disputant) revert NotYourDispute();
+        if (deck.length != 208) revert BadDeck();
+        if (keccak256(abi.encodePacked(deck)) != t.disputeState.deckCommitment) revert BadDeck();
+        uint32 slot = t.demandSlot;
+        if (slot > 51) revert BadDeck();
+        uint256[2] memory pk = deckKeys[tableId][seat];
+        uint256[6] memory pi = [deck[4 * slot], deck[4 * slot + 1], reveal[0], reveal[1], pk[0], pk[1]];
+        (bool callOk, bytes memory ret) = t.rules.revealVerifier()
+            .staticcall(abi.encodeWithSignature("verifyRevealWithSnark(uint256[6],uint256[8])", pi, zkproof));
+        if (!callOk || ret.length < 32 || !abi.decode(ret, (bool))) revert BadProof();
+        _clearDispute(t);
+        emit DisputeAnsweredWithShare(tableId, slot, reveal[0], reveal[1]);
+    }
+
+    /// Clock expired unanswered: forfeit the disputed pot to the disputant and
+    /// settle balances from the contested co-signed state. Setup disputes refund
+    /// both escrows in full (no pot exists yet — spec edge case).
+    function resolveTimeout(bytes32 tableId) external {
+        Table storage t = tables[tableId];
+        if (t.status != Status.Disputed) revert BadStatus();
+        if (uint64(block.number) <= t.disputeDeadline) revert ClockNotExpired();
+        if (t.demandKind == 0) {
+            emit SetupDisputeRefunded(tableId);
+            _payout(t, tableId, t.escrowA, t.escrowB);
+            return;
+        }
+        // Conservation invariant (_checkCoSigned) guarantees the contested state's
+        // balances + pot == escrowA + escrowB, so handing the pot to the disputant
+        // and balances to each seat consumes the full escrow exactly — no excess.
+        uint256 toA = t.disputeState.balanceA;
+        uint256 toB = t.disputeState.balanceB;
+        if (t.disputant == 1) toA += t.disputeState.pot;
+        else toB += t.disputeState.pot;
+        // `winner` here is t.disputant (the seat awarded the pot on timeout), not a game winner.
+        emit DisputeForfeited(tableId, t.disputant, toA, toB);
+        _payout(t, tableId, toA, toB);
+    }
+
+    function _clearDispute(Table storage t) internal {
+        t.status = Status.Live;
+        t.disputant = 0;
+        t.demandKind = 0;
+        t.demandSlot = 0;
+        t.disputeDeadline = 0;
+        delete t.disputeState;
     }
 
     function _payout(Table storage t, bytes32 tableId, uint256 toA, uint256 toB) internal {
