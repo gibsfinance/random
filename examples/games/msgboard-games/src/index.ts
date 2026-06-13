@@ -1,3 +1,5 @@
 export const PACKAGE = '@gibs/msgboard-games'
 export * from './sessionState'
 export * from './rng'
+export * from './game'
+export * from './games/dice'
