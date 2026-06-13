@@ -6,6 +6,31 @@ import * as expectations from './expectations'
 import { makeDomain, signState as coreSignState, type ChannelState, type ChannelDomain } from '@gibs/zk-cards-core'
 import revealFixture from './fixtures/zypher-reveal-snark.json'
 
+declare module 'hardhat/types/runtime' {
+  interface HardhatRuntimeEnvironment {
+    __SOLIDITY_COVERAGE_RUNNING: boolean
+  }
+}
+
+// Place a contract's compiled runtime bytecode directly at `address` via hardhat_setCode.
+// RevealVerifier's runtime code (~30KB) exceeds EIP-170's 24576-byte deployed-code limit, so it
+// cannot be deployed by a normal tx under the default network (allowUnlimitedContractSize:false).
+// setCode writes runtime code directly, bypassing the check, so the real-verifier dispute tests
+// run under plain `hardhat test` without relaxing the global size limit (which the Random suite
+// depends on staying enforced). Under solidity-coverage the size limit is off and the verifier
+// must be deployed so it is instrumented, so callers branch on __SOLIDITY_COVERAGE_RUNNING.
+const REVEAL_ADDR = viem.getAddress('0x00000000000000000000000000000000000ce523')
+const deployOrEtchRevealVerifier = async (): Promise<viem.Hex> => {
+  if (hre.__SOLIDITY_COVERAGE_RUNNING) {
+    const reveal = await hre.viem.deployContract('RevealVerifier')
+    return reveal.address
+  }
+  const artifact = await hre.artifacts.readArtifact('RevealVerifier')
+  const testClient = await hre.viem.getTestClient()
+  await testClient.setCode({ address: REVEAL_ADDR, bytecode: artifact.deployedBytecode as viem.Hex })
+  return REVEAL_ADDR
+}
+
 // The generated ZkTable binding types `zkproof` as a fixed 8-tuple (uint256[8]); build proof
 // args as this rather than bigint[] so tsc accepts them.
 type Proof8 = readonly [bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint]
@@ -531,8 +556,8 @@ describe('ZkTable dispute machine', () => {
     // responding seat (B) registers deckKey = pi[4..5] (pk).
     const realTable = async () => {
       const ctx = await helpers.loadFixture(deployZk)
-      const reveal = await hre.viem.deployContract('RevealVerifier')
-      const rules = await hre.viem.deployContract('HiLoWarRules', [reveal.address, viem.zeroAddress])
+      const revealAddress = await deployOrEtchRevealVerifier()
+      const rules = await hre.viem.deployContract('HiLoWarRules', [revealAddress, viem.zeroAddress])
       // Build a deck whose demanded slot's first two words = pi[0..1].
       const deck: bigint[] = new Array(208).fill(1n)
       deck[4 * SLOT] = pi[0]!
@@ -609,7 +634,7 @@ describe('ZkTable dispute machine', () => {
         [tableId, state, sigA, sigB, hiloState, DEMAND_SHARE, SLOT],
         { account: a!.account },
       )
-      return { ...ctx, tableId, a: a!, b: b!, deck, reveal }
+      return { ...ctx, tableId, a: a!, b: b!, deck, revealAddress }
     }
 
     it('accepts a real Groth16 reveal proof and clears the dispute', async () => {
