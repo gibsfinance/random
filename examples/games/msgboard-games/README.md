@@ -123,6 +123,12 @@ This is the "board is ephemeral, evidence is retained locally" property from the
 
 ---
 
+## Settlement (Plan 2)
+
+On-chain settlement lives in a separate package, [`@gibs/msgboard-settle`](../msgboard-settle) — the settlement seam that replays a retained transcript and builds the calldata to settle a finished session on chain. It ships two interchangeable backends (spec §6): **optimistic** (net-delta against a shared deposit + house pool) and **escrowed** (per-table escrow with a chess-clock dispute path). The backing contracts are in `packages/contracts/contracts/games/` — `Chips.sol` (mintable ERC20), `HouseBankroll.sol` (optimistic), `HouseChannel.sol` (escrowed). This `@gibs/msgboard-games` package remains the off-chain layer only and still never submits a transaction.
+
+---
+
 ## Running
 
 ```sh
