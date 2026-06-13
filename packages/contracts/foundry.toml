@@ -21,6 +21,12 @@ remappings = [
   'forge-std/=../../lib/forge-std/src/',
   'solady/=node_modules/solady/',
 ]
+# ShuffleVerifier52.t.sol pulls in the vendored uzkge PlonkVerifier, which hits solc
+# stack-too-deep under this profile's viaIR:true. It compiles + runs under the dedicated
+# `zk` profile (viaIR:false / runs:200, mirroring hardhat.config.ts). Exclude it here so
+# the default game-suite run is unaffected:
+#   FOUNDRY_PROFILE=zk forge test --match-path 'test/foundry/ShuffleVerifier52*'
+skip = ['test/foundry/ShuffleVerifier52.t.sol']
 
 [fuzz]
 runs = 512
@@ -29,3 +35,47 @@ runs = 512
 runs = 256
 depth = 64
 fail_on_revert = false
+
+# Dedicated profile for the zk shuffle/reveal verifier negative-fuzz suite
+# (test/foundry/ShuffleVerifier52.t.sol). Two opposing constraints:
+#   - the vendored uzkge PlonkVerifier (reached via ShuffleVerifier52) hits solc
+#     stack-too-deep UNDER viaIR, and
+#   - the rest of the foundry test graph (CoinFlip/Raffle/…) hits stack-too-deep
+#     WITHOUT viaIR,
+# so they cannot share one compiler setting in a single compilation. hardhat.config.ts
+# already pins the shuffle-verifier graph to viaIR:false / runs:200; this profile
+# mirrors that and `skip`s the viaIR-requiring suites so only the shuffle/reveal test
+# compiles. The default profile is untouched, so CoinFlip/Raffle keep viaIR:true. Run:
+#   FOUNDRY_PROFILE=zk forge test --match-path 'test/foundry/ShuffleVerifier52*'
+[profile.zk]
+src = 'test/foundry'
+test = 'test/foundry'
+out = 'forge-out-zk'
+cache_path = 'forge-cache-zk'
+libs = ['../../lib', 'node_modules']
+solc = '0.8.25'
+via_ir = false
+optimizer = true
+optimizer_runs = 200
+evm_version = 'shanghai'
+remappings = [
+  'forge-std/=../../lib/forge-std/src/',
+  'solady/=node_modules/solady/',
+]
+# Skip every other foundry test/helper so the viaIR-requiring game suites never
+# reach this non-viaIR compilation. Only ShuffleVerifier52.t.sol compiles here.
+skip = [
+  'test/foundry/CoinFlip.t.sol',
+  'test/foundry/Raffle.t.sol',
+  'test/foundry/RaffleInvariant.t.sol',
+  'test/foundry/HiLoWarRules.t.sol',
+  'test/foundry/ZkTable.t.sol',
+  'test/foundry/ZkTableInvariant.t.sol',
+  'test/foundry/MockRandom.sol',
+]
+
+# Allow the reveal-snark tamper test to read its decimal-string fixture.
+fs_permissions = [{ access = 'read', path = './test/fixtures' }]
+
+[profile.zk.fuzz]
+runs = 512

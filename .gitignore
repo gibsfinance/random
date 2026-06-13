@@ -32,6 +32,8 @@ packages/contracts/scripts/.coinflip-943.json
 /lib/
 packages/contracts/forge-out/
 packages/contracts/forge-cache/
+packages/contracts/forge-out-zk/
+packages/contracts/forge-cache-zk/
 
 # games parity-gate per-chain deployment cache
 examples/games/e2e/scripts/.gate-deployments.json
