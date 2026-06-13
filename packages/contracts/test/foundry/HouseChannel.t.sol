@@ -119,4 +119,52 @@ contract HouseChannelTest is Test {
         vm.expectRevert(HouseChannel.BadStatus.selector); // table now Settled
         ch.settle(f, sp, sh);
     }
+
+    function test_disputeTimeoutPaysPostedState() public {
+        _open();
+        SessionState memory s = _state(3, 240, 160);
+        (bytes memory sp, bytes memory sh) = _coSign(s);
+        vm.prank(playerWallet);
+        ch.dispute(s, sp, sh);
+        vm.roll(block.number + CLOCK + 1);
+        ch.resolveTimeout(TID);
+        assertEq(chips.balanceOf(playerWallet), 800 + 240);
+        assertEq(ch.housePool(), 9_800 + 160);
+    }
+
+    function test_resolveTimeoutBeforeClockReverts() public {
+        _open();
+        SessionState memory s = _state(3, 240, 160);
+        (bytes memory sp, bytes memory sh) = _coSign(s);
+        vm.prank(playerWallet);
+        ch.dispute(s, sp, sh);
+        vm.expectRevert(HouseChannel.ClockNotExpired.selector);
+        ch.resolveTimeout(TID);
+    }
+
+    function test_respondWithNewerStateOverrides() public {
+        _open();
+        SessionState memory stale = _state(3, 300, 100); // player-favorable, posted by player
+        (bytes memory sp1, bytes memory sh1) = _coSign(stale);
+        vm.prank(playerWallet);
+        ch.dispute(stale, sp1, sh1);
+        // house overrides with a strictly-newer co-signed state
+        SessionState memory newer = _state(7, 150, 250);
+        (bytes memory sp2, bytes memory sh2) = _coSign(newer);
+        ch.respondWithState(newer, sp2, sh2);
+        assertEq(chips.balanceOf(playerWallet), 800 + 150);
+        assertEq(ch.housePool(), 9_800 + 250);
+    }
+
+    function test_respondWithOlderStateReverts() public {
+        _open();
+        SessionState memory s = _state(7, 150, 250);
+        (bytes memory sp1, bytes memory sh1) = _coSign(s);
+        vm.prank(playerWallet);
+        ch.dispute(s, sp1, sh1);
+        SessionState memory older = _state(3, 300, 100);
+        (bytes memory sp2, bytes memory sh2) = _coSign(older);
+        vm.expectRevert(HouseChannel.StaleNonce.selector);
+        ch.respondWithState(older, sp2, sh2);
+    }
 }

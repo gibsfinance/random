@@ -155,6 +155,44 @@ contract HouseChannel is SessionStateEIP712, Ownable {
         _payout(t, s.tableId, s.balancePlayer, s.balanceHouse);
     }
 
+    /// Post your latest both-signed state and start the chess clock. Because Plan-1 open()
+    /// co-signs state 0, a party always holds at least one both-signed state (nonce 0 refunds
+    /// the opening escrows), so no separate pre-state disputeSetup is needed.
+    function dispute(SessionState calldata s, bytes calldata sigPlayer, bytes calldata sigHouse) external {
+        Table storage t = tables[s.tableId];
+        if (t.status != Status.Live) revert BadStatus();
+        uint8 seat = _seatOf(t, msg.sender);
+        _checkCoSigned(t, s, sigPlayer, sigHouse);
+        if (t.hasCheckpoint && s.nonce < t.checkpointNonce) revert StaleNonce();
+        t.status = Status.Disputed;
+        t.disputant = seat;
+        t.disputeState = s;
+        t.checkpointNonce = s.nonce;
+        t.hasCheckpoint = true;
+        t.disputeDeadline = uint64(block.number) + t.clockBlocks;
+        emit DisputeOpened(s.tableId, seat, s.nonce, t.disputeDeadline);
+    }
+
+    /// Override a dispute with a strictly-newer both-signed state — which IS the true latest, so
+    /// it settles immediately (single-draw games have no further play to resume).
+    function respondWithState(SessionState calldata s, bytes calldata sigPlayer, bytes calldata sigHouse) external {
+        Table storage t = tables[s.tableId];
+        if (t.status != Status.Disputed) revert BadStatus();
+        _checkCoSigned(t, s, sigPlayer, sigHouse);
+        if (s.nonce <= t.disputeState.nonce) revert StaleNonce();
+        emit DisputeAnsweredWithState(s.tableId, s.nonce);
+        _payout(t, s.tableId, s.balancePlayer, s.balanceHouse);
+    }
+
+    /// Clock expired unanswered: the disputer's posted state stands; pay its balances.
+    function resolveTimeout(bytes32 tableId) external {
+        Table storage t = tables[tableId];
+        if (t.status != Status.Disputed) revert BadStatus();
+        if (uint64(block.number) <= t.disputeDeadline) revert ClockNotExpired();
+        emit DisputeForfeited(tableId, t.disputeState.balancePlayer, t.disputeState.balanceHouse);
+        _payout(t, tableId, t.disputeState.balancePlayer, t.disputeState.balanceHouse);
+    }
+
     function _checkCoSigned(Table storage t, SessionState calldata s, bytes calldata sigPlayer, bytes calldata sigHouse) internal view {
         if (s.tableId == bytes32(0) || t.status == Status.None) revert WrongTable();
         if (s.settlementMode != 1) revert BadMode();
