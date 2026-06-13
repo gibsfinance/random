@@ -269,6 +269,9 @@ importers:
       '@gibs/msgboard-games':
         specifier: workspace:*
         version: link:../../examples/games/msgboard-games
+      '@gibs/msgboard-settle':
+        specifier: workspace:*
+        version: link:../../examples/games/msgboard-settle
       '@gibs/zk-cards-core':
         specifier: workspace:*
         version: link:../../examples/games/zk-core
