@@ -122,6 +122,61 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      'contracts/games/SessionState.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/games/Chips.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/games/HouseBankroll.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/games/HouseChannel.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/test/SessionStateHarness.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
       'contracts/test/MockGameRules.sol': {
         version: '0.8.25',
         settings: {

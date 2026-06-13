@@ -2,6 +2,7 @@
   "name": "@gibs/random",
   "devDependencies": {
     "@gibs/hilo-war": "workspace:*",
+    "@gibs/msgboard-games": "workspace:*",
     "@gibs/zk-cards-core": "workspace:*",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.8",
     "@nomicfoundation/hardhat-toolbox-viem": "^3.0.0",
