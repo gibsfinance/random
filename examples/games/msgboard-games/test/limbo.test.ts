@@ -29,4 +29,8 @@ describe('limbo (target multiplier)', () => {
   it('rejects a target below 1.00x', () => {
     expect(() => limbo.settleRound(10n, { targetX100: 99n }, 1n)).toThrow()
   })
+
+  it('rejects a target above the max (990000.00x)', () => {
+    expect(() => limbo.settleRound(10n, { targetX100: 99_000_001n }, 1n)).toThrow()
+  })
 })
