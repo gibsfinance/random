@@ -27,6 +27,14 @@ remappings = [
 # the default game-suite run is unaffected:
 #   FOUNDRY_PROFILE=zk forge test --match-path 'test/foundry/ShuffleVerifier52*'
 skip = ['test/foundry/ShuffleVerifier52.t.sol']
+# Foundry 1.6's table-test feature collects any function whose name starts with `table`.
+# ZkTable's `mapping(bytes32 => Table) public tables` auto-generates a `tables(bytes32)`
+# getter that the runner misclassifies as a fixtureless table test ("should have fixtures
+# defined"). The production ZkTable contract has no real foundry tests — its suites are
+# ZkTableFuzzTest / ZkTableInvariantTest / ZkTableHandler — so exclude the contract itself
+# (anchored, to not catch the *Test/*Handler suites). Renaming the public getter would
+# churn the ABI + ~46 call sites for a tooling false-positive; this is the surgical fix.
+no_match_contract = '^ZkTable$'
 
 [fuzz]
 runs = 512
