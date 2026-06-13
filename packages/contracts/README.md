@@ -11,6 +11,39 @@ npx hardhat ignition deploy ignition/modules/Consumer.ts --network pulsechainV4
 npx hardhat ignition verify chain-943 --include-unrelated-contracts
 ```
 
+## ZK cards contracts
+
+A game-agnostic two-party state-channel card table plus the first game's rules and the
+SNARK verifiers that adjudicate disputes. Deployed together via `ignition/modules/ZkCards.ts`.
+
+- **`ZkTable`** — escrow + the channel/dispute machine. It is game-agnostic: it verifies
+  EIP-712 co-signed `ChannelState`s and delegates transition legality to a per-table
+  `IGameRules` contract chosen at `create` (the joiner accepts those rules by joining — no
+  owner, no registry governance). The honest path is three transactions (create, join,
+  settle) and never pays proof-verification gas.
+- **`IGameRules`** — the rules seam. `ZkTable` consults one of these per table for
+  `hashGameState` / `whoseTurn` / `isFinal` / `applyMove`.
+- **`HiLoWarRules`** (game id 1) — a pure mirror of `@gibs/hilo-war`'s `applyMove`,
+  consulted only by the dispute machine. The TS module is normative; `HiLoWarParity` fuzzes
+  the two against each other.
+- **Vendored uzkge verifiers** (`contracts/vendor/uzkge/`, pinned commit `2ae729db`) +
+  the calldata-shaped `ShuffleVerifier52` wrapper. **The pin is a consensus constant** —
+  prover wasm and these verifiers must come from the same commit; see `contracts/vendor/VENDOR.md`
+  for the pin, the GPL-3.0 license posture, and the pre-mainnet blockers.
+
+Disputes are answered by a higher-nonce co-signed state, by the demanded game move
+(validated by the rules contract), or by the demanded reveal share — the latter is
+**Groth16 snark-reveal only** (`RevealVerifier`); the CP-DL on-chain path is banned at
+15.6M gas. Clock expiry forfeits the disputed pot to the disputant and settles balances
+from the contested co-signed state. The chess clock is creator-set per table
+(`clockBlocks`, bounds 30–60480, ~5 min to ~1 week; suggested client default 360 ≈ 1 hour);
+no dispute bond in v1.
+
+The EIP-712 domain is `("ZkTable", "1", chainId, zkTableAddress)`, consumed off-chain via
+`makeDomain` in `@gibs/zk-cards-core`. Channel-state and game-state hashes are abi-encoded
+(not JSON) so the contract can reproduce them — the canonical tuples are mirrored in the TS
+packages and enforced by parity tests.
+
 ## randomness providing
 
 Providing randomness, at the end of the day, is a numbers game (excuse the pun).
