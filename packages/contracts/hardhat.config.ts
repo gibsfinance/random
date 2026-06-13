@@ -111,6 +111,17 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      'contracts/zk/HiLoWarRules.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
       'contracts/test/MockGameRules.sol': {
         version: '0.8.25',
         settings: {
