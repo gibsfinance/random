@@ -4,7 +4,7 @@ import hre from 'hardhat'
 import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
 import { privateKeyToAccount } from 'viem/accounts'
 import * as expectations from './expectations'
-import { CHANNEL_STATE_TYPES, makeDomain, type ChannelState, type ChannelDomain } from '@gibs/zk-cards-core'
+import { makeDomain, signState as coreSignState, type ChannelState, type ChannelDomain } from '@gibs/zk-cards-core'
 
 const STAKE = viem.parseEther('1')
 const CLOCK = 60n
@@ -64,9 +64,22 @@ const mkState = (tableId: viem.Hex, over: Partial<ChannelState> = {}): ChannelSt
   ...over,
 })
 
-type TypedDataSigner = { signTypedData(args: any): Promise<viem.Hex> }
+// Adapts viem signers to the package's StateSigner shape: wallet clients hold their
+// address at account.address, local accounts expose it top-level; both signTypedData.
+type TypedDataSigner = {
+  signTypedData(args: any): Promise<viem.Hex>
+  address?: viem.Hex
+  account?: { address: viem.Hex }
+}
 const signState = (signer: TypedDataSigner, domain: ChannelDomain, state: ChannelState) =>
-  signer.signTypedData({ domain, types: CHANNEL_STATE_TYPES, primaryType: 'ChannelState', message: state })
+  coreSignState(
+    {
+      address: (signer.address ?? signer.account!.address) as viem.Hex,
+      signTypedData: (args) => signer.signTypedData(args),
+    },
+    domain,
+    state,
+  )
 
 // table tuple indices (struct order in ZkTable.Table)
 const PLAYER_B = 1
@@ -135,6 +148,19 @@ describe('ZkTable', () => {
           { value: STAKE },
         ),
         'BadClock',
+      )
+    })
+
+    it('rejects an EOA rules address', async () => {
+      const ctx = await helpers.loadFixture(deployZk)
+      const [, b] = ctx.signers
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.create(
+          [b!.account!.address, STAKE, CLOCK, viem.zeroAddress, DECK_KEY_A as unknown as [bigint, bigint]],
+          { value: STAKE },
+        ),
+        'BadRules',
       )
     })
   })
@@ -231,6 +257,18 @@ describe('ZkTable', () => {
       const table = await ctx.zk.read.tables([tableId])
       expect(table[STATUS]).to.equal(Status.Cancelled)
       expect(table[ESCROW_A]).to.equal(0n)
+    })
+
+    it('rejects a second cancel', async () => {
+      const ctx = await helpers.loadFixture(deployZk)
+      const [a] = ctx.signers
+      const { tableId } = await createTable(ctx)
+      await ctx.zk.write.cancel([tableId], { account: a!.account })
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.cancel([tableId], { account: a!.account }),
+        'BadStatus',
+      )
     })
   })
 
@@ -342,6 +380,43 @@ describe('ZkTable', () => {
         ctx.zk.write.settle([ctx.tableId, ctx.state, ctx.sigA, tamperedSigB], { account: ctx.a.account }),
         'BadSig',
       )
+    })
+
+    it('rejects a sigA from the wrong key', async () => {
+      const ctx = await liveTable()
+      const [, , stranger] = ctx.signers
+      const tamperedSigA = await signState(stranger!, ctx.domain, ctx.state)
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.settle([ctx.tableId, ctx.state, tamperedSigA, ctx.sigB], { account: ctx.b.account }),
+        'BadSig',
+      )
+    })
+
+    it('a top-up invalidates states signed against the old escrow total', async () => {
+      const ctx = await liveTable() // default state sums to the pre-top-up 2 ETH escrow
+      const amount = viem.parseEther('0.5')
+      await ctx.zk.write.topUp([ctx.tableId], { value: amount, account: ctx.a.account })
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.settle([ctx.tableId, ctx.state, ctx.sigA, ctx.sigB], { account: ctx.a.account }),
+        'ConservationViolated',
+      )
+      const fresh = mkState(ctx.tableId, {
+        nonce: 2n,
+        balanceA: viem.parseEther('2'),
+        balanceB: viem.parseEther('0.5'),
+      })
+      const sigA = await signState(ctx.a, ctx.domain, fresh)
+      const sigB = await signState(ctx.b, ctx.domain, fresh)
+      await expectations.changeEtherBalances(
+        asCtx(ctx),
+        ctx.zk.write.settle([ctx.tableId, fresh, sigA, sigB], { account: ctx.a.account }),
+        [ctx.a, ctx.b],
+        [fresh.balanceA, fresh.balanceB],
+      )
+      const table = await ctx.zk.read.tables([ctx.tableId])
+      expect(table[STATUS]).to.equal(Status.Settled)
     })
 
     it('rejects a final state still carrying a pot', async () => {

@@ -25,6 +25,7 @@ contract ZkTable is EIP712 {
     error PotNotZero();
     error ConservationViolated();
     error StaleNonce();
+    error BadRules();
 
     enum Status { None, Created, Live, Disputed, Settled, Cancelled }
 
@@ -77,6 +78,7 @@ contract ZkTable is EIP712 {
     {
         if (msg.value == 0) revert WrongValue();
         if (clockBlocks < MIN_CLOCK_BLOCKS || clockBlocks > MAX_CLOCK_BLOCKS) revert BadClock();
+        if (address(rules).code.length == 0) revert BadRules(); // a dead rules address would brick settle for both escrows
         tableId = keccak256(abi.encode(block.chainid, address(this), ++_counter));
         Table storage t = tables[tableId];
         t.playerA = msg.sender;
@@ -96,7 +98,10 @@ contract ZkTable is EIP712 {
         if (msg.sender == t.playerA) revert NotPlayer();
         if (msg.value != t.joinStake) revert WrongValue();
         t.playerB = msg.sender;
-        t.keyB = channelKey == address(0) ? msg.sender : channelKey;
+        address keyB = channelKey == address(0) ? msg.sender : channelKey;
+        // keyB colliding with A's identities would make _seatOf ambiguous
+        if (keyB == t.playerA || keyB == t.keyA) revert NotPlayer();
+        t.keyB = keyB;
         t.escrowB = msg.value;
         t.status = Status.Live;
         deckKeys[tableId][2] = deckKey;
@@ -112,7 +117,8 @@ contract ZkTable is EIP712 {
         uint256 amount = t.escrowA;
         t.escrowA = 0;
         emit TableCancelled(tableId);
-        t.playerA.safeTransferETH(amount);
+        // forced send so a reverting receiver cannot hold the counterparty's payout hostage
+        t.playerA.forceSafeTransferETH(amount);
     }
 
     /// Spec: top-up only at a flip boundary, reflected in the next co-signed state.
@@ -152,6 +158,9 @@ contract ZkTable is EIP712 {
         if (state.tableId != tableId) revert WrongTable();
         if (state.balanceA + state.balanceB + state.pot != t.escrowA + t.escrowB) revert ConservationViolated();
         bytes32 digest = stateDigest(state);
+        // Solady ECDSA does not enforce low-s; sigs are never used as identifiers here (replay
+        // safety = status + tableId pin + nonce checkpoint), so malleability is benign — do not
+        // use sig bytes as dedup keys off-chain.
         if (ECDSA.recoverCalldata(digest, sigA) != t.keyA) revert BadSig();
         if (ECDSA.recoverCalldata(digest, sigB) != t.keyB) revert BadSig();
     }
@@ -167,7 +176,8 @@ contract ZkTable is EIP712 {
         t.escrowA = 0;
         t.escrowB = 0;
         emit TableSettled(tableId, toA, toB);
-        if (toA > 0) t.playerA.safeTransferETH(toA);
-        if (toB > 0) t.playerB.safeTransferETH(toB);
+        // forced send so a reverting receiver cannot hold the counterparty's payout hostage
+        if (toA > 0) t.playerA.forceSafeTransferETH(toA);
+        if (toB > 0) t.playerB.forceSafeTransferETH(toB);
     }
 }
