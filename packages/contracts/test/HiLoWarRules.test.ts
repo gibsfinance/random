@@ -407,6 +407,35 @@ describe('HiLoWarRules', () => {
     })
   })
 
+  describe('gameId', () => {
+    // gap 15: the game-id discriminator is a constant 1 (HiLo War). Asserting it covers the
+    // otherwise-untested gameId() function.
+    it('returns 1', async () => {
+      const { rules } = await helpers.loadFixture(deploy)
+      expect(await rules.read.gameId()).to.equal(1)
+    })
+  })
+
+  describe('unknown move kind', () => {
+    // gap 16: applyMove's final `else` — a move whose kind is none of 0..5. The dispatcher decodes
+    // the move as abi.encode(uint8 kind, bytes payload); kind = 6 from a valid non-terminal state
+    // (fresh DEAL) falls through every branch and reverts IllegalMove.
+    it('reverts IllegalMove for an out-of-range move kind', async () => {
+      const { rules } = await helpers.loadFixture(deploy)
+      const s = freshDealState()
+      expect(s.phase).to.equal(Phase.DEAL) // non-terminal, so WrongPhase does not short-circuit
+      const unknownMove = viem.encodeAbiParameters(
+        [{ type: 'uint8' }, { type: 'bytes' }],
+        [6, '0x'],
+      )
+      await expectations.revertedWithCustomError(
+        rules,
+        rules.read.applyMove([encodeGameState(s), unknownMove]),
+        'IllegalMove',
+      )
+    })
+  })
+
   describe('isFinal', () => {
     it('is true only for phase SETTLED (7)', async () => {
       const { rules } = await helpers.loadFixture(deploy)

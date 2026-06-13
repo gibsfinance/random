@@ -218,6 +218,22 @@ describe('ZkTable', () => {
         'BadStatus',
       )
     })
+
+    // Covers the `keyB == t.keyA` operand of the seat-collision guard (the wallet-collision
+    // `keyB == t.playerA` operand is already covered by the creator-self-join test). Create with an
+    // explicit channelKey K (so keyA = K, distinct from playerA), then have B join requesting the
+    // same K: keyB resolves to K == keyA and join must reject.
+    it('rejects a join whose channelKey collides with keyA', async () => {
+      const ctx = await helpers.loadFixture(deployZk)
+      const [, , k] = ctx.signers
+      const channelKey = viem.getAddress(k!.account!.address)
+      const { tableId } = await createTable(ctx, { channelKey })
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        joinTable(ctx, tableId, { channelKey }),
+        'NotPlayer',
+      )
+    })
   })
 
   describe('cancel', () => {
@@ -321,6 +337,18 @@ describe('ZkTable', () => {
       )
     })
 
+    it('rejects a zero-value top-up', async () => {
+      const ctx = await helpers.loadFixture(deployZk)
+      const [a] = ctx.signers
+      const { tableId } = await createTable(ctx)
+      await joinTable(ctx, tableId)
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.topUp([tableId], { value: 0n, account: a!.account }),
+        'WrongValue',
+      )
+    })
+
     it('rejects top-up before the table is Live', async () => {
       const ctx = await helpers.loadFixture(deployZk)
       const [a] = ctx.signers
@@ -358,6 +386,28 @@ describe('ZkTable', () => {
       expect(table[STATUS]).to.equal(Status.Settled)
       expect(table[ESCROW_A]).to.equal(0n)
       expect(table[ESCROW_B]).to.equal(0n)
+    })
+
+    // Covers _payout's one-sided branch: a final state handing the whole escrow to one seat and
+    // zero to the other. balanceA == 0 exercises the `toA > 0` false side (no transfer to A);
+    // B receives the full escrow. (The mirror — toB == 0 — is covered in the dispute-timeout suite.)
+    it('settles a one-sided final state — full escrow to B, nothing to A', async () => {
+      const ctx = await liveTable()
+      const oneSided = mkState(ctx.tableId, {
+        balanceA: 0n,
+        balanceB: viem.parseEther('2'),
+        pot: 0n,
+      })
+      const sigA = await signState(ctx.a, ctx.domain, oneSided)
+      const sigB = await signState(ctx.b, ctx.domain, oneSided)
+      await expectations.changeEtherBalances(
+        asCtx(ctx),
+        ctx.zk.write.settle([ctx.tableId, oneSided, sigA, sigB], { account: ctx.b.account }),
+        [ctx.a, ctx.b, ctx.zk.address],
+        [0n, oneSided.balanceB, -oneSided.balanceB],
+      )
+      const table = await ctx.zk.read.tables([ctx.tableId])
+      expect(table[STATUS]).to.equal(Status.Settled)
     })
 
     it('emits TableSettled with the payouts', async () => {

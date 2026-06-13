@@ -717,6 +717,236 @@ describe('ZkTable dispute machine', () => {
     })
   })
 
+  // Symmetric counterparty paths + status/kind error guards. The suite above drives every
+  // happy path with A as the disputant; these cover B-as-disputant (the `seat==1 ? 2 : 1`
+  // false side and resolveTimeout's `disputant==2` branch), one-sided payouts, and the
+  // wrong-status / wrong-kind / wrong-caller reverts on each dispute entrypoint.
+  describe('symmetric + error guards', () => {
+    const openMoveBy = async (
+      ctx: Awaited<ReturnType<typeof liveTable>>,
+      disputant: 'a' | 'b',
+      over: Partial<ChannelState> = {},
+    ) => {
+      const state = mkState(ctx.tableId, { nonce: 3n, ...over })
+      const { sigA, sigB } = await cosign(ctx, state)
+      await ctx.zk.write.openDispute(
+        [ctx.tableId, state, sigA, sigB, GAME_STATE, DEMAND_MOVE, 0],
+        { account: ctx[disputant].account },
+      )
+      return state
+    }
+
+    // gap 1: B-as-disputant + B collects pot on timeout (seat==1?2:1 false side, disputant==2 branch)
+    it('B as disputant collects the pot on timeout (exact deltas), A keeps balanceA', async () => {
+      const ctx = await liveTable()
+      const state = await openMoveBy(ctx, 'b') // disputant = B, balances 1.2/0.3, pot 0.5
+      const table0 = await ctx.zk.read.tables([ctx.tableId])
+      expect(table0[DISPUTANT]).to.equal(2)
+      await helpers.mine(Number(CLOCK) + 1)
+      await expectations.changeEtherBalances(
+        asCtx(ctx),
+        ctx.zk.write.resolveTimeout([ctx.tableId], { account: ctx.b.account }),
+        [ctx.a, ctx.b],
+        [state.balanceA, state.balanceB + state.pot],
+      )
+      const table = await ctx.zk.read.tables([ctx.tableId])
+      expect(table[STATUS]).to.equal(Status.Settled)
+    })
+
+    // gap 2: one-sided payout — the final state hands one seat the whole escrow, the other zero.
+    // disputant A, balanceB == 0, pot == 0 ⇒ _payout's `toB > 0` false side (no transfer to B).
+    it('one-sided timeout payout pays the full escrow to A and nothing to B', async () => {
+      const ctx = await liveTable()
+      const state = await openMoveBy(ctx, 'a', {
+        balanceA: viem.parseEther('2'),
+        balanceB: 0n,
+        pot: 0n,
+      })
+      await helpers.mine(Number(CLOCK) + 1)
+      await expectations.changeEtherBalances(
+        asCtx(ctx),
+        ctx.zk.write.resolveTimeout([ctx.tableId], { account: ctx.a.account }),
+        [ctx.a, ctx.b, ctx.zk.address],
+        [state.balanceA, 0n, -state.balanceA],
+      )
+      const table = await ctx.zk.read.tables([ctx.tableId])
+      expect(table[STATUS]).to.equal(Status.Settled)
+    })
+
+    // gap 4: disputeSetup on a non-Live (freshly Created) table
+    it('disputeSetup reverts BadStatus on a non-Live table', async () => {
+      const ctx = await helpers.loadFixture(deployZk)
+      const tableId = await createTable(ctx) // Created, not yet joined
+      const [a] = ctx.signers
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.disputeSetup([tableId], { account: a!.account }),
+        'BadStatus',
+      )
+    })
+
+    // gap 5: openDispute on a non-Live (Created) table
+    it('openDispute reverts BadStatus on a non-Live table', async () => {
+      const ctx = await helpers.loadFixture(deployZk)
+      const tableId = await createTable(ctx)
+      const [a, b] = ctx.signers
+      const state = mkState(tableId)
+      const sigA = await signState(a!, ctx.domain, state)
+      const sigB = await signState(b!, ctx.domain, state)
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.openDispute(
+          [tableId, state, sigA, sigB, GAME_STATE, DEMAND_MOVE, 0],
+          { account: a!.account },
+        ),
+        'BadStatus',
+      )
+    })
+
+    // gap 6: respondWithState on a Live (non-Disputed) table
+    it('respondWithState reverts BadStatus on a non-Disputed table', async () => {
+      const ctx = await liveTable()
+      const state = mkState(ctx.tableId)
+      const { sigA, sigB } = await cosign(ctx, state)
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.respondWithState([ctx.tableId, state, sigA, sigB], { account: ctx.b.account }),
+        'BadStatus',
+      )
+    })
+
+    // gap 7: respondWithMove on a Live (non-Disputed) table
+    it('respondWithMove reverts BadStatus on a non-Disputed table', async () => {
+      const ctx = await liveTable()
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.respondWithMove([ctx.tableId, GAME_STATE, viem.toHex('move')], { account: ctx.b.account }),
+        'BadStatus',
+      )
+    })
+
+    // gap 8: respondWithShare on a Live (non-Disputed) table
+    it('respondWithShare reverts BadStatus on a non-Disputed table', async () => {
+      const ctx = await liveTable()
+      const deck: bigint[] = new Array(208).fill(1n)
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.respondWithShare(
+          [ctx.tableId, deck as unknown as bigint[], [0n, 0n], ZERO_PROOF],
+          { account: ctx.b.account },
+        ),
+        'BadStatus',
+      )
+    })
+
+    // gap 9: respondWithShare when the open demand is a MOVE (wrong kind) → NotDemanded
+    it('respondWithShare reverts NotDemanded when the open demand is a MOVE', async () => {
+      const ctx = await liveTable()
+      await openMoveBy(ctx, 'a')
+      const deck: bigint[] = new Array(208).fill(1n)
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.respondWithShare(
+          [ctx.tableId, deck as unknown as bigint[], [0n, 0n], ZERO_PROOF],
+          { account: ctx.b.account },
+        ),
+        'NotDemanded',
+      )
+    })
+
+    // gap 10: respondWithShare called BY the disputant → NotYourDispute
+    it('respondWithShare reverts NotYourDispute when the disputant calls', async () => {
+      const ctx = await liveTable()
+      const SLOT = 7
+      const deck: bigint[] = new Array(208).fill(1n)
+      deck[4 * SLOT] = 11n
+      deck[4 * SLOT + 1] = 22n
+      const commitment = viem.keccak256(viem.encodePacked(deck.map(() => 'uint256'), deck))
+      const state = mkState(ctx.tableId, { nonce: 3n, deckCommitment: commitment })
+      const { sigA, sigB } = await cosign(ctx, state)
+      await ctx.zk.write.openDispute(
+        [ctx.tableId, state, sigA, sigB, GAME_STATE, DEMAND_SHARE, SLOT],
+        { account: ctx.a.account }, // disputant = A
+      )
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.respondWithShare(
+          [ctx.tableId, deck as unknown as bigint[], [33n, 44n], ZERO_PROOF],
+          { account: ctx.a.account }, // A is the disputant — cannot answer their own demand
+        ),
+        'NotYourDispute',
+      )
+    })
+
+    // gap 11: respondWithShare with demandSlot > 51 → BadDeck on the slot check
+    it('respondWithShare reverts BadDeck when demandSlot exceeds 51', async () => {
+      const ctx = await liveTable()
+      const SLOT = 52
+      // A 208-word deck with a matching commitment so the length + commitment checks pass and the
+      // slot > 51 guard is the one that fires. deck[4*52..] would be out of range, but the slot
+      // check happens before any deck[4*slot] access.
+      const deck: bigint[] = new Array(208).fill(1n)
+      const commitment = viem.keccak256(viem.encodePacked(deck.map(() => 'uint256'), deck))
+      const state = mkState(ctx.tableId, { nonce: 3n, deckCommitment: commitment })
+      const { sigA, sigB } = await cosign(ctx, state)
+      await ctx.zk.write.openDispute(
+        [ctx.tableId, state, sigA, sigB, GAME_STATE, DEMAND_SHARE, SLOT],
+        { account: ctx.a.account },
+      )
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.respondWithShare(
+          [ctx.tableId, deck as unknown as bigint[], [33n, 44n], ZERO_PROOF],
+          { account: ctx.b.account },
+        ),
+        'BadDeck',
+      )
+    })
+
+    // gap 12: respondWithMove with a gameState that doesn't hash to disputeState.gameStateHash
+    it('respondWithMove reverts BadGameState when the gameState mismatches the contested hash', async () => {
+      const ctx = await liveTable()
+      await openMoveBy(ctx, 'a') // contested gameStateHash = keccak256(GAME_STATE)
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.respondWithMove(
+          [ctx.tableId, viem.toHex('a-different-game-state'), viem.toHex('move')],
+          { account: ctx.b.account },
+        ),
+        'BadGameState',
+      )
+    })
+
+    // gap 13: settle with a stale nonce AFTER a checkpoint exists (hasCheckpoint && nonce <= checkpointNonce)
+    it('settle reverts StaleNonce once a checkpoint exists and the final nonce is not newer', async () => {
+      const ctx = await liveTable()
+      // Establish checkpointNonce = 5 via openDispute(5) then respondWithState(6) back to Live.
+      const s5 = mkState(ctx.tableId, { nonce: 5n })
+      const c5 = await cosign(ctx, s5)
+      await ctx.zk.write.openDispute(
+        [ctx.tableId, s5, c5.sigA, c5.sigB, GAME_STATE, DEMAND_MOVE, 0],
+        { account: ctx.a.account },
+      )
+      const s6 = mkState(ctx.tableId, { nonce: 6n })
+      const c6 = await cosign(ctx, s6)
+      await ctx.zk.write.respondWithState([ctx.tableId, s6, c6.sigA, c6.sigB], { account: ctx.b.account })
+      // Now checkpointNonce == 6. A final co-signed state at nonce 5 (<= checkpoint) is stale.
+      const final = mkState(ctx.tableId, {
+        nonce: 5n,
+        balanceA: viem.parseEther('2'),
+        balanceB: 0n,
+        pot: 0n,
+        phase: 1,
+      })
+      const cf = await cosign(ctx, final)
+      await expectations.revertedWithCustomError(
+        ctx.zk,
+        ctx.zk.write.settle([ctx.tableId, final, cf.sigA, cf.sigB], { account: ctx.a.account }),
+        'StaleNonce',
+      )
+    })
+  })
+
   describe('conservation across top-up', () => {
     it('reverts ConservationViolated for a pre-top-up state, accepts a post-top-up one', async () => {
       const ctx = await liveTable()
