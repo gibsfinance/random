@@ -143,6 +143,31 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.20)
 
+  examples/games/msgboard-settle-relayer:
+    dependencies:
+      '@gibs/msgboard-games':
+        specifier: workspace:*
+        version: link:../msgboard-games
+      '@gibs/msgboard-settle':
+        specifier: workspace:*
+        version: link:../msgboard-settle
+      '@msgboard/relayer':
+        specifier: ^0.0.31
+        version: 0.0.31(pg@8.21.0)(typescript@5.8.3)
+      viem:
+        specifier: ^2.25.0
+        version: 2.52.2(typescript@5.8.3)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.20
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.20)
+
   examples/games/raffle:
     dependencies:
       '@gibs/games-core':
@@ -1542,6 +1567,22 @@ packages:
 
   '@msgboard/core@0.0.31':
     resolution: {integrity: sha512-bNk7YdpLKx8Nw99XedchEkSr0ftHhnTF9BeF1h259EnLLJjWh9Vfva45coqIY5SQ8Qy7gyusSqzo/IzOVHLlzw==}
+
+  '@msgboard/history@0.0.31':
+    resolution: {integrity: sha512-COBg4OZ78bMyCsOdkekPOhar+oZnYLuIOw/KV7jHRsCBZWkdfRiSqkbbaSpUbNsXTxPhabq+FO2qW0wCXuILqA==}
+    peerDependencies:
+      pg: ^8.14.1
+    peerDependenciesMeta:
+      pg:
+        optional: true
+
+  '@msgboard/relayer@0.0.31':
+    resolution: {integrity: sha512-8au2LdTGrqKoSxDiaf8HEVz20sNosjXlly8f0xBme8BLjgi61tSGTu1pJ76QPAc0cbke9rHO0yLwynMNpQXydA==}
+    peerDependencies:
+      pg: ^8.14.1
+    peerDependenciesMeta:
+      pg:
+        optional: true
 
   '@msgboard/sdk@0.0.31':
     resolution: {integrity: sha512-yJj/5RTo0fIVrJtRKzuY2ifFOVSCBW7qB4uyde/i0Dav9kw5G8R45LsIrPw7urHg+ru44a6AtI/UWcXLTaGbfg==}
@@ -6887,6 +6928,33 @@ snapshots:
       viem: 2.52.2(typescript@5.8.3)
     transitivePeerDependencies:
       - bufferutil
+      - typescript
+      - utf-8-validate
+      - zod
+
+  '@msgboard/history@0.0.31(pg@8.21.0)(typescript@5.8.3)':
+    dependencies:
+      '@msgboard/sdk': 0.0.31(typescript@5.8.3)
+      viem: 2.52.2(typescript@5.8.3)
+    optionalDependencies:
+      pg: 8.21.0
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - typescript
+      - utf-8-validate
+      - zod
+
+  '@msgboard/relayer@0.0.31(pg@8.21.0)(typescript@5.8.3)':
+    dependencies:
+      '@msgboard/history': 0.0.31(pg@8.21.0)(typescript@5.8.3)
+      '@msgboard/sdk': 0.0.31(typescript@5.8.3)
+      viem: 2.52.2(typescript@5.8.3)
+    optionalDependencies:
+      pg: 8.21.0
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
       - typescript
       - utf-8-validate
       - zod
