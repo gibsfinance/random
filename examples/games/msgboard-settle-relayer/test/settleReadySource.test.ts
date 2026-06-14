@@ -43,8 +43,8 @@ describe('settleReadySource', () => {
     const source = settleReadySource({ provider: async () => [b, a] }) // reversed
     const jobs = await source.poll({} as never)
     expect(jobs).toHaveLength(2)
-    expect(jobs[0].session).toBe(b)
-    expect(jobs[1].session).toBe(a)
+    expect(jobs[0]!.session).toBe(b)
+    expect(jobs[1]!.session).toBe(a)
   })
 
   it('drops a session whose transcript has no settle-ready rounds (OPEN only)', async () => {

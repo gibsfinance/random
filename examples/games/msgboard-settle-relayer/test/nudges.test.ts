@@ -23,8 +23,8 @@ describe('detectNudges', () => {
       config: { signStaleMs: 5_000, minGasWei: 0n, windowSize: 4, rbfStaleMs: 5_000 },
     })
     expect(nudges).toHaveLength(1)
-    expect(nudges[0].kind).toBe('sign-next-state')
-    expect(nudges[0].target).toBe(player)
+    expect(nudges[0]!.kind).toBe('sign-next-state')
+    expect(nudges[0]!.target).toBe(player)
   })
 
   it('does NOT fire sign-next-state before the stall threshold', () => {

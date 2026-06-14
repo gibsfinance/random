@@ -4,7 +4,7 @@ import { type Hex } from 'viem'
 import { HouseSession, dice, makeDomain } from '@gibs/msgboard-games'
 import { OptimisticSettlement } from '@gibs/msgboard-settle'
 import { createPendingTxTracker } from '../src/repricing-local'
-import { makeSettleAction } from '../src/settleAction'
+import { makeSettleAction, type SettleSubmitRequest } from '../src/settleAction'
 import type { SettleJob, SettleReadySession } from '../src/types'
 
 const player = privateKeyToAccount(`0x${'11'.repeat(32)}`)
@@ -34,7 +34,7 @@ async function job(tableId: Hex, rounds: number): Promise<SettleJob> {
 
 describe('settleAction', () => {
   it('builds the correct settle calldata and submits it (simulate->write)', async () => {
-    const submitTx = vi.fn(async () => ({ hash: '0xdead' as Hex }))
+    const submitTx = vi.fn(async (_req: SettleSubmitRequest) => ({ hash: '0xdead' as Hex }))
     const action = makeSettleAction({
       tracker: createPendingTxTracker({ windowSize: 4, baseNonce: 0 }),
       submitTx,
@@ -45,7 +45,7 @@ describe('settleAction', () => {
     const result = await action.execute(j, {} as never)
     expect(result.ok).toBe(true)
     expect(submitTx).toHaveBeenCalledTimes(1)
-    const req = submitTx.mock.calls[0][0]
+    const req = submitTx.mock.calls[0]![0]
     // the TxRequest came from OptimisticSettlement.buildSettle
     expect(req.tx.address).toBe(bankroll)
     expect(req.tx.functionName).toBe('settle')
