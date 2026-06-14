@@ -3,5 +3,11 @@ packages:
   - 'packages/*'
   # all packages in subdirs of components/
   - 'components/**'
+  # the games platform examples
+  - 'examples/**'
   # exclude packages that are inside test directories
   - '!**/test/**'
+allowBuilds:
+  esbuild: true
+  keccak: true
+  secp256k1: true

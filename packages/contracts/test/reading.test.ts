@@ -41,7 +41,7 @@ describe('slots', () => {
         duration: 12n,
         durationIsTimestamp: false,
         start: start.blockNumber,
-      })
+      }),
     )
   })
   it('should read slot regarding the latest randomness request', async () => {

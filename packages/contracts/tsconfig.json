@@ -1,4 +1,12 @@
 {
+  "ts-node": {
+    "moduleTypes": {
+      "../../examples/games/zk-core/**": "cjs",
+      "../../examples/games/hilo-war/**": "cjs",
+      "../../examples/games/msgboard-games/**": "cjs",
+      "../../examples/games/msgboard-settle/**": "cjs"
+    }
+  },
   "compilerOptions": {
     "target": "es2020",
     "module": "commonjs",

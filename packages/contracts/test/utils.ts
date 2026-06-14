@@ -39,7 +39,7 @@ export const deploy = async () => {
   const taxERC20 = await hre.viem.getContractAt(contractName.ERC20Solady, _taxERC20.address)
   const multicallerWithSender = await deployMulticaller(
     contractName.MulticallerWithSender,
-    '0x00000000002Fd5Aeb385D324B580FCa7c83823A0'
+    '0x00000000002Fd5Aeb385D324B580FCa7c83823A0',
   )
   await hre.network.provider.send('hardhat_setStorageAt', [
     multicallerWithSender.address,
@@ -51,6 +51,9 @@ export const deploy = async () => {
   //   contractName.MulticallerWithSigner,
   //   '0x000000000000D9ECebf3C23529de49815Dac1c4c',
   // )
+  const coinFlip = await hre.viem.deployContract(contractName.CoinFlip, [random.address])
+  const raffle = await hre.viem.deployContract(contractName.Raffle, [random.address])
+  const gameBaseHarness = await hre.viem.deployContract(contractName.GameBaseHarness, [random.address])
   const deployedContracts = {
     random,
     reader,
@@ -63,6 +66,9 @@ export const deploy = async () => {
     consumer,
     consumerIncomplete,
     consumerEmitter,
+    coinFlip,
+    raffle,
+    gameBaseHarness,
   }
   for (const [name, contract] of Object.entries(deployedContracts)) {
     console.log('%s:%o', contract.address, name)
@@ -78,10 +84,10 @@ export const deploy = async () => {
         signers.map((signer) =>
           erc20.write.approve([random.address, oneThousandEther], {
             account: signer.account!,
-          })
-        )
+          }),
+        ),
       )
-    })
+    }),
   )
   const required = 5n
   const defaultExpiryOffsetInput = 12n << 1n
@@ -107,7 +113,7 @@ export const deployWithRandomness = async (section = utils.defaultSection) => {
       .map((generated) => generated.secretBatches)
       .flattenDeep()
       .map(({ preimage, secret }) => [preimage, secret] as const)
-      .value()
+      .value(),
   )
   return {
     ...ctx,
@@ -121,7 +127,7 @@ export const deployWithRandomness = async (section = utils.defaultSection) => {
 
 export const deployWithRandomnessAndStart = async (
   section = utils.defaultSection,
-  prov: string | viem.Hex = viem.zeroAddress
+  prov: string | viem.Hex = viem.zeroAddress,
 ) => {
   const ctx = await helpers.loadFixture(async function deployWithRandomnessOneOff() {
     return await deployWithRandomness(section)
@@ -150,14 +156,14 @@ export const deployWithRandomnessAndStart = async (
     [ctx.required, { ...section, provider: consumerAddress }, selections, true],
     {
       value: utils.sum(selections),
-    }
+    },
   )
   const receipt = await confirmTx(ctx, heatTx)
   const starts = await ctx.random.getEvents.Start(
     {},
     {
       blockHash: receipt.blockHash,
-    }
+    },
   )
   return {
     ...ctx,
@@ -233,7 +239,7 @@ export type Context = Awaited<ReturnType<typeof deploy>>
 
 export const confirmTx = async (
   ctx: Context,
-  hash: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType
+  hash: Promise<viem.WriteContractReturnType> | viem.WriteContractReturnType,
 ) => {
   const provider = await ctx.hre.viem.getPublicClient()
   const receipt = await provider.waitForTransactionReceipt({
@@ -269,10 +275,10 @@ export const writePreimages = async (ctx: Context, section = utils.defaultSectio
           rand.write.ink([preimageLocations[0], viem.concatHex(preimages)], {
             account: signer.account,
             value: _.isNil(value) ? utils.sum(preimageLocations) : value,
-          })
+          }),
         )
         return preimageLocations
-      })
+      }),
     )
     return {
       preimageLocations,
@@ -298,7 +304,7 @@ export const readPreimages = async (ctx: Context, options = utils.defaultSection
 export const selectPreimages = async (
   ctx: Context,
   count = 5,
-  offsets: utils.PreimageInfoOptions[] = [utils.defaultSection]
+  offsets: utils.PreimageInfoOptions[] = [utils.defaultSection],
 ) => {
   const producers = await getRandomnessProviders(ctx.hre)
   const preimageGroups = await utils.limiters.signers.map(producers, async (producer) => {
@@ -324,7 +330,7 @@ export const selectPreimages = async (
             } as utils.PreimageInfo & {
               signer: viem.WalletClient
               preimage: viem.Hex
-            })
+            }),
         )
       })
       .flatten()
@@ -336,3 +342,45 @@ export const selectPreimages = async (
     selections: _flattened.sampleSize(count).value(),
   }
 }
+
+/**
+ * Allowlist `count` of the always-on randomness providers on a GameBase-derived contract and ink
+ * one price-0 preimage per provider under that provider's own address. Returns, per validator, the
+ * address, its heat location (offset 0, index 0), and its secret — the shape a declared subset and
+ * its heat selection take.
+ */
+export const setUpValidators = async (
+  ctx: Context,
+  // a GameBase-derived contract instance; typed loosely so any game's write surface is callable
+  game: any,
+  count = 3,
+) => {
+  const rand = await ctx.hre.viem.getContractAt(contractName.Random, ctx.random.address)
+  const providers = (await getRandomnessProviders(ctx.hre)).slice(0, count)
+  const validators = await Promise.all(
+    providers.map(async (provider) => {
+      await confirmTx(ctx, game.write.addValidator([provider.account!.address]))
+      const section = {
+        ...utils.defaultSection,
+        provider: provider.account!.address,
+        price: 0n,
+        offset: 0n,
+        index: 0n,
+      }
+      const secret = viem.keccak256(viem.toHex(`gamebase-validator-${provider.account!.address}`))
+      const preimage = viem.keccak256(secret)
+      await confirmTx(
+        ctx,
+        rand.write.ink([section, preimage], { account: provider.account!, value: 0n }),
+      )
+      return { address: provider.account!.address, location: { ...section, index: 0n }, secret, preimage }
+    }),
+  )
+  return {
+    subset: validators.map((v) => v.address),
+    locations: validators.map((v) => v.location),
+    secrets: validators.map((v) => v.secret),
+    validators,
+  }
+}
+
