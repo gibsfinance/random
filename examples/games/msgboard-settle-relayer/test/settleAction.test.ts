@@ -3,7 +3,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { type Hex } from 'viem'
 import { HouseSession, dice, makeDomain } from '@gibs/msgboard-games'
 import { OptimisticSettlement } from '@gibs/msgboard-settle'
-import { createPendingTxTracker } from '../src/repricing-local'
+import { createPendingTxTracker } from '@msgboard/relayer'
 import { makeSettleAction, type SettleSubmitRequest } from '../src/settleAction'
 import type { SettleJob, SettleReadySession } from '../src/types'
 

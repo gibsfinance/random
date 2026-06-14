@@ -1,8 +1,12 @@
 import type { Hex } from 'viem'
 import type { TxRequest } from '@gibs/msgboard-settle'
-import type { RelayerAction, RelayerContext } from '@msgboard/relayer'
-// TODO(plan3): switch this import to '@msgboard/relayer' once the engine republishes (> 0.0.31).
-import { repricingAction, type PendingTxTracker, type TxFees } from './repricing-local'
+import {
+  type RelayerAction,
+  type RelayerContext,
+  repricingAction,
+  type PendingTxTracker,
+  type TxFees,
+} from '@msgboard/relayer'
 import type { SettleJob } from './types'
 
 /** What a submitter is handed: the viem-ready TxRequest plus the nonce/fees the engine chose. */

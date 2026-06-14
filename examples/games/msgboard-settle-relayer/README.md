@@ -62,18 +62,16 @@ By the split-of-concern rule of spec §9:
 
 ## Dependency-path decision (Plan 3 Task 1)
 
-This package depends on the **published `@msgboard/relayer ^0.0.31`** — the same mechanism by
-which the other games packages already consume published `@msgboard/sdk ^0.0.31`.
+This package depends on the **published `@msgboard/relayer ^0.0.32`** — the same mechanism by
+which the other games packages already consume published `@msgboard/sdk`.
 
-`Relayer`, `RelayerAction`, `RelayerContext`, `RelayerMode`, and `RelayerNode` are all in the
-published `0.0.31` and imported directly from `@msgboard/relayer`. The new repricing primitive
-(`repricingAction` / `createPendingTxTracker` / `PendingTxTracker` / `TxFees`) was added to the
-engine in this same plan (Tasks 2–3) but is **not yet published** in `0.0.31`. Per the plan's
-documented fallback, those four symbols are provided by a local shim — `src/repricing-local.ts`,
-a byte-for-byte mirror of the engine primitive — flagged `// TODO(plan3): delete once
-@msgboard/relayer republishes`. When the engine republishes (> 0.0.31), delete that file and
-switch the imports in `settleAction.ts` / `worker.ts` back to `@msgboard/relayer`; the public
-API (`makeSettlementRelayer`) is identical either way.
+`Relayer`, `RelayerAction`, `RelayerContext`, `RelayerMode`, and `RelayerNode`, plus the
+repricing primitive (`repricingAction` / `createPendingTxTracker` / `PendingTxTracker` /
+`TxFees`), are all exported by the published `0.0.32` and imported directly from
+`@msgboard/relayer`. The repricing primitive was added to the engine in this same plan
+(Tasks 2–3); it shipped in the `0.0.32` release, so the temporary local shim that mirrored it
+during development (`src/repricing-local.ts`, used while the engine sat at `0.0.31`) has been
+removed and `settleAction.ts` / `worker.ts` import it from `@msgboard/relayer` directly.
 
 ## Run / test
 

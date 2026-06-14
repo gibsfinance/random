@@ -13,7 +13,7 @@
   "dependencies": {
     "@gibs/msgboard-games": "workspace:*",
     "@gibs/msgboard-settle": "workspace:*",
-    "@msgboard/relayer": "^0.0.31",
+    "@msgboard/relayer": "^0.0.32",
     "viem": "^2.25.0"
   },
   "devDependencies": {

@@ -152,8 +152,8 @@ importers:
         specifier: workspace:*
         version: link:../msgboard-settle
       '@msgboard/relayer':
-        specifier: ^0.0.31
-        version: 0.0.31(pg@8.21.0)(typescript@5.8.3)
+        specifier: ^0.0.32
+        version: 0.0.32(pg@8.21.0)(typescript@5.8.3)
       viem:
         specifier: ^2.25.0
         version: 2.52.2(typescript@5.8.3)
@@ -1568,16 +1568,22 @@ packages:
   '@msgboard/core@0.0.31':
     resolution: {integrity: sha512-bNk7YdpLKx8Nw99XedchEkSr0ftHhnTF9BeF1h259EnLLJjWh9Vfva45coqIY5SQ8Qy7gyusSqzo/IzOVHLlzw==}
 
-  '@msgboard/history@0.0.31':
-    resolution: {integrity: sha512-COBg4OZ78bMyCsOdkekPOhar+oZnYLuIOw/KV7jHRsCBZWkdfRiSqkbbaSpUbNsXTxPhabq+FO2qW0wCXuILqA==}
+  '@msgboard/core@0.0.32':
+    resolution: {integrity: sha512-9NibaUoZMGJPHHY/3qT/RphD5MVAHkOP2CHCBaWi6XRJ46x674DJKRrYWOMriYGEC5oBmD/EJsI0WRtSHY5K2A==}
+
+  '@msgboard/cosign@0.0.32':
+    resolution: {integrity: sha512-c48TgXB0M6ZwE8KSYJ4W1gZVkzZJ7iorov6+UN1gUSr2ybaV4trshPZjPpNPgaQSGpOCzyc9ZouS5wADRhodNg==}
+
+  '@msgboard/history@0.0.32':
+    resolution: {integrity: sha512-qwhDZMMznjWvbdR3WU9nmZtzKfvKVGcokvKV3XPk6SGxQ8O0vyIpI4iwGDoYkQJ2LCRF9sqfYzv1oP41PHvqeQ==}
     peerDependencies:
       pg: ^8.14.1
     peerDependenciesMeta:
       pg:
         optional: true
 
-  '@msgboard/relayer@0.0.31':
-    resolution: {integrity: sha512-8au2LdTGrqKoSxDiaf8HEVz20sNosjXlly8f0xBme8BLjgi61tSGTu1pJ76QPAc0cbke9rHO0yLwynMNpQXydA==}
+  '@msgboard/relayer@0.0.32':
+    resolution: {integrity: sha512-IxVj8nFPuSlTJCAywHT9i78yM9abAYn0ihAliwl30/xIXo/PKgYlp6c5EEf0hg0TXdLp4QTLytbKf+58wtJbSg==}
     peerDependencies:
       pg: ^8.14.1
     peerDependenciesMeta:
@@ -1586,6 +1592,9 @@ packages:
 
   '@msgboard/sdk@0.0.31':
     resolution: {integrity: sha512-yJj/5RTo0fIVrJtRKzuY2ifFOVSCBW7qB4uyde/i0Dav9kw5G8R45LsIrPw7urHg+ru44a6AtI/UWcXLTaGbfg==}
+
+  '@msgboard/sdk@0.0.32':
+    resolution: {integrity: sha512-wG6aDGYxIRe5ijg862Sy9ThFPlV/ludGCumW/xRE3Keu0YZt0PhKPGByPQhIHFwutYgLiDNxQt+mATCHUWdA2w==}
 
   '@noble/ciphers@1.3.0':
     resolution: {integrity: sha512-2I0gnIVPtfnMw9ee9h1dJG7tp81+8Ob3OJb3Mv37rx5L40/b0i7djjCVvGOVqc9AEIQyvyu1i6ypKdFw8R8gQw==}
@@ -6932,9 +6941,32 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@msgboard/history@0.0.31(pg@8.21.0)(typescript@5.8.3)':
+  '@msgboard/core@0.0.32(typescript@5.8.3)':
     dependencies:
-      '@msgboard/sdk': 0.0.31(typescript@5.8.3)
+      bn.js: 5.2.3
+      elliptic: 6.6.1
+      viem: 2.52.2(typescript@5.8.3)
+    transitivePeerDependencies:
+      - bufferutil
+      - typescript
+      - utf-8-validate
+      - zod
+
+  '@msgboard/cosign@0.0.32(typescript@5.8.3)':
+    dependencies:
+      '@msgboard/sdk': 0.0.32(typescript@5.8.3)
+      viem: 2.52.2(typescript@5.8.3)
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - typescript
+      - utf-8-validate
+      - zod
+
+  '@msgboard/history@0.0.32(pg@8.21.0)(typescript@5.8.3)':
+    dependencies:
+      '@msgboard/cosign': 0.0.32(typescript@5.8.3)
+      '@msgboard/sdk': 0.0.32(typescript@5.8.3)
       viem: 2.52.2(typescript@5.8.3)
     optionalDependencies:
       pg: 8.21.0
@@ -6945,10 +6977,10 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@msgboard/relayer@0.0.31(pg@8.21.0)(typescript@5.8.3)':
+  '@msgboard/relayer@0.0.32(pg@8.21.0)(typescript@5.8.3)':
     dependencies:
-      '@msgboard/history': 0.0.31(pg@8.21.0)(typescript@5.8.3)
-      '@msgboard/sdk': 0.0.31(typescript@5.8.3)
+      '@msgboard/history': 0.0.32(pg@8.21.0)(typescript@5.8.3)
+      '@msgboard/sdk': 0.0.32(typescript@5.8.3)
       viem: 2.52.2(typescript@5.8.3)
     optionalDependencies:
       pg: 8.21.0
@@ -6962,6 +6994,20 @@ snapshots:
   '@msgboard/sdk@0.0.31(typescript@5.8.3)':
     dependencies:
       '@msgboard/core': 0.0.31(typescript@5.8.3)
+      bn.js: 5.2.3
+      debug: 4.4.3(supports-color@8.1.1)
+      elliptic: 6.6.1
+      viem: 2.52.2(typescript@5.8.3)
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - typescript
+      - utf-8-validate
+      - zod
+
+  '@msgboard/sdk@0.0.32(typescript@5.8.3)':
+    dependencies:
+      '@msgboard/core': 0.0.32(typescript@5.8.3)
       bn.js: 5.2.3
       debug: 4.4.3(supports-color@8.1.1)
       elliptic: 6.6.1

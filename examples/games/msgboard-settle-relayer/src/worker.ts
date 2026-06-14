@@ -5,9 +5,14 @@ import {
   type Hex,
   type WalletClient,
 } from 'viem'
-import { Relayer, type RelayerMode, type RelayerNode } from '@msgboard/relayer'
-// TODO(plan3): switch these to '@msgboard/relayer' once the engine republishes (> 0.0.31).
-import { createPendingTxTracker, type PendingTxTracker, type TxFees } from './repricing-local'
+import {
+  Relayer,
+  type RelayerMode,
+  type RelayerNode,
+  createPendingTxTracker,
+  type PendingTxTracker,
+  type TxFees,
+} from '@msgboard/relayer'
 import { settleReadySource } from './settleReadySource'
 import { makeSettleAction, type SettleSubmitRequest } from './settleAction'
 import type { SettleJob, SettleReadySession, WorkerConfig } from './types'
