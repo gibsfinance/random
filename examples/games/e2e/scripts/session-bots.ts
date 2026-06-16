@@ -167,19 +167,24 @@ const fmt = (wei: bigint) => viem.formatEther(wei)
 const BOARD_RPC =
   env.BOARD_RPC || (env.VALVE_RPC_KEY ? `https://one.valve.city/rpc/${env.VALVE_RPC_KEY}/evm/${CHAIN}` : '')
 const board = BOARD_RPC ? createBoardClient(BOARD_RPC) : null
-// One PoW grind at a time, and DROP notices that arrive while grinding (PoW is ~30s+ and the
-// games turn over faster than that — an unbounded queue would grow forever). The board is a
-// live signal, not a log, so a sampled stream of open/summary notices is the right shape.
+// All lifecycle notices go to ONE shared, discoverable category — mbg:lobby:<chain> — so a viewer
+// (the web app, the archive, anyone) can poll a single category to watch every table on the chain.
+// The per-table id rides in the body. Posting requires proof-of-work (~30s+/msg), so we post a
+// compact notice only when a table OPENS or CLOSES — never per round — and a drop-if-busy guard keeps
+// just one grind in flight, dropping notices that arrive mid-grind (the games turn over faster than
+// PoW, so an unbounded queue would grow forever; the board is a live signal, not a log).
+const LOBBY_ID = viem.keccak256(viem.stringToHex(`mbg:lobby:${CHAIN}`))
+const lobby = board ? new MsgBoardTransport(board, LOBBY_ID) : null
 let posting = false
 let inFlight: Promise<unknown> = Promise.resolve()
 const broadcast = (tableId: viem.Hex, msg: Record<string, unknown>): void => {
-  if (!board || posting) return
+  if (!lobby || posting) return
   posting = true
   inFlight = (async () => {
     const started = Date.now()
     try {
       console.log(`[board] grinding ${msg.kind}/${msg.game} PoW…`)
-      await new MsgBoardTransport(board, tableId).send({ v: 1, tableId, at: started, ...msg })
+      await lobby.send({ v: 1, tableId, at: started, ...msg })
       console.log(`[board] posted ${msg.kind}/${msg.game} in ${Date.now() - started}ms`)
     } catch (e) {
       console.log(`[board] post failed (${msg.kind}/${msg.game}) after ${Date.now() - started}ms: ${(e as Error).message?.split('\n')[0]}`)
@@ -188,7 +193,7 @@ const broadcast = (tableId: viem.Hex, msg: Record<string, unknown>): void => {
     }
   })()
 }
-if (board) console.log(`[board] broadcasting lifecycle notices to ${BOARD_RPC.replace(/\/rpc\/[^/]+\//, '/rpc/<key>/')}`)
+if (lobby) console.log(`[board] live feed → category ${lobby.category} (mbg:lobby:${CHAIN}) via ${BOARD_RPC.replace(/\/rpc\/[^/]+\//, '/rpc/<key>/')}`)
 
 // ---------------------------------------------------------------------------------------------
 // single-draw games (dice / limbo / plinko / keno): one HouseSession.playRound per turn.

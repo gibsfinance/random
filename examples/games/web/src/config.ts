@@ -21,6 +21,9 @@ export type GameDeployment = {
   explorer?: string
   /** MsgBoard archive (GraphiQL) base URL — the venue's coordination-notice trail. */
   archive?: string
+  /** RPC whose node runs the `msgboard_` module (valve.city) — used to read the live session-game
+   *  feed (and, later, to broadcast play). Reads need no proof-of-work; the demo key is fine. */
+  boardRpc?: string
 }
 
 /**
@@ -56,6 +59,7 @@ export const deployments: GameDeployment[] = [
     poolSize: 64,
     explorer: 'https://scan.v4.testnet.pulsechain.com/#',
     archive: 'https://archive.msgboard.xyz',
+    boardRpc: 'https://one.valve.city/rpc/vk_demo/evm/943',
   },
   // Deployed by the 2026-06-11 mainnet bring-up (gate run + ink-pools; e2e/scripts/369-deployment.json).
   // deployBlock = the web pools' ink block so the site and the cast watcher count heats
@@ -80,5 +84,6 @@ export const deployments: GameDeployment[] = [
     poolSize: 64,
     explorer: 'https://scan.pulsechain.com/#',
     archive: 'https://archive.msgboard.xyz',
+    boardRpc: 'https://one.valve.city/rpc/vk_demo/evm/369',
   },
 ]
