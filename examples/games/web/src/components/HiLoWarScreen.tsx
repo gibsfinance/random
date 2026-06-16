@@ -71,7 +71,7 @@ export const HiLoWarScreen = ({
   const [bet, setBet] = useState<Bet>('HOLD')
   const [onRaise, setOnRaise] = useState<'CALL' | 'FOLD'>('CALL')
 
-  const session = useWarSession({ chainId: deployment.chainId })
+  const session = useWarSession({ chainId: deployment.chainId, boardRpc: deployment.boardRpc })
 
   const busy = session.status === 'opening' || session.status === 'playing' || session.status === 'settling'
   const canOpen = walletClient !== undefined && trustAcknowledged && !busy

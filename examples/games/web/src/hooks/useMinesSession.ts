@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import * as viem from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
+import { useBoardBroadcaster } from './useBoardBroadcaster'
 import {
   start as minesStart,
   reveal as minesReveal,
@@ -171,7 +172,12 @@ const claimFor = (state: MinesState): MinesClaim => ({
  * Drives one stateful mines game. The injected `walletClient` is the player (used only to anchor
  * the player address for the move log / receipt today; per-move co-signing is the production add).
  */
-export const useMinesSession = (_walletClient?: viem.WalletClient): MinesSessionApi => {
+export const useMinesSession = (
+  _walletClient?: viem.WalletClient,
+  boardRpc?: string,
+  chainId = 0,
+): MinesSessionApi => {
+  const broadcastLobby = useBoardBroadcaster(boardRpc, chainId)
   const [status, setStatus] = useState<MinesStatus>('idle')
   const [error, setError] = useState<string>()
   const [state, setState] = useState<MinesState>()
@@ -193,6 +199,8 @@ export const useMinesSession = (_walletClient?: viem.WalletClient): MinesSession
       const board = randomBoard(config)
       const commit = minesHashBoard(board)
       const initial = minesStart(config, commit)
+      // announce on the shared live feed (PoW in a Web Worker — never the UI thread).
+      broadcastLobby({ kind: 'open', game: 'mines', tableId: commit, commit, mines: config.mines, tiles: config.tiles })
       boardRef.current = board
       houseRef.current = privateKeyToAccount(generatePrivateKey()) as unknown as Signer
       seqRef.current = 0

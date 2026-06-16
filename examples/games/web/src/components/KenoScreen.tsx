@@ -87,7 +87,13 @@ export const KenoScreen = ({
   const [amount, setAmount] = useState('0.1')
   const [picks, setPicks] = useState<number[]>([])
 
-  const session = useSession<KenoParams>({ game: keno, walletClient, chainId: deployment.chainId })
+  const session = useSession<KenoParams>({
+    game: keno,
+    walletClient,
+    chainId: deployment.chainId,
+    boardRpc: deployment.boardRpc,
+    gameLabel: 'keno',
+  })
 
   const stake = parseStake(amount)
   const picksOk = picks.length >= 1 && picks.length <= MAX_PICKS

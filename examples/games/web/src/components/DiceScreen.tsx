@@ -64,7 +64,13 @@ export const DiceScreen = ({
   const [amount, setAmount] = useState('0.1')
   const [targetPct, setTargetPct] = useState('50')
 
-  const session = useSession<DiceParams>({ game: dice, walletClient, chainId: deployment.chainId })
+  const session = useSession<DiceParams>({
+    game: dice,
+    walletClient,
+    chainId: deployment.chainId,
+    boardRpc: deployment.boardRpc,
+    gameLabel: 'dice',
+  })
 
   const stake = parseStake(amount)
   const pct = Number(targetPct)

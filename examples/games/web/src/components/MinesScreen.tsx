@@ -69,7 +69,7 @@ const GameReceipt = ({ record }: { record: MinesGameRecord }) => {
  * the running multiplier or busts on a mine. Component signature matches DiceScreen's exactly.
  */
 export const MinesScreen = ({
-  deployment: _deployment,
+  deployment,
   walletClient,
   trustAcknowledged,
   myAddress,
@@ -83,7 +83,7 @@ export const MinesScreen = ({
   const [tiles, setTiles] = useState<number>(DEFAULT_TILES)
   const [mines, setMines] = useState<number>(3)
 
-  const session = useMinesSession(walletClient)
+  const session = useMinesSession(walletClient, deployment.boardRpc, deployment.chainId)
 
   const stake = parseStake(amount)
   const minesOk = Number.isInteger(mines) && mines >= 1 && mines <= tiles - 1

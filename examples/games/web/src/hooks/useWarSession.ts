@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import * as viem from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
+import { useBoardBroadcaster } from './useBoardBroadcaster'
 import {
   AttestedElGamalDeck,
   LocalTransport,
@@ -122,6 +123,9 @@ export type UseWarSessionConfig = {
   ante?: bigint
   /** escrow each peer posts into the channel (wei). */
   escrowEach?: bigint
+  /** MsgBoard RPC for the live lobby feed — when set, opening a table posts an `open` notice (PoW in
+   *  a Web Worker, never the UI thread). */
+  boardRpc?: string
 }
 
 /** the bot picks each choice uniformly from crypto randomness (NOT Math.random). */
@@ -151,7 +155,9 @@ export const useWarSession = (config: UseWarSessionConfig = {}): WarSessionApi =
     verifyingContract = PLACEHOLDER_VERIFIER,
     ante = viem.parseEther('0.01'),
     escrowEach = viem.parseEther('1'),
+    boardRpc,
   } = config
+  const broadcastLobby = useBoardBroadcaster(boardRpc, chainId ?? 0)
 
   const [status, setStatus] = useState<WarStatus>('idle')
   const [error, setError] = useState<string>()
@@ -194,6 +200,8 @@ export const useWarSession = (config: UseWarSessionConfig = {}): WarSessionApi =
       setState(snapshot(genesis))
       setHistory([])
       setStatus('ready')
+      // announce the table on the shared live feed (PoW in a Web Worker — never the UI thread).
+      broadcastLobby({ kind: 'open', game: 'hilo', tableId, deck: genesis.deckCommitment, escrowEach: viem.formatEther(escrowEach) })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setStatus('error')

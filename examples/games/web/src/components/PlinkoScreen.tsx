@@ -83,7 +83,13 @@ export const PlinkoScreen = ({
   const [risk, setRisk] = useState<PlinkoRisk>('medium')
   const [rows, setRows] = useState<number>(DEFAULT_ROWS)
 
-  const session = useSession<PlinkoParams>({ game: plinko, walletClient, chainId: deployment.chainId })
+  const session = useSession<PlinkoParams>({
+    game: plinko,
+    walletClient,
+    chainId: deployment.chainId,
+    boardRpc: deployment.boardRpc,
+    gameLabel: 'plinko',
+  })
 
   const stake = parseStake(amount)
   const rowsOk = (ALLOWED_ROWS as readonly number[]).includes(rows)

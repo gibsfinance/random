@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import * as viem from 'viem'
+import { useBoardBroadcaster } from './useBoardBroadcaster'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import {
   HouseSession,
@@ -88,6 +89,11 @@ export type UseSessionConfig<TParams> = {
   openBalances?: { player: bigint; house: bigint }
   /** transport client; defaults to an in-memory board so play works headlessly. */
   boardClient?: BoardClient
+  /** MsgBoard RPC for the live lobby feed — when set, opening a table posts an `open` notice (PoW in
+   *  a Web Worker, never the UI thread). Absent → no broadcast. */
+  boardRpc?: string
+  /** short game name used in the lobby notice (e.g. 'dice'). Defaults to `game-<gameId>`. */
+  gameLabel?: string
 }
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000' as viem.Hex
@@ -134,7 +140,10 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
     chainLength = 64,
     openBalances = { player: 10n ** 18n, house: 10n ** 21n },
     boardClient,
+    boardRpc,
+    gameLabel,
   } = config
+  const broadcastLobby = useBoardBroadcaster(boardRpc, chainId)
 
   const [status, setStatus] = useState<SessionStatus>('idle')
   const [error, setError] = useState<string>()
@@ -188,6 +197,8 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
       setHistory([])
       setRoundsLeft(chainLength)
       setStatus('open')
+      // announce the table on the shared live feed (PoW grinds in a Web Worker — never the UI thread).
+      broadcastLobby({ kind: 'open', game: gameLabel ?? `game-${game.gameId}`, tableId, commit: session.chain.commit })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setStatus('error')

@@ -65,7 +65,13 @@ export const LimboScreen = ({
   const [amount, setAmount] = useState('0.1')
   const [targetMult, setTargetMult] = useState('2.00')
 
-  const session = useSession<LimboParams>({ game: limbo, walletClient, chainId: deployment.chainId })
+  const session = useSession<LimboParams>({
+    game: limbo,
+    walletClient,
+    chainId: deployment.chainId,
+    boardRpc: deployment.boardRpc,
+    gameLabel: 'limbo',
+  })
 
   const stake = parseStake(amount)
   const mult = Number(targetMult)
