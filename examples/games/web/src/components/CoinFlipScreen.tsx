@@ -8,6 +8,7 @@ import { sendGameTx, nextHeatLocations } from '../tx'
 import { CoinFlipVerifyPanel } from './VerifyPanel'
 import { AddressLink, Provenance, SourceNote, archiveTrailUrl, formatWhen } from './Meta'
 import { StakeInput, parseStake } from './StakeInput'
+import { RoundTiming } from './TurnTiming'
 import { involvement } from '../model/participation'
 
 /**
@@ -54,6 +55,14 @@ const FlipCard = ({
       items={[
         { label: 'paired', block: flip.pairedAtBlock, tx: flip.pairTx },
         { label: 'settled', block: flip.settledAtBlock, tx: flip.settleTx },
+      ]}
+    />
+    <RoundTiming
+      totalLabel="settled"
+      timestamps={timestamps}
+      phases={[
+        { label: 'paired', block: flip.pairedAtBlock },
+        { label: 'settled', block: flip.settledAtBlock },
       ]}
     />
     <CoinFlipVerifyPanel flip={flip} deployment={deployment} />

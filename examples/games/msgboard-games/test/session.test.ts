@@ -4,6 +4,8 @@ import { type Hex } from 'viem'
 import { HouseSession, verifyFinishedSession } from '../src/session'
 import { dice } from '../src/games/dice'
 import { limbo } from '../src/games/limbo'
+import { plinko } from '../src/games/plinko'
+import { keno } from '../src/games/keno'
 import { TEST_DOMAIN } from '../src/sessionState'
 
 const player = privateKeyToAccount(`0x${'11'.repeat(32)}`)
@@ -60,6 +62,21 @@ describe('HouseSession', () => {
     }
     const ok = await verifyFinishedSession(s.transcript.toJSON(), ctxFor(dice, s.chain.commit))
     expect(ok).toBe(true)
+  })
+
+  it('audits non-bigint params from the transcript alone (plinko string+number, keno number[])', async () => {
+    // Regression: serializeParams/deserializeParams used to assume every param was a bigint, so
+    // plinko (risk: string, rows: number) and keno (picks: number[]) round-tripped wrong and
+    // verifyFinishedSession failed even though live play settled fine. Lock the type-aware codec.
+    const sp = newSession(plinko)
+    await sp.open()
+    await sp.playRound({ stake: 10n, params: { rows: 16, risk: 'medium' }, clientSeed: `0x${'66'.repeat(32)}` })
+    expect(await verifyFinishedSession(sp.transcript.toJSON(), ctxFor(plinko, sp.chain.commit))).toBe(true)
+
+    const sk = newSession(keno)
+    await sk.open()
+    await sk.playRound({ stake: 10n, params: { picks: [3, 7, 12, 25] }, clientSeed: `0x${'66'.repeat(32)}` })
+    expect(await verifyFinishedSession(sk.transcript.toJSON(), ctxFor(keno, sk.chain.commit))).toBe(true)
   })
 
   it('rejects a wrong commit (commit cross-check against OPEN body)', async () => {

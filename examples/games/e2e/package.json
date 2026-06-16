@@ -11,11 +11,14 @@
     "gate": "tsx scripts/parity-gate.ts",
     "ink-pools": "tsx scripts/ink-pools.ts",
     "cast-watcher": "tsx scripts/cast-watcher.ts",
-    "player-bots": "tsx scripts/player-bots.ts"
+    "player-bots": "tsx scripts/player-bots.ts",
+    "session-bots": "tsx scripts/session-bots.ts"
   },
   "dependencies": {
     "@gibs/coinflip": "workspace:*",
     "@gibs/games-core": "workspace:*",
+    "@gibs/hilo-war": "workspace:*",
+    "@gibs/msgboard-games": "workspace:*",
     "@gibs/raffle": "workspace:*",
     "@gibs/random": "workspace:*",
     "@msgboard/sdk": "^0.0.31",

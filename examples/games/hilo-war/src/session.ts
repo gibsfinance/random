@@ -12,6 +12,56 @@ import {
 const ZERO32: Hex = `0x${'00'.repeat(32)}`
 const DECK_SIZE = 52
 
+/**
+ * Per-turn wall-clock timing, captured client-side as session-side metadata.
+ *
+ * CRITICAL: timing is metadata ONLY. It is kept on the Player (keyed by the
+ * co-signed ChannelState nonce), NEVER inside an Envelope body and NEVER inside
+ * the signed ChannelState. `hashState`/`entryDigest` read fixed tuples that do
+ * not include these marks, so timing cannot change a state digest, an envelope
+ * signature, the transcript head, or `gameStateHash`. A session that records
+ * timing co-signs and verifies byte-for-byte identically to one that does not.
+ *
+ * Mirrors @gibs/msgboard-games TurnTiming. All fields are epoch milliseconds and
+ * independently optional (a turn may be partially timed; legacy turns carry none).
+ */
+export interface TurnTiming {
+  /** when the actor received the state it had to act on */
+  offeredAt?: number
+  /** when this party signed its next state */
+  signedAt?: number
+  /** when the co-sign exchange was submitted to the transport */
+  broadcastAt?: number
+  /** when the counter-signature / landing was observed */
+  confirmedAt?: number
+}
+
+/** Injectable wall clock; the running driver uses Date.now(), tests pass a fake. */
+export type Clock = () => number
+
+export const systemClock: Clock = () => Date.now()
+
+function spanMs(end: number | undefined, start: number | undefined): number | undefined {
+  if (typeof end !== 'number' || typeof start !== 'number') return undefined
+  const d = end - start
+  return Number.isFinite(d) && d >= 0 ? d : undefined
+}
+
+/** decision delay: signedAt - offeredAt */
+export function decisionMs(t: TurnTiming | undefined): number | undefined {
+  return spanMs(t?.signedAt, t?.offeredAt)
+}
+
+/** network latency: confirmedAt - broadcastAt */
+export function networkMs(t: TurnTiming | undefined): number | undefined {
+  return spanMs(t?.confirmedAt, t?.broadcastAt)
+}
+
+/** whole-turn duration: confirmedAt - offeredAt */
+export function totalMs(t: TurnTiming | undefined): number | undefined {
+  return spanMs(t?.confirmedAt, t?.offeredAt)
+}
+
 /** wallet signer shape: viem accounts satisfy both message + typed-data signing */
 export interface WalletSigner {
   address: Hex
@@ -29,6 +79,8 @@ export interface PlayerConfig {
   tableId: Hex
   ante: bigint
   escrowEach: bigint
+  /** wall clock for per-turn timing metadata; defaults to Date.now(). Injectable for tests. */
+  clock?: Clock
 }
 
 export interface FlipChoices { bet: Bet; onRaise: 'CALL' | 'FOLD' }
@@ -77,7 +129,14 @@ export class Player {
 
   private flip!: HiLoState
 
+  /** per-turn wall-clock timing, keyed by the co-signed ChannelState nonce (NON-SIGNED metadata) */
+  readonly timing = new Map<bigint, TurnTiming>()
+  private readonly now: Clock
+  /** offeredAt for the turn currently in flight; set by the play/setup driver, consumed by coSign */
+  private pendingOfferedAt?: number
+
   constructor(private cfg: PlayerConfig) {
+    this.now = cfg.clock ?? systemClock
     this.channel = new Channel({
       domain: cfg.domain, tableId: cfg.tableId, me: cfg.wallet, peer: cfg.peer,
       role: cfg.role, escrow: 2n * cfg.escrowEach,
@@ -163,19 +222,34 @@ export class Player {
 
   /** role A proposes, role B accepts; both must compute `expected` identically */
   private async coSign(expected: ChannelState): Promise<void> {
+    // timing (NON-SIGNED metadata): offeredAt is set by the driver when the turn
+    // began; the remaining marks are stamped around the co-sign exchange. Consume
+    // pendingOfferedAt up front so re-entrant turns don't cross wires.
+    const offeredAt = this.pendingOfferedAt ?? this.now()
+    this.pendingOfferedAt = undefined
+    let timing: TurnTiming
     if (this.cfg.role === 'A') {
       const proposal = await this.channel.propose(expected)
+      const signedAt = this.now() // this party's signature exists
+      const broadcastAt = this.now()
       await this.post('STATE_PROPOSE', { coSigned: serializeCo(proposal) })
       const acc = await this.waitFor('STATE_ACCEPT')
       await this.channel.finalize(deserializeCo((acc.body as { coSigned: unknown }).coSigned))
+      const confirmedAt = this.now() // counter-signature observed (channel.latest is both-signed)
+      timing = { offeredAt, signedAt, broadcastAt, confirmedAt }
     } else {
       const env = await this.waitFor('STATE_PROPOSE')
       const proposal = deserializeCo((env.body as { coSigned: unknown }).coSigned)
       if (hashState(this.cfg.domain, proposal.state) !== hashState(this.cfg.domain, expected))
         throw new Error('session: peer proposed a state that differs from local expectation')
       const full = await this.channel.accept(proposal)
+      const signedAt = this.now() // this party's signature exists (and the pair is now complete)
+      const broadcastAt = this.now()
       await this.post('STATE_ACCEPT', { coSigned: serializeCo(full) })
+      const confirmedAt = this.now() // fully co-signed state landed
+      timing = { offeredAt, signedAt, broadcastAt, confirmedAt }
     }
+    this.timing.set(expected.nonce, timing)
   }
 
   /**
@@ -237,7 +311,9 @@ export class Player {
     // 2/3. double shuffle: A masks + shuffles, B shuffles A's output
     await this.runShuffles('SHUFFLE_A', 'SHUFFLE_B')
 
-    // 4. genesis co-sign at nonce 0
+    // 4. genesis co-sign at nonce 0 — the turn was offered when setup began;
+    // approximate with now() at the co-sign boundary (setup has no discrete decision)
+    this.pendingOfferedAt = this.now()
     await this.coSign({
       tableId: this.cfg.tableId,
       nonce: 0n,
@@ -294,6 +370,8 @@ export class Player {
   // ---------------------------------------------------------------- play
 
   async playFlip(choices: FlipChoices): Promise<FlipResult> {
+    // turn offered: the actor received the prior co-signed state and begins this flip
+    this.pendingOfferedAt = this.now()
     const me = this.cfg.role
     const them = other(me)
     let flip = this.flip
@@ -318,6 +396,10 @@ export class Player {
     const myCard = this.cfg.deck.unmask(myMasked, [dealBody.share, myOwnShare])
     flip = mustApply(flip, { kind: 'DEAL_DONE' })
     await this.syncFlipState(flip)
+
+    // the terminal-flip turn (showdown/fold settlement) is offered now — the
+    // deal turn was just co-signed and the betting decision begins here
+    this.pendingOfferedAt = this.now()
 
     // 2. simultaneous bet: commit, then open in seat order (A first) so both
     //    sides walk identical state sequences.

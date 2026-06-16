@@ -54,6 +54,12 @@ importers:
       '@gibs/games-core':
         specifier: workspace:*
         version: link:../core
+      '@gibs/hilo-war':
+        specifier: workspace:*
+        version: link:../hilo-war
+      '@gibs/msgboard-games':
+        specifier: workspace:*
+        version: link:../msgboard-games
       '@gibs/raffle':
         specifier: workspace:*
         version: link:../raffle
@@ -195,6 +201,9 @@ importers:
       '@gibs/games-core':
         specifier: workspace:*
         version: link:../core
+      '@gibs/msgboard-games':
+        specifier: workspace:*
+        version: link:../msgboard-games
       '@gibs/raffle':
         specifier: workspace:*
         version: link:../raffle

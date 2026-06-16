@@ -8,6 +8,59 @@ export interface Envelope {
   body: unknown      // JSON-serializable; hex blobs inside
   from: Hex          // signer address
   sig: Hex           // EIP-191 over the entry digest
+  timing?: TurnTiming // OPTIONAL, NON-SIGNED client-side wall-clock metadata (see entryDigest)
+}
+
+/**
+ * Per-turn wall-clock timing, captured client-side as transcript-entry metadata.
+ *
+ * CRITICAL: timing is metadata ONLY. It lives on the Envelope wrapper, never
+ * inside `body` and never inside the signed SessionState. `entryDigest` reads a
+ * fixed tuple (tableId, seq, prev, kind, body) and does NOT read this field, so
+ * timing cannot change the entry digest, the envelope signature, the transcript
+ * head, the co-signed SessionState digest, or `gameStateHash`. A transcript with
+ * timing replays/verifies byte-for-byte identically to one without it.
+ *
+ * All fields are epoch milliseconds (Date.now()). Each is independently optional:
+ * a turn may be recorded with partial timing (e.g. offered+signed but not yet
+ * confirmed), and a legacy transcript carries none at all.
+ */
+export interface TurnTiming {
+  /** when the actor received the state it had to act on */
+  offeredAt?: number
+  /** when this party signed its next state */
+  signedAt?: number
+  /** when the entry was submitted to the transport */
+  broadcastAt?: number
+  /** when the counter-signature / landing was observed */
+  confirmedAt?: number
+}
+
+/** Injectable wall clock; the running driver uses Date.now(), tests pass a fake. */
+export type Clock = () => number
+
+export const systemClock: Clock = () => Date.now()
+
+/** Subtract two timing marks, returning undefined unless both exist and the result is finite and >= 0. */
+function spanMs(end: number | undefined, start: number | undefined): number | undefined {
+  if (typeof end !== 'number' || typeof start !== 'number') return undefined
+  const d = end - start
+  return Number.isFinite(d) && d >= 0 ? d : undefined
+}
+
+/** decision delay: time the actor spent before signing (signedAt - offeredAt) */
+export function decisionMs(t: TurnTiming | undefined): number | undefined {
+  return spanMs(t?.signedAt, t?.offeredAt)
+}
+
+/** network latency: broadcast → counter-sign/landing observed (confirmedAt - broadcastAt) */
+export function networkMs(t: TurnTiming | undefined): number | undefined {
+  return spanMs(t?.confirmedAt, t?.broadcastAt)
+}
+
+/** whole-turn duration: offered → confirmed (confirmedAt - offeredAt) */
+export function totalMs(t: TurnTiming | undefined): number | undefined {
+  return spanMs(t?.confirmedAt, t?.offeredAt)
 }
 
 export interface EnvelopeSigner {
@@ -38,10 +91,20 @@ export async function makeEnvelope(
   prev: Hex,
   kind: string,
   body: unknown,
+  timing?: TurnTiming,
 ): Promise<Envelope> {
   const partial = { tableId, seq, prev, kind, body }
   const sig = await signer.signMessage({ message: { raw: entryDigest(partial) } })
-  return { ...partial, from: signer.address, sig }
+  // timing is appended to the wrapper AFTER the digest is computed and signed,
+  // so it is provably outside the signed surface.
+  const env: Envelope = { ...partial, from: signer.address, sig }
+  if (timing) env.timing = timing
+  return env
+}
+
+/** Attach/merge non-signed timing metadata onto an existing envelope without touching its digest. */
+export function withTiming(e: Envelope, timing: TurnTiming): Envelope {
+  return { ...e, timing: { ...e.timing, ...timing } }
 }
 
 export async function verifyEnvelope(e: Envelope): Promise<boolean> {

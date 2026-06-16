@@ -19,6 +19,7 @@
     "@gibs/coinflip": "workspace:*",
     "@gibs/raffle": "workspace:*",
     "@gibs/random": "workspace:*",
+    "@gibs/msgboard-games": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "viem": "^2.25.0"

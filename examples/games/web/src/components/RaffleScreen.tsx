@@ -11,6 +11,7 @@ import { publicClientFor } from '../wallet'
 import { RaffleVerifyPanel } from './VerifyPanel'
 import { AddressLink, Provenance, SourceNote, archiveTrailUrl, explorerUrl, formatWhen } from './Meta'
 import { StakeInput, parseStake } from './StakeInput'
+import { RoundTiming } from './TurnTiming'
 import { involvement } from '../model/participation'
 
 const commitmentFor = (guess: bigint, salt: viem.Hex, player: viem.Hex): viem.Hex =>
@@ -95,6 +96,16 @@ validated?: boolean
         { label: 'armed', block: round.armedAtBlock, tx: round.armTx },
         { label: 'drawn', block: round.drawnAtBlock, tx: round.drawTx },
         { label: 'paid', block: round.finalisedAtBlock, tx: round.finaliseTx },
+      ]}
+    />
+    <RoundTiming
+      totalLabel="settled"
+      timestamps={data.timestamps}
+      phases={[
+        { label: 'opened', block: round.openedAtBlock },
+        { label: 'armed', block: round.armedAtBlock },
+        { label: 'drawn', block: round.drawnAtBlock },
+        { label: 'paid', block: round.finalisedAtBlock },
       ]}
     />
     <table>

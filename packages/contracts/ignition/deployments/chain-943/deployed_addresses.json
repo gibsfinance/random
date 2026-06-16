@@ -3,5 +3,8 @@
   "ReaderModule#Random": "0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217",
   "ReaderModule#Reader": "0xd063aC4DDE35dD60ab72737d4138143c0749721B",
   "ConsumerModule#Random": "0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217",
-  "ConsumerModule#Consumer": "0x21B25a67E086201383fAfD00B6e1681F8136EF34"
+  "ConsumerModule#Consumer": "0x21B25a67E086201383fAfD00B6e1681F8136EF34",
+  "MsgBoardGamesModule#Chips": "0xA5276259e544C86438566cB28cc87daCce060910",
+  "MsgBoardGamesModule#HouseBankroll": "0xf1781f82745604281227C6CeC26176C2464cb0D1",
+  "MsgBoardGamesModule#HouseChannel": "0x57876609E4fEDDEeB83e46A1b3A20140998f0e46"
 }

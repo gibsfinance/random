@@ -6,6 +6,11 @@ import { useChainData } from './hooks/useChainData'
 import { TrustBanner, isTrustAcknowledged } from './components/TrustBanner'
 import { CoinFlipScreen } from './components/CoinFlipScreen'
 import { RaffleScreen } from './components/RaffleScreen'
+import { DiceScreen } from './components/DiceScreen'
+import { LimboScreen } from './components/LimboScreen'
+import { PlinkoScreen } from './components/PlinkoScreen'
+import { KenoScreen } from './components/KenoScreen'
+import { MinesScreen } from './components/MinesScreen'
 import { Menu } from './components/Menu'
 
 const short = (a?: viem.Hex) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '')
@@ -17,7 +22,7 @@ const chainIcon = (chainId: number): string | undefined =>
 
 export const App = () => {
   const [deploymentIndex, setDeploymentIndex] = useState(0)
-  const [tab, setTab] = useState<'coinflip' | 'raffle'>('coinflip')
+  const [tab, setTab] = useState<'coinflip' | 'raffle' | 'dice' | 'limbo' | 'plinko' | 'keno' | 'mines'>('coinflip')
   const deployment = deployments[deploymentIndex]
   const wallet = useWallet(deployment?.chainId ?? 31337)
   const data = useChainData(deployment ?? null, wallet.address)
@@ -125,10 +130,25 @@ export const App = () => {
         <button className={tab === 'raffle' ? 'tab active' : 'tab'} onClick={() => setTab('raffle')}>
           🎟 The Numbers
         </button>
+        <button className={tab === 'dice' ? 'tab active' : 'tab'} onClick={() => setTab('dice')}>
+          🎲 Dice
+        </button>
+        <button className={tab === 'limbo' ? 'tab active' : 'tab'} onClick={() => setTab('limbo')}>
+          🚀 Limbo
+        </button>
+        <button className={tab === 'plinko' ? 'tab active' : 'tab'} onClick={() => setTab('plinko')}>
+          🪙 Plinko
+        </button>
+        <button className={tab === 'keno' ? 'tab active' : 'tab'} onClick={() => setTab('keno')}>
+          🔢 Keno
+        </button>
+        <button className={tab === 'mines' ? 'tab active' : 'tab'} onClick={() => setTab('mines')}>
+          💣 Mines
+        </button>
         <span className="blockline">block {data.blockNumber.toString()}</span>
       </div>
       <TrustBanner deployment={deployment} onAcknowledged={() => setTrustAcknowledged(true)} />
-      {tab === 'coinflip' ? (
+      {tab === 'coinflip' && (
         <CoinFlipScreen
           deployment={deployment}
           data={data}
@@ -136,10 +156,51 @@ export const App = () => {
           trustAcknowledged={trustAcknowledged}
           myAddress={wallet.address}
         />
-      ) : (
+      )}
+      {tab === 'raffle' && (
         <RaffleScreen
           deployment={deployment}
           data={data}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'dice' && (
+        <DiceScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'limbo' && (
+        <LimboScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'plinko' && (
+        <PlinkoScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'keno' && (
+        <KenoScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'mines' && (
+        <MinesScreen
+          deployment={deployment}
           walletClient={wallet.walletClient}
           trustAcknowledged={trustAcknowledged}
           myAddress={wallet.address}

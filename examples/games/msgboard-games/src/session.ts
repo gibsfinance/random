@@ -4,7 +4,10 @@ import {
   signSessionState, verifySessionStateSig,
 } from './sessionState'
 import { buildSeedChain, verifyReveal, roundRandom, type SeedChain } from './rng'
-import { Transcript, makeEnvelope, type EnvelopeSigner } from './transcript'
+import {
+  Transcript, makeEnvelope, withTiming, systemClock,
+  type EnvelopeSigner, type Clock,
+} from './transcript'
 import type { Game } from './game'
 
 const ZERO32 = `0x${'00'.repeat(32)}` as Hex
@@ -21,6 +24,8 @@ export interface SessionConfig<TParams> {
   chainLength: number
   openBalances: { player: bigint; house: bigint }
   settlementMode: number
+  /** wall clock for per-turn timing metadata; defaults to Date.now(). Injectable for tests. */
+  clock?: Clock
 }
 
 export interface PlayInput<TParams> {
@@ -38,10 +43,12 @@ export class HouseSession<TParams> {
   readonly chain: SeedChain
   readonly transcript: Transcript
   private sigs = new Map<bigint, SigPair>()
+  private readonly now: Clock
 
   constructor(private cfg: SessionConfig<TParams>) {
     this.chain = buildSeedChain(cfg.seedTip, cfg.chainLength)
     this.transcript = new Transcript(cfg.tableId)
+    this.now = cfg.clock ?? systemClock
   }
 
   async bothSigned(s: SessionState): Promise<boolean> {
@@ -62,6 +69,7 @@ export class HouseSession<TParams> {
   }
 
   async open(): Promise<void> {
+    const offeredAt = this.now()
     this.state = {
       tableId: this.cfg.tableId,
       nonce: 0n,
@@ -73,6 +81,8 @@ export class HouseSession<TParams> {
       rngCommit: this.chain.commit,
     }
     const sigs = await this.coSign(this.state)
+    const signedAt = this.now()
+    const broadcastAt = this.now()
     const env = await makeEnvelope(this.cfg.house, this.cfg.tableId, 0, this.transcript.head, 'OPEN', {
       rngCommit: this.chain.commit,
       settlementMode: this.state.settlementMode,
@@ -80,10 +90,14 @@ export class HouseSession<TParams> {
       balances: { player: this.state.balancePlayer.toString(), house: this.state.balanceHouse.toString() },
       sigs,
     })
-    this.transcript.append(env)
+    // the OPEN state is co-signed by both parties in coSign(); observe its landing now
+    const confirmedAt = (await this.bothSigned(this.state)) ? this.now() : undefined
+    this.transcript.append(withTiming(env, { offeredAt, signedAt, broadcastAt, confirmedAt }))
   }
 
   async playRound(input: PlayInput<TParams>): Promise<void> {
+    // offered: the actor received the prior state and starts deciding this turn
+    const offeredAt = this.now()
     const roundIndex = this.state.nonce + 1n // 1-indexed into the seed chain
     const serverSeed = this.chain.seeds[Number(roundIndex)]
     if (!serverSeed) throw new Error('session: seed chain exhausted')
@@ -104,6 +118,10 @@ export class HouseSession<TParams> {
     if (next.balancePlayer < 0n || next.balanceHouse < 0n) throw new Error('session: balance underflow')
 
     const sigs = await this.coSign(next)
+    // signed: this party has produced its next-state signature
+    const signedAt = this.now()
+    // broadcast: about to submit the entry to the transport / transcript
+    const broadcastAt = this.now()
     const env = await makeEnvelope(this.cfg.player, this.cfg.tableId, this.transcript.entries.length, this.transcript.head, 'ROUND', {
       round: Number(roundIndex),
       stake: input.stake.toString(),
@@ -113,23 +131,32 @@ export class HouseSession<TParams> {
       outcome: { win: outcome.win, playerDelta: outcome.playerDelta.toString(), multiplierX100: outcome.multiplierX100.toString() },
       sigs,
     })
-    this.transcript.append(env)
+    // confirmed: counter-signature observed (both-signed) and the entry has landed
+    const confirmedAt = (await this.bothSigned(next)) ? this.now() : undefined
+    this.transcript.append(withTiming(env, { offeredAt, signedAt, broadcastAt, confirmedAt }))
     this.state = next
   }
 }
 
-/** Assumes all TParams fields are bigint — revisit if a game gains non-bigint params. */
+/** Serialize each param field into a self-describing string so the transcript can round-trip
+ *  any param shape (bigint targets, string risk, number rows, number[] keno picks) — not just
+ *  bigints. The `b:` tag carries a bigint (JSON has none); everything else is plain JSON. This is
+ *  what makes `verifyFinishedSession` audit games whose params aren't a single bigint. */
 function serializeParams(p: unknown): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(p as Record<string, unknown>)) out[k] = String(v)
+  for (const [k, v] of Object.entries(p as Record<string, unknown>)) {
+    out[k] = typeof v === 'bigint' ? `b:${v}` : `j:${JSON.stringify(v)}`
+  }
   return out
 }
 
-/** Inverse of serializeParams. Assumes all fields are bigint. */
+/** Inverse of serializeParams — restores each field to its original type from the tag. */
 function deserializeParams<TParams>(raw: Record<string, string>): TParams {
-  const out: Record<string, bigint> = {}
-  for (const [k, v] of Object.entries(raw)) out[k] = BigInt(v)
-  return out as unknown as TParams
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(raw)) {
+    out[k] = v.startsWith('b:') ? BigInt(v.slice(2)) : JSON.parse(v.slice(2))
+  }
+  return out as TParams
 }
 
 export interface VerifyContext<TParams> {
