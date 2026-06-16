@@ -58,6 +58,8 @@ import { mnemonicToAccount, privateKeyToAccount, generatePrivateKey } from 'viem
 import {
   HouseSession,
   makeDomain,
+  createBoardClient,
+  MsgBoardTransport,
   decisionMs,
   networkMs,
   totalMs,
@@ -156,6 +158,38 @@ const newTableId = (label: string): viem.Hex =>
 
 const fmt = (wei: bigint) => viem.formatEther(wei)
 
+// ---- real MsgBoard broadcast (testnet-visible lifecycle notices) --------------------------------
+// Posting requires proof-of-work (~30s/msg on the 943 board), so we DON'T post per round — we post a
+// compact notice when a table OPENS and a SUMMARY when it closes. Broadcasts are SERIALIZED through a
+// single queue so the N concurrent games don't peg N cores grinding PoW at once, and best-effort (a
+// post failure never interrupts play). Enabled when a board RPC resolves: BOARD_RPC, or a valve.city
+// endpoint built from VALVE_RPC_KEY (the deploy passes one); absent both, bots run in-process only.
+const BOARD_RPC =
+  env.BOARD_RPC || (env.VALVE_RPC_KEY ? `https://one.valve.city/rpc/${env.VALVE_RPC_KEY}/evm/${CHAIN}` : '')
+const board = BOARD_RPC ? createBoardClient(BOARD_RPC) : null
+// One PoW grind at a time, and DROP notices that arrive while grinding (PoW is ~30s+ and the
+// games turn over faster than that — an unbounded queue would grow forever). The board is a
+// live signal, not a log, so a sampled stream of open/summary notices is the right shape.
+let posting = false
+let inFlight: Promise<unknown> = Promise.resolve()
+const broadcast = (tableId: viem.Hex, msg: Record<string, unknown>): void => {
+  if (!board || posting) return
+  posting = true
+  inFlight = (async () => {
+    const started = Date.now()
+    try {
+      console.log(`[board] grinding ${msg.kind}/${msg.game} PoW…`)
+      await new MsgBoardTransport(board, tableId).send({ v: 1, tableId, at: started, ...msg })
+      console.log(`[board] posted ${msg.kind}/${msg.game} in ${Date.now() - started}ms`)
+    } catch (e) {
+      console.log(`[board] post failed (${msg.kind}/${msg.game}) after ${Date.now() - started}ms: ${(e as Error).message?.split('\n')[0]}`)
+    } finally {
+      posting = false
+    }
+  })()
+}
+if (board) console.log(`[board] broadcasting lifecycle notices to ${BOARD_RPC.replace(/\/rpc\/[^/]+\//, '/rpc/<key>/')}`)
+
 // ---------------------------------------------------------------------------------------------
 // single-draw games (dice / limbo / plinko / keno): one HouseSession.playRound per turn.
 // ---------------------------------------------------------------------------------------------
@@ -177,9 +211,10 @@ const runDrawTable = async <TParams>(
     return t
   }
   while (running) {
+    const tableId = newTableId(name)
     const session = new HouseSession<TParams>({
       domain,
-      tableId: newTableId(name),
+      tableId,
       game,
       player: playerSigner,
       house: newHouse(),
@@ -191,6 +226,7 @@ const runDrawTable = async <TParams>(
     })
     await session.open()
     console.log(`[${name}] table open commit=${session.chain.commit.slice(0, 10)} player=${fmt(session.state.balancePlayer)}`)
+    broadcast(tableId, { kind: 'open', game: name, commit: session.chain.commit, player: (playerSigner as { address: viem.Hex }).address })
 
     let round = 0
     while (running && Number(session.state.nonce) < CHAIN_LENGTH - 1) {
@@ -223,6 +259,7 @@ const runDrawTable = async <TParams>(
       if (env.ONCE === 'true') return
       await idle(ROUND_GAP_MS * (0.5 + randUint()))
     }
+    broadcast(tableId, { kind: 'summary', game: name, rounds: round, balance: fmt(session.state.balancePlayer) })
     if (env.ONCE === 'true') return
   }
 }
@@ -245,9 +282,11 @@ const runMinesTable = async () => {
   let session = 0
   while (running) {
     session++
-    const board = randomMinesBoard(config)
-    const commit = minesHashBoard(board)
+    const tableId = newTableId('mines')
+    const layout = randomMinesBoard(config)
+    const commit = minesHashBoard(layout)
     let state = minesStart(config, commit)
+    broadcast(tableId, { kind: 'open', game: 'mines', commit, mines: config.mines, tiles: config.tiles })
     const safe = config.tiles - config.mines
     // randomized stop: aim to reveal somewhere in [1, safe-1] tiles before cashing out.
     const target = 1 + randInt(Math.max(1, Math.min(safe - 1, 6)))
@@ -263,7 +302,7 @@ const runMinesTable = async () => {
       await idle(d) // think before each reveal
       if (!running) break
       decisionTotal += d
-      const res = minesReveal(state, tile, board.mineTiles.includes(tile))
+      const res = minesReveal(state, tile, layout.mineTiles.includes(tile))
       if ('error' in res) continue // tile already revealed (shouldn't happen with shuffled order)
       state = res.state
       reveals++
@@ -294,6 +333,7 @@ const runMinesTable = async () => {
         `delta=${delta >= 0n ? '+' : ''}${fmt(delta)} ` +
         `decision=${decisionTotal}ms total=${Date.now() - t0}ms hash=${stateHash.slice(0, 10)}`,
     )
+    broadcast(tableId, { kind: 'summary', game: 'mines', reveals, busted, multiplierX100: multX100.toString(), delta: fmt(delta) })
     if (env.ONCE === 'true') return
     await idle(ROUND_GAP_MS * (0.5 + randUint()))
   }
@@ -343,6 +383,7 @@ const runHiLoTable = async (domain: ReturnType<typeof makeZkDomain>) => {
     }
     const genesis = a.channel.latest!.state
     console.log(`[hilo] table ${table} open deck=${genesis.deckCommitment.slice(0, 10)} escrowEach=${fmt(HILO_ESCROW)}`)
+    broadcast(tableId, { kind: 'open', game: 'hilo', deck: genesis.deckCommitment, escrowEach: fmt(HILO_ESCROW) })
 
     let flips = 0
     while (running && flips < HILO_FLIPS) {
@@ -391,6 +432,7 @@ const runHiLoTable = async (domain: ReturnType<typeof makeZkDomain>) => {
     try {
       const [settled] = await Promise.all([a.requestSettle(), b.acceptSettle()])
       console.log(`[hilo] table ${table} settled balA=${fmt(settled.state.balanceA)} balB=${fmt(settled.state.balanceB)} after ${flips} flips`)
+      broadcast(tableId, { kind: 'summary', game: 'hilo', flips, balA: fmt(settled.state.balanceA), balB: fmt(settled.state.balanceB) })
     } catch (e) {
       console.log(`[hilo] settle failed: ${(e as Error).message?.split('\n')[0]}`)
     }
@@ -430,6 +472,7 @@ const main = async () => {
     }
   }
   await Promise.all(tables)
+  await inFlight // flush any in-flight lifecycle broadcast (PoW grind) before exit
 }
 
 // graceful SIGINT shutdown (mirrors player-bots' clean-exit intent).
