@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import * as viem from 'viem'
 import { createBoardClient, MsgBoardTransport } from '@gibs/msgboard-games'
 import type { GameDeployment } from '../config'
 
@@ -14,8 +13,8 @@ export type BoardNotice = {
   [k: string]: unknown
 }
 
-/** The category the bots broadcast to — must match session-bots.ts: keccak(`mbg:lobby:<chain>`). */
-const lobbyId = (chainId: number): viem.Hex => viem.keccak256(viem.stringToHex(`mbg:lobby:${chainId}`))
+/** The category the bots broadcast to — must match session-bots.ts: `games.msgboard.xyz:lobby:<chain>`. */
+const lobbyCategory = (chainId: number): string => `games.msgboard.xyz:lobby:${chainId}`
 
 /**
  * Reads the LIVE session-game feed off MsgBoard: the bots post a notice when a table opens and when
@@ -36,7 +35,7 @@ export const useBoardFeed = (deployment: GameDeployment, pollMs = 15_000): Board
     seen.current = new Set()
     setNotices([])
     let stop = false
-    const transport = new MsgBoardTransport(createBoardClient(rpc), lobbyId(deployment.chainId))
+    const transport = new MsgBoardTransport(createBoardClient(rpc), { category: lobbyCategory(deployment.chainId) })
     transport.onMessage((m) => {
       const n = m as BoardNotice
       const key = JSON.stringify(n)

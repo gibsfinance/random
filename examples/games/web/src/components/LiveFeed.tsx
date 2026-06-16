@@ -57,8 +57,9 @@ export const LiveFeed = ({ deployment }: { deployment: GameDeployment }) => {
         <h3>Live on the board</h3>
         <p className="muted">
           Tables opening and settling on <span className="mono">{deployment.label}</span>, read straight from the
-          MsgBoard <span className="mono">mbg:lobby</span> category — proof-of-work notices the house bots post as they
-          play. The board is a live signal (recent activity only); refreshes every 15s.
+          MsgBoard <span className="mono">games.msgboard.xyz:lobby:{deployment.chainId}</span> category — proof-of-work
+          notices the house bots post as they play. The board is a live signal (recent activity only); refreshes every
+          15s.
         </p>
       </div>
       {notices.length === 0 ? (

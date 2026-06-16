@@ -173,8 +173,8 @@ const board = BOARD_RPC ? createBoardClient(BOARD_RPC) : null
 // compact notice only when a table OPENS or CLOSES — never per round — and a drop-if-busy guard keeps
 // just one grind in flight, dropping notices that arrive mid-grind (the games turn over faster than
 // PoW, so an unbounded queue would grow forever; the board is a live signal, not a log).
-const LOBBY_ID = viem.keccak256(viem.stringToHex(`mbg:lobby:${CHAIN}`))
-const lobby = board ? new MsgBoardTransport(board, LOBBY_ID) : null
+const LOBBY_CATEGORY = `games.msgboard.xyz:lobby:${CHAIN}`
+const lobby = board ? new MsgBoardTransport(board, { category: LOBBY_CATEGORY }) : null
 let posting = false
 let inFlight: Promise<unknown> = Promise.resolve()
 const broadcast = (tableId: viem.Hex, msg: Record<string, unknown>): void => {
@@ -193,7 +193,7 @@ const broadcast = (tableId: viem.Hex, msg: Record<string, unknown>): void => {
     }
   })()
 }
-if (lobby) console.log(`[board] live feed → category ${lobby.category} (mbg:lobby:${CHAIN}) via ${BOARD_RPC.replace(/\/rpc\/[^/]+\//, '/rpc/<key>/')}`)
+if (lobby) console.log(`[board] live feed → ${LOBBY_CATEGORY} (${lobby.category.slice(0, 12)}…) via ${BOARD_RPC.replace(/\/rpc\/[^/]+\//, '/rpc/<key>/')}`)
 
 // ---------------------------------------------------------------------------------------------
 // single-draw games (dice / limbo / plinko / keno): one HouseSession.playRound per turn.

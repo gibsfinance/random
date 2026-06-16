@@ -44,6 +44,23 @@ Each script deploys fresh contracts, so restart `anvil` between runs (or just le
 fresh deployments do not collide, but event scans start from block zero, so a fresh chain keeps
 the output unambiguous).
 
+## MsgBoard transport — hard rules
+
+The off-chain session games can broadcast over MsgBoard (`@gibs/msgboard-games` `board.ts` /
+`msgboardTransport.ts`). Two rules that are enforced in code, not just convention:
+
+- **NEVER run MsgBoard proof-of-work (`doPoW`, i.e. `BoardClient.addMessage`) on a browser's main
+  thread.** It is a multi-second busy-grind (~30–110s on the 943 board) and the main thread renders
+  the UI — grinding there freezes the tab for the whole grind. `board.ts` guards this: `addMessage`
+  throws if it detects a DOM (`typeof document !== 'undefined'`), so the mistake fails loudly instead
+  of hanging the page. To post from the browser, grind inside a **Web Worker**. Reading the board
+  (`content` / polling the live feed) needs no PoW and is fine on the main thread. Locked by
+  `msgboard-games/test/board.test.ts`.
+- **The discoverable feed category is `games.msgboard.xyz:lobby:<chain>`** (verbose, no abbreviation).
+  Per-table feeds are `games.msgboard.xyz:table:<tableId>`. Bots post lifecycle notices (table open +
+  settle summary) — never per round (PoW is too slow) — with a drop-if-busy guard so the queue can't
+  grow unbounded. Any reader computing the same category name lands on the same `categoryHash`.
+
 ## The web app
 
 `web/` (`@gibs/games-web`) is the player-facing surface: Vite + React over the core, with no

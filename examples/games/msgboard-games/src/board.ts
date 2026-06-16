@@ -13,9 +13,27 @@ import type { BoardClient } from './msgboardTransport'
  * second, so this is usable for both the headless bots and best-effort browser broadcast. On a
  * production-difficulty board, run `doPoW` off the UI thread (a Web Worker) — see the SDK README.
  */
+/**
+ * GUARD: proof-of-work (`doPoW`) is a multi-second busy-grind. Running it on a browser's MAIN thread
+ * freezes the tab (it's the thread that renders the UI) for the whole grind — never do this. We detect
+ * the UI main thread by the presence of `document` (a Web Worker has no `document`; Node has none
+ * either), and throw LOUDLY rather than silently hang the page. To post from a browser, grind inside a
+ * Web Worker (`new Worker(...)`) and call this there. This is enforced here, at the single PoW
+ * chokepoint, so no caller — or future agent — can reintroduce the freeze by accident.
+ */
+function assertOffMainThread(): void {
+  if (typeof document !== 'undefined') {
+    throw new Error(
+      'MsgBoard proof-of-work (doPoW) must not run on the browser main thread — it freezes the UI for ' +
+        'the whole grind. Run the board client inside a Web Worker instead. (msgboard-games/board.ts guard)',
+    )
+  }
+}
+
 export function msgBoardClientAdapter(board: MsgBoardClient): BoardClient {
   return {
     async addMessage(seed: { category: Hex; data: Hex }) {
+      assertOffMainThread()
       const work = await board.doPoW(seed.category, seed.data)
       return board.addMessage(work.message)
     },
