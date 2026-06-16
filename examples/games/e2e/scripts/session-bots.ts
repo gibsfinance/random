@@ -25,10 +25,12 @@
  * actor-common. If/when the session pulls on-chain reveals, the RPC wiring in actor-common drops in
  * unchanged. No 943 RPC round-trips are made by this driver today.
  *
- * Hi-Lo War is intentionally NOT covered here: it is a TWO-peer ZK-card session (@gibs/hilo-war
- * needs a MaskedDeckProvider + a paired counterpart client over a real transport), not a
- * single-process HouseSession. duel.ts covers on-chain coinflip parity, NOT hilo-war, so nothing
- * is duplicated either way; a hilo bot would be a separate paired-client driver — see report.
+ * Hi-Lo War IS covered here too, as a separate paired-client driver (it is a TWO-peer ZK-card
+ * session — @gibs/hilo-war needs a MaskedDeckProvider + a paired counterpart client over a transport,
+ * not a single-process HouseSession). Both peers are in-process random-strategy bots over a
+ * `LocalTransport.pair()` sharing one `AttestedElGamalDeck` (exactly the session test's setup); the
+ * randomness is the masked-deck double shuffle, not an entropy beacon. duel.ts covers on-chain
+ * coinflip parity, NOT hilo-war, so nothing is duplicated either way.
  *
  * Pacing: before signing each turn the bot sleeps a randomized human-like "think" delay
  * (~0.3–3s). Because the session stamps offeredAt/signedAt around that sleep and
@@ -42,7 +44,9 @@
  *   CHAIN        default 943 — selects the deployment loaded for the domain.
  *   CONFIG       optional explicit deployment path (else <CHAIN>-deployment.json next to this file).
  *   RPC          accepted for parity with the other bots; unused today (in-process seeds).
- *   GAMES        comma list to restrict which games run (default: dice,limbo,plinko,keno,mines).
+ *   GAMES        comma list to restrict which games run (default: dice,limbo,plinko,keno,mines,hilo).
+ *   HILO_ANTE / HILO_ESCROW  hilo-war ante / per-peer escrow (ether, default 0.01 / 1).
+ *   HILO_FLIPS   flips before a hilo table cooperatively settles + reopens (default 32).
  *   CHAIN_LENGTH default 256 — rounds the committed seed chain affords before a table reopens.
  *   THINK_MIN_MS / THINK_MAX_MS  default 300 / 3000 — the randomized per-turn think window.
  *   ROUND_GAP_MS default 1500 — extra idle gap between rounds on a table (jittered 0.5x..1.5x).
@@ -74,6 +78,23 @@ import {
   type MinesBoard,
   type MinesConfig,
 } from '@gibs/msgboard-games'
+import {
+  AttestedElGamalDeck,
+  LocalTransport,
+  makeDomain as makeZkDomain,
+  TEST_DOMAIN as ZK_TEST_DOMAIN,
+} from '@gibs/zk-cards-core'
+import {
+  Player as HiLoPlayer,
+  openSession as openHiLoSession,
+  Phase as HiLoPhase,
+  decisionMs as hiloDecisionMs,
+  networkMs as hiloNetworkMs,
+  totalMs as hiloTotalMs,
+  type Bet as HiLoBet,
+  type FlipChoices as HiLoFlipChoices,
+  type WalletSigner as HiLoWalletSigner,
+} from '@gibs/hilo-war'
 import { loadDeployment } from './actor-common'
 
 const env = process.env
@@ -86,8 +107,11 @@ const ROUND_GAP_MS = env.ROUND_GAP_MS ? Number(env.ROUND_GAP_MS) : 1500
 const START_BALANCE = viem.parseEther(env.START_BALANCE || '100')
 const HOUSE_BALANCE = viem.parseEther(env.HOUSE_BALANCE || '100000')
 const STAKE = viem.parseEther(env.STAKE || '1')
+const HILO_ANTE = viem.parseEther(env.HILO_ANTE || '0.01')
+const HILO_ESCROW = viem.parseEther(env.HILO_ESCROW || '1')
+const HILO_FLIPS = env.HILO_FLIPS ? Number(env.HILO_FLIPS) : 32
 
-const ALL_GAMES = ['dice', 'limbo', 'plinko', 'keno', 'mines'] as const
+const ALL_GAMES = ['dice', 'limbo', 'plinko', 'keno', 'mines', 'hilo'] as const
 type GameName = (typeof ALL_GAMES)[number]
 const SELECTED: GameName[] = (env.GAMES ? env.GAMES.split(',').map((s) => s.trim()) : [...ALL_GAMES]).filter(
   (g): g is GameName => (ALL_GAMES as readonly string[]).includes(g),
@@ -275,6 +299,106 @@ const runMinesTable = async () => {
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// HI-LO WAR (two-peer ZK-masked-deck session): NOT a HouseSession. Two in-process random-strategy
+// bot Players over a LocalTransport.pair() sharing one AttestedElGamalDeck (the session test's
+// setup). openSession co-signs genesis (the shuffled-deck commitment IS the randomness), then a
+// continuous loop of SIMULTANEOUS random playFlips (Promise.all, as both sides must call together).
+// The table cooperatively settles + reopens after HILO_FLIPS or when either peer's escrow runs low.
+// Pacing mirrors the draw tables: a randomized think delay before each flip, backdated into Player
+// A's offeredAt via a one-shot clock offset so decisionMs ≈ think and networkMs stays the in-process
+// co-sign latency (a non-trivial decomposition).
+// ---------------------------------------------------------------------------------------------
+const randBet = (): HiLoBet => (coinFlip() ? 'RAISE' : 'HOLD')
+const coinFlip = (): boolean => randUint() < 0.5
+const randFlipChoices = (): HiLoFlipChoices => ({ bet: randBet(), onRaise: coinFlip() ? 'CALL' : 'FOLD' })
+
+const runHiLoTable = async (domain: ReturnType<typeof makeZkDomain>) => {
+  // one-shot backdating clock for Player A: the next now() read is pushed back by the think delay so
+  // the flip's offeredAt lands ~think ago, surfacing the think window as decisionMs.
+  let pendingThinkMs = 0
+  const clockA = () => {
+    const t = Date.now() - pendingThinkMs
+    pendingThinkMs = 0
+    return t
+  }
+  let table = 0
+  while (running) {
+    table++
+    const [ta, tb] = LocalTransport.pair()
+    const deck = new AttestedElGamalDeck()
+    // both peers are in-process bots — ephemeral keys, random strategy.
+    const wa = privateKeyToAccount(generatePrivateKey()) as unknown as HiLoWalletSigner
+    const wb = privateKeyToAccount(generatePrivateKey()) as unknown as HiLoWalletSigner
+    const tableId = newTableId('hilo')
+    const a = new HiLoPlayer({ role: 'A', wallet: wa, peer: wb.address, transport: ta, deck, domain, tableId, ante: HILO_ANTE, escrowEach: HILO_ESCROW, clock: clockA })
+    const b = new HiLoPlayer({ role: 'B', wallet: wb, peer: wa.address, transport: tb, deck, domain, tableId, ante: HILO_ANTE, escrowEach: HILO_ESCROW })
+
+    try {
+      await openHiLoSession(a, b)
+    } catch (e) {
+      console.log(`[hilo] open failed, retrying: ${(e as Error).message?.split('\n')[0]}`)
+      await idle(ROUND_GAP_MS)
+      continue
+    }
+    const genesis = a.channel.latest!.state
+    console.log(`[hilo] table ${table} open deck=${genesis.deckCommitment.slice(0, 10)} escrowEach=${fmt(HILO_ESCROW)}`)
+
+    let flips = 0
+    while (running && flips < HILO_FLIPS) {
+      // either side too low to cover two antes (ante + a possible raise) → settle and reopen.
+      const s = a.channel.latest!.state
+      if (s.balanceA < 2n * HILO_ANTE || s.balanceB < 2n * HILO_ANTE) break
+
+      const think = thinkDelay()
+      await idle(think)
+      if (!running) break
+      pendingThinkMs = think // backdate A's offeredAt so decisionMs ≈ think
+      const balABefore = s.balanceA
+      let myCard: number, opponentCard: number | null, winner: string
+      try {
+        // BOTH peers must call playFlip simultaneously — independent random strategies.
+        const [ra] = await Promise.all([a.playFlip(randFlipChoices()), b.playFlip(randFlipChoices())])
+        myCard = ra.myCard
+        opponentCard = ra.opponentCard
+        winner = ra.flip.result ? ra.flip.result.winner : 'tie'
+      } catch (e) {
+        console.log(`[hilo] flip error, reopening table: ${(e as Error).message?.split('\n')[0]}`)
+        break
+      }
+      flips++
+      const after = a.channel.latest!.state
+      const delta = after.balanceA - balABefore
+      const t = a.timing.get(after.nonce)
+      const dMs = hiloDecisionMs(t)
+      const nMs = hiloNetworkMs(t)
+      const tMs = hiloTotalMs(t)
+      console.log(
+        `[hilo] flip ${flips} A=${myCard} B=${opponentCard ?? 'hidden'} ${winner === 'tie' ? 'TIE ' : `win=${winner}`} ` +
+          `deltaA=${delta >= 0n ? '+' : ''}${fmt(delta)} balA=${fmt(after.balanceA)} balB=${fmt(after.balanceB)} ` +
+          `pot=${fmt(after.pot)} decision=${dMs ?? '?'}ms network=${nMs ?? '?'}ms total=${tMs ?? '?'}ms`,
+      )
+      if (env.ONCE === 'true') {
+        // settle once for a clean smoke, then exit.
+        const [settled] = await Promise.all([a.requestSettle(), b.acceptSettle()])
+        console.log(`[hilo] settled phase=${settled.state.phase === HiLoPhase.SETTLED ? 'SETTLED' : settled.state.phase} balA=${fmt(settled.state.balanceA)} balB=${fmt(settled.state.balanceB)}`)
+        return
+      }
+      await idle(ROUND_GAP_MS * (0.5 + randUint()))
+    }
+    if (!running) break
+    // cooperative settle at the end of a table run (splits any war carry, zeroes the pot).
+    try {
+      const [settled] = await Promise.all([a.requestSettle(), b.acceptSettle()])
+      console.log(`[hilo] table ${table} settled balA=${fmt(settled.state.balanceA)} balB=${fmt(settled.state.balanceB)} after ${flips} flips`)
+    } catch (e) {
+      console.log(`[hilo] settle failed: ${(e as Error).message?.split('\n')[0]}`)
+    }
+    if (env.ONCE === 'true') return
+    await idle(ROUND_GAP_MS * (0.5 + randUint()))
+  }
+}
+
 // ---- main -------------------------------------------------------------------------------------
 const main = async () => {
   if (!env.MNEMONIC) throw new Error('MNEMONIC required')
@@ -295,6 +419,15 @@ const main = async () => {
     else if (g === 'plinko') tables.push(runDrawTable('plinko', plinko, domain, plinkoParams))
     else if (g === 'keno') tables.push(runDrawTable('keno', keno, domain, kenoParams))
     else if (g === 'mines') tables.push(runMinesTable())
+    else if (g === 'hilo') {
+      // hilo-war pins its own EIP-712 "ZkTable" domain (not the msgboard-games HouseChannel domain).
+      // verifyingContract is a placeholder anchored on the same chainId — no on-chain channel settle
+      // is wired yet (the deployed HouseChannel is the real anchor for later).
+      const zkDomain = config.chainId
+        ? makeZkDomain(config.chainId, (config.random as viem.Hex) ?? viem.zeroAddress)
+        : ZK_TEST_DOMAIN
+      tables.push(runHiLoTable(zkDomain))
+    }
   }
   await Promise.all(tables)
 }

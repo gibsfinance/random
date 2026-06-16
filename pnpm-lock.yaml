@@ -66,6 +66,9 @@ importers:
       '@gibs/random':
         specifier: workspace:*
         version: link:../../../packages/contracts
+      '@gibs/zk-cards-core':
+        specifier: workspace:*
+        version: link:../zk-core
       '@msgboard/sdk':
         specifier: ^0.0.31
         version: 0.0.31(typescript@5.8.3)
@@ -201,6 +204,9 @@ importers:
       '@gibs/games-core':
         specifier: workspace:*
         version: link:../core
+      '@gibs/hilo-war':
+        specifier: workspace:*
+        version: link:../hilo-war
       '@gibs/msgboard-games':
         specifier: workspace:*
         version: link:../msgboard-games
@@ -210,6 +216,9 @@ importers:
       '@gibs/random':
         specifier: workspace:*
         version: link:../../../packages/contracts
+      '@gibs/zk-cards-core':
+        specifier: workspace:*
+        version: link:../zk-core
       react:
         specifier: ^18.3.1
         version: 18.3.1

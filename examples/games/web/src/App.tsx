@@ -11,6 +11,7 @@ import { LimboScreen } from './components/LimboScreen'
 import { PlinkoScreen } from './components/PlinkoScreen'
 import { KenoScreen } from './components/KenoScreen'
 import { MinesScreen } from './components/MinesScreen'
+import { HiLoWarScreen } from './components/HiLoWarScreen'
 import { Menu } from './components/Menu'
 
 const short = (a?: viem.Hex) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '')
@@ -22,7 +23,7 @@ const chainIcon = (chainId: number): string | undefined =>
 
 export const App = () => {
   const [deploymentIndex, setDeploymentIndex] = useState(0)
-  const [tab, setTab] = useState<'coinflip' | 'raffle' | 'dice' | 'limbo' | 'plinko' | 'keno' | 'mines'>('coinflip')
+  const [tab, setTab] = useState<'coinflip' | 'raffle' | 'dice' | 'limbo' | 'plinko' | 'keno' | 'mines' | 'hilo'>('coinflip')
   const deployment = deployments[deploymentIndex]
   const wallet = useWallet(deployment?.chainId ?? 31337)
   const data = useChainData(deployment ?? null, wallet.address)
@@ -145,6 +146,9 @@ export const App = () => {
         <button className={tab === 'mines' ? 'tab active' : 'tab'} onClick={() => setTab('mines')}>
           💣 Mines
         </button>
+        <button className={tab === 'hilo' ? 'tab active' : 'tab'} onClick={() => setTab('hilo')}>
+          ⚔️ Hi-Lo War
+        </button>
         <span className="blockline">block {data.blockNumber.toString()}</span>
       </div>
       <TrustBanner deployment={deployment} onAcknowledged={() => setTrustAcknowledged(true)} />
@@ -200,6 +204,14 @@ export const App = () => {
       )}
       {tab === 'mines' && (
         <MinesScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'hilo' && (
+        <HiLoWarScreen
           deployment={deployment}
           walletClient={wallet.walletClient}
           trustAcknowledged={trustAcknowledged}
