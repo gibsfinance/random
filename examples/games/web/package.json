@@ -20,6 +20,7 @@
     "@gibs/raffle": "workspace:*",
     "@gibs/random": "workspace:*",
     "@gibs/msgboard-games": "workspace:*",
+    "@gibs/pow-grinder": "workspace:*",
     "@gibs/hilo-war": "workspace:*",
     "@gibs/zk-cards-core": "workspace:*",
     "react": "^18.3.1",

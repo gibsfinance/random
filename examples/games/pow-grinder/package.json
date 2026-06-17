@@ -5,6 +5,10 @@
   "description": "Fast native/WASM MsgBoard proof-of-work stamper (bit-identical to the reth node verifier)",
   "main": "index.js",
   "types": "index.d.ts",
+  "exports": {
+    ".": "./index.js",
+    "./wasm": "./pkg/pow_grinder.js"
+  },
   "files": ["index.js", "index.d.ts", "pow-grinder.*.node", "pkg"],
   "scripts": {
     "build:native": "cargo build --release --features napi && bash scripts/copy-native.sh",

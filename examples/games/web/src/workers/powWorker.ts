@@ -1,24 +1,39 @@
 /// <reference lib="webworker" />
-import { createBoardClient, MsgBoardTransport } from '@gibs/msgboard-games'
+import init, { stamp } from '@gibs/pow-grinder/wasm'
 
 /**
- * MsgBoard proof-of-work grinder — runs in a Web Worker, NEVER on the UI thread (doPoW is a multi-
- * second busy-grind that would freeze the tab; see the guard in @gibs/msgboard-games board.ts, which
- * also throws if this is ever reached on the main thread). A worker has no `document`, so the guard
- * passes here.
+ * MsgBoard proof-of-work grinder — a PURE STAMPER running in a Web Worker, NEVER on the UI thread
+ * (the grind would freeze the tab). It mints the stamp via the WASM build of the same Rust core the
+ * bots use natively, off the main thread.
  *
- * KEY BOUNDARY: this worker receives only a category NAME, a plain (unsigned) lifecycle NOTICE, and
- * the board RPC. It never receives a private key — these notices aren't signed, and all session
- * signing stays on the main thread. The worker just encodes → PoW-wraps → submits.
+ * KEY BOUNDARY: receives only encoded bytes (category, data, block hash) + the difficulty factors —
+ * never a private key, never the RPC. The main thread reads the head/difficulty and submits (the
+ * `post` orchestration); this worker only stamps.
  */
-type Job = { id: number; rpcUrl: string; category: string; notice: unknown }
+type Job = {
+  id: number
+  category: Uint8Array
+  data: Uint8Array
+  wm: number
+  wd: number
+  blockHash: Uint8Array
+  maxIters: number
+}
+
+let ready: Promise<unknown> | null = null
 
 self.onmessage = async (e: MessageEvent<Job>) => {
-  const { id, rpcUrl, category, notice } = e.data
+  const { id, category, data, wm, wd, blockHash, maxIters } = e.data
   try {
-    const transport = new MsgBoardTransport(createBoardClient(rpcUrl), { category })
-    await transport.send(notice) // encode + doPoW + submit, all off the UI thread
-    ;(self as unknown as Worker).postMessage({ id, ok: true })
+    if (!ready) ready = init() // instantiate the wasm module once, lazily
+    await ready
+    const packed = stamp(category, data, wm, wd, blockHash, 0, maxIters)
+    if (!packed) {
+      ;(self as unknown as Worker).postMessage({ id, error: 'stamp: maxIters exhausted' })
+      return
+    }
+    // packed = nonce_be(8) ‖ hash(32); hand the buffer back (transferable) and let the caller unpack.
+    ;(self as unknown as Worker).postMessage({ id, packed }, [packed.buffer])
   } catch (err) {
     ;(self as unknown as Worker).postMessage({ id, error: err instanceof Error ? err.message : String(err) })
   }

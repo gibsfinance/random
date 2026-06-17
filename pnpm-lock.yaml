@@ -217,6 +217,9 @@ importers:
       '@gibs/msgboard-games':
         specifier: workspace:*
         version: link:../msgboard-games
+      '@gibs/pow-grinder':
+        specifier: workspace:*
+        version: link:../pow-grinder
       '@gibs/raffle':
         specifier: workspace:*
         version: link:../raffle
