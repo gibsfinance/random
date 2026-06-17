@@ -6,7 +6,7 @@ import { deriveRaffleRounds, type RaffleRoundView } from '../model/raffle-rounds
 import { publicClientFor } from '../wallet'
 import type { GameDeployment } from '../config'
 
-const POLL_MS = 4_000
+const POLL_MS = 12_000
 
 export type ChainData = {
   lobby: CoinFlipLobby
@@ -20,19 +20,15 @@ export type ChainData = {
 
 const emptyLobby: CoinFlipLobby = { openEntries: [], flips: [] }
 
-/** Every event carries its provenance: the block it landed in and the tx that caused it. */
-const eventArgs = async <T,>(
-  client: ReturnType<typeof publicClientFor>,
-  address: viem.Hex,
-  abi: viem.Abi,
-  eventName: string,
-  fromBlock: bigint,
-): Promise<T[]> => {
-  const logs = await client.getContractEvents({ address, abi, eventName, fromBlock, strict: true })
-  return logs.map(
-    (log) => ({ ...(log.args as object), blockNumber: log.blockNumber, transactionHash: log.transactionHash }) as T,
-  )
-}
+type RawLog = { eventName?: string; args?: unknown; blockNumber?: bigint | null; transactionHash?: viem.Hex | null }
+
+/** Partition one contract's logs by event name into the `{ ...args, blockNumber, transactionHash }`
+ *  shape the models expect. We fetch ALL of a contract's events in a SINGLE getContractEvents call and
+ *  split here — one request per contract instead of one per event name (which was flooding the RPC). */
+const pick = <T,>(logs: readonly RawLog[], eventName: string): T[] =>
+  logs
+    .filter((l) => l.eventName === eventName)
+    .map((l) => ({ ...(l.args as object), blockNumber: l.blockNumber, transactionHash: l.transactionHash }) as T)
 
 /** Block timestamps never change once mined — cache them across polls, per chain. */
 const timestampCache = new Map<string, number>()
@@ -77,24 +73,26 @@ export const useChainData = (deployment: GameDeployment | null, myAddress?: viem
     try {
       const client = publicClientFor(deployment.chainId, deployment.rpc)
       const from = BigInt(deployment.deployBlock)
-      const [blockNumber, entered, cancelled, paired, heated, settled, opened, committed, ticketCancelled, armed, drawn, revealed, finalised, noContest, ticketRefunded] =
-        await Promise.all([
-          client.getBlockNumber(),
-          eventArgs<never>(client, deployment.coinFlip, coinFlipAbi, 'Entered', from),
-          eventArgs<never>(client, deployment.coinFlip, coinFlipAbi, 'Cancelled', from),
-          eventArgs<never>(client, deployment.coinFlip, coinFlipAbi, 'Paired', from),
-          eventArgs<never>(client, deployment.coinFlip, coinFlipAbi, 'Heated', from),
-          eventArgs<never>(client, deployment.coinFlip, coinFlipAbi, 'Settled', from),
-          eventArgs<never>(client, deployment.raffle, raffleAbi, 'RoundOpened', from),
-          eventArgs<never>(client, deployment.raffle, raffleAbi, 'Committed', from),
-          eventArgs<never>(client, deployment.raffle, raffleAbi, 'TicketCancelled', from),
-          eventArgs<never>(client, deployment.raffle, raffleAbi, 'Armed', from),
-          eventArgs<never>(client, deployment.raffle, raffleAbi, 'Drawn', from),
-          eventArgs<never>(client, deployment.raffle, raffleAbi, 'Revealed', from),
-          eventArgs<never>(client, deployment.raffle, raffleAbi, 'Finalised', from),
-          eventArgs<never>(client, deployment.raffle, raffleAbi, 'NoContest', from),
-          eventArgs<never>(client, deployment.raffle, raffleAbi, 'TicketRefunded', from),
-        ])
+      // 3 requests per poll (head + both contracts' full event sets), not 16.
+      const [blockNumber, coinflipLogs, raffleLogs] = await Promise.all([
+        client.getBlockNumber(),
+        client.getContractEvents({ address: deployment.coinFlip, abi: coinFlipAbi, fromBlock: from, strict: true }),
+        client.getContractEvents({ address: deployment.raffle, abi: raffleAbi, fromBlock: from, strict: true }),
+      ])
+      const entered = pick<never>(coinflipLogs, 'Entered')
+      const cancelled = pick<never>(coinflipLogs, 'Cancelled')
+      const paired = pick<never>(coinflipLogs, 'Paired')
+      const heated = pick<never>(coinflipLogs, 'Heated')
+      const settled = pick<never>(coinflipLogs, 'Settled')
+      const opened = pick<never>(raffleLogs, 'RoundOpened')
+      const committed = pick<never>(raffleLogs, 'Committed')
+      const ticketCancelled = pick<never>(raffleLogs, 'TicketCancelled')
+      const armed = pick<never>(raffleLogs, 'Armed')
+      const drawn = pick<never>(raffleLogs, 'Drawn')
+      const revealed = pick<never>(raffleLogs, 'Revealed')
+      const finalised = pick<never>(raffleLogs, 'Finalised')
+      const noContest = pick<never>(raffleLogs, 'NoContest')
+      const ticketRefunded = pick<never>(raffleLogs, 'TicketRefunded')
       const timestamps = await resolveTimestamps(client, deployment.chainId, [
         entered,
         paired,
