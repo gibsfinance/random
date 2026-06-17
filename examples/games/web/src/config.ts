@@ -45,6 +45,11 @@ export const deployments: GameDeployment[] = [
     coinFlip: '0x8d3a58d77d22636026066200f8868cd653ec2b2a',
     raffle: '0x33f506fafe4f05c8de9a07e1c8a7f73f50f1da36',
     random: '0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217',
+    // Read 943 through our own valve.city node (archive + CORS for this origin) instead of the flaky
+    // public RPCs the core registry defaults to (g4mm4 / rpc.v4.testnet were failing "Failed to
+    // fetch" in the browser → no rounds shown). vk_demo is the public demo key; a domain-scoped
+    // games.msgboard.xyz/rpc proxy (key server-side) is the planned follow-up.
+    rpc: 'https://one.valve.city/rpc/vk_demo/evm/943',
     canonicalSubset: [
       '0xAe96b0748f933914867d59486251043790cB2896',
       '0x2a638D7135966a5cA1973c930bD0317cd7d6874c',
@@ -70,6 +75,8 @@ export const deployments: GameDeployment[] = [
     coinFlip: '0x66bdacfdd918f9d4c29f0a7d26609912ab478f4d',
     raffle: '0x004564d44E6921FFA68936F44ae58988Cd146b10',
     random: '0x87fc31413534733a09df5dc5aa33b4dba1f64b61',
+    // Read mainnet through our own valve.city node (same reasoning as 943 above).
+    rpc: 'https://one.valve.city/rpc/vk_demo/evm/369',
     canonicalSubset: [
       '0xAe96b0748f933914867d59486251043790cB2896',
       '0x2a638D7135966a5cA1973c930bD0317cd7d6874c',
