@@ -60,6 +60,9 @@ importers:
       '@gibs/msgboard-games':
         specifier: workspace:*
         version: link:../msgboard-games
+      '@gibs/pow-grinder':
+        specifier: workspace:*
+        version: link:../pow-grinder
       '@gibs/raffle':
         specifier: workspace:*
         version: link:../raffle
@@ -176,6 +179,10 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.20)
+
+  examples/games/pow-grinder: {}
+
+  examples/games/pow-grinder/pkg: {}
 
   examples/games/raffle:
     dependencies:

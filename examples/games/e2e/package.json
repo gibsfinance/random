@@ -19,6 +19,7 @@
     "@gibs/games-core": "workspace:*",
     "@gibs/hilo-war": "workspace:*",
     "@gibs/msgboard-games": "workspace:*",
+    "@gibs/pow-grinder": "workspace:*",
     "@gibs/raffle": "workspace:*",
     "@gibs/random": "workspace:*",
     "@gibs/zk-cards-core": "workspace:*",

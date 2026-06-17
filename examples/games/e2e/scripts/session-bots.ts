@@ -59,8 +59,10 @@ import { mnemonicToAccount, privateKeyToAccount, generatePrivateKey } from 'viem
 import {
   HouseSession,
   makeDomain,
-  createBoardClient,
-  MsgBoardTransport,
+  createMsgBoardClient,
+  post,
+  type StampInput,
+  type Stamp,
   decisionMs,
   networkMs,
   totalMs,
@@ -167,59 +169,71 @@ const fmt = (wei: bigint) => viem.formatEther(wei)
 // endpoint built from VALVE_RPC_KEY (the deploy passes one); absent both, bots run in-process only.
 const BOARD_RPC =
   env.BOARD_RPC || (env.VALVE_RPC_KEY ? `https://one.valve.city/rpc/${env.VALVE_RPC_KEY}/evm/${CHAIN}` : '')
-const board = BOARD_RPC ? createBoardClient(BOARD_RPC) : null
-// All lifecycle notices go to ONE shared, discoverable category — mbg:lobby:<chain> — so a viewer
-// (the web app, the archive, anyone) can poll a single category to watch every table on the chain.
-// The per-table id rides in the body. Posting requires proof-of-work (~30s+/msg), so we post a
-// compact notice only when a table OPENS or CLOSES — never per round — and a drop-if-busy guard keeps
-// just one grind in flight, dropping notices that arrive mid-grind (the games turn over faster than
-// PoW, so an unbounded queue would grow forever; the board is a live signal, not a log).
+const board = BOARD_RPC ? createMsgBoardClient(BOARD_RPC) : null
+// All lifecycle notices go to ONE shared, discoverable category so a viewer (the web app, the archive,
+// anyone) can poll a single category to watch every table on the chain; the per-table id rides in the
+// body. The proof-of-work STAMP (the slow part) is minted in a worker_threads grinder (native Rust
+// @gibs/pow-grinder, ~0.7s) so it never starves the game loops on this thread — the worker gets only
+// encoded bytes, never a key. The thin RPC bits (read difficulty + head, then submit) run here via
+// `post`. One post in flight at a time; notices arriving mid-stamp are dropped (drop-if-busy) — the
+// games turn over faster than a post, and the board is a live signal, not a log.
 const LOBBY_CATEGORY = `games.msgboard.xyz:lobby:${CHAIN}`
-// `lobby` is used only for its category + encode() (cheap, main thread). The expensive PoW grind +
-// submit runs in a worker_threads grinder so it never starves (or is starved by) the game loops on
-// this thread. The worker gets ONLY encoded bytes + the RPC — never a key (these lifecycle notices
-// aren't signed). One job in flight at a time; notices arriving mid-grind are dropped (drop-if-busy).
-const lobby = board ? new MsgBoardTransport(board, { category: LOBBY_CATEGORY }) : null
+const STAMP_MAX_ITERS = 50_000_000 // ample for the 943 floor (~190k iters); native finds it in ~0.7s
+
 let powWorker: Worker | null = null
 let posting = false
 let jobSeq = 0
-const pending = new Map<number, { kind: string; game: string; started: number }>()
-let flushResolve: (() => void) | null = null
-let inFlight: Promise<void> = Promise.resolve()
-const settleJob = (reply: { id: number; hash?: string; error?: string }): void => {
-  const job = pending.get(reply.id)
-  pending.delete(reply.id)
-  if (job) {
-    const ms = Date.now() - job.started
-    if (reply.error) console.log(`[board] post failed (${job.kind}/${job.game}) after ${ms}ms: ${reply.error.split('\n')[0]}`)
-    else console.log(`[board] posted ${job.kind}/${job.game} in ${ms}ms`)
-  }
-  posting = false
-  flushResolve?.()
-  flushResolve = null
-}
-if (lobby) {
+const stampJobs = new Map<number, { resolve: (s: Stamp) => void; reject: (e: Error) => void }>()
+if (board) {
   const isTs = import.meta.url.endsWith('.ts')
   powWorker = new Worker(
     new URL(isTs ? './pow-worker.ts' : './pow-worker.mjs', import.meta.url),
     isTs ? { execArgv: ['--import', 'tsx'] } : undefined,
   )
-  powWorker.on('message', settleJob)
-  powWorker.on('error', (e) => settleJob({ id: -1, error: e.message }))
-  powWorker.unref() // don't keep the process alive solely for the grinder
-  console.log(`[board] live feed → ${LOBBY_CATEGORY} (${lobby.category.slice(0, 12)}…) via ${BOARD_RPC.replace(/\/rpc\/[^/]+\//, '/rpc/<key>/')} [worker]`)
-}
-const broadcast = (tableId: viem.Hex, msg: Record<string, unknown>): void => {
-  if (!lobby || !powWorker || posting) return
-  posting = true
-  const id = ++jobSeq
-  pending.set(id, { kind: String(msg.kind), game: String(msg.game), started: Date.now() })
-  console.log(`[board] grinding ${msg.kind}/${msg.game} PoW…`)
-  const data = lobby.encode({ v: 1, tableId, at: Date.now(), ...msg })
-  inFlight = new Promise<void>((res) => {
-    flushResolve = res
+  powWorker.on('message', (reply: { id: number; nonce?: string; hash?: string; error?: string }) => {
+    const job = stampJobs.get(reply.id)
+    if (!job) return
+    stampJobs.delete(reply.id)
+    if (reply.error || !reply.nonce || !reply.hash) job.reject(new Error(reply.error ?? 'stamp failed'))
+    else job.resolve({ nonce: BigInt(reply.nonce), hash: reply.hash as viem.Hex })
   })
-  powWorker.postMessage({ id, category: lobby.category, data, rpcUrl: BOARD_RPC })
+  powWorker.on('error', (e) => {
+    for (const job of stampJobs.values()) job.reject(e)
+    stampJobs.clear()
+  })
+  powWorker.unref() // don't keep the process alive solely for the grinder
+  console.log(`[board] live feed → ${LOBBY_CATEGORY} via ${BOARD_RPC.replace(/\/rpc\/[^/]+\//, '/rpc/<key>/')} [native stamp worker]`)
+}
+
+/** Mint the PoW stamp in the worker (off the main loop). Pure compute — no key crosses over. */
+const stamper = (input: StampInput): Promise<Stamp> =>
+  new Promise<Stamp>((resolve, reject) => {
+    if (!powWorker) return reject(new Error('no grinder'))
+    const id = ++jobSeq
+    stampJobs.set(id, { resolve, reject })
+    powWorker.postMessage({
+      id,
+      category: input.category,
+      data: input.data,
+      wm: Number(input.workMultiplier),
+      wd: Number(input.workDivisor),
+      blockHash: input.blockHash,
+      maxIters: STAMP_MAX_ITERS,
+    })
+  })
+
+let inFlight: Promise<void> = Promise.resolve()
+const broadcast = (tableId: viem.Hex, msg: Record<string, unknown>): void => {
+  if (!board || !powWorker || posting) return
+  posting = true
+  const started = Date.now()
+  console.log(`[board] stamping ${msg.kind}/${msg.game}…`)
+  inFlight = post(board, LOBBY_CATEGORY, { v: 1, tableId, at: started, ...msg }, stamper)
+    .then((hash) => console.log(`[board] posted ${msg.kind}/${msg.game} in ${Date.now() - started}ms ${String(hash).slice(0, 12)}…`))
+    .catch((e: unknown) => console.log(`[board] post failed (${msg.kind}/${msg.game}) after ${Date.now() - started}ms: ${(e as Error).message?.split('\n')[0]}`))
+    .finally(() => {
+      posting = false
+    })
 }
 
 // ---------------------------------------------------------------------------------------------

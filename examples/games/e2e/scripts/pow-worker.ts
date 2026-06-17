@@ -1,33 +1,29 @@
 import { parentPort } from 'node:worker_threads'
-import { createBoardClient, type BoardClient } from '@gibs/msgboard-games'
+import { stamp as nativeStamp } from '@gibs/pow-grinder'
 
 /**
- * Node worker_threads grinder. Keeps MsgBoard proof-of-work OFF the bot's main event loop, so the
- * game loops never starve the grind (and vice versa — on the main thread the two contend and a post
- * that should take ~30s stretched to 100s+).
- *
- * KEY BOUNDARY: this worker receives only ENCODED bytes — `{ category, data }` (the already-built
- * notice) plus the board RPC URL. It never receives a private key. Signing stays on the main thread;
- * this worker only PoW-wraps the bytes and submits them.
+ * Node worker_threads grinder — a PURE STAMPER. It mints the MsgBoard proof-of-work stamp (the heavy
+ * ~0.7s native grind, in Rust via @gibs/pow-grinder) off the bot's main event loop, so the game loops
+ * never starve it (and vice versa). It receives ONLY encoded bytes (category, data, block hash) + the
+ * difficulty factors — never a private key, never the RPC. The main thread does the status/block read
+ * and the submit (the `post` orchestration); this thread only stamps.
  */
 if (!parentPort) throw new Error('pow-worker must be spawned as a worker_threads worker')
 
-const clients = new Map<string, BoardClient>()
-const clientFor = (rpcUrl: string): BoardClient => {
-  let c = clients.get(rpcUrl)
-  if (!c) {
-    c = createBoardClient(rpcUrl)
-    clients.set(rpcUrl, c)
-  }
-  return c
-}
+type Job = { id: number; category: string; data: string; wm: number; wd: number; blockHash: string; maxIters: number }
+const buf = (hex: string): Buffer => Buffer.from(hex.slice(2), 'hex')
 
-type Job = { id: number; category: `0x${string}`; data: `0x${string}`; rpcUrl: string }
-
-parentPort.on('message', async (job: Job) => {
+parentPort.on('message', (job: Job) => {
   try {
-    const hash = await clientFor(job.rpcUrl).addMessage({ category: job.category, data: job.data })
-    parentPort!.postMessage({ id: job.id, hash })
+    const out = nativeStamp(buf(job.category), buf(job.data), job.wm, job.wd, buf(job.blockHash), 0, job.maxIters)
+    if (!out) {
+      parentPort!.postMessage({ id: job.id, error: 'stamp: maxIters exhausted' })
+      return
+    }
+    // out = nonce_be(8) ‖ hash(32)
+    const nonce = `0x${Buffer.from(out.subarray(0, 8)).toString('hex')}`
+    const hash = `0x${Buffer.from(out.subarray(8)).toString('hex')}`
+    parentPort!.postMessage({ id: job.id, nonce, hash })
   } catch (e) {
     parentPort!.postMessage({ id: job.id, error: e instanceof Error ? e.message : String(e) })
   }
