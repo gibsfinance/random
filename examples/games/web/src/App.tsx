@@ -103,38 +103,41 @@ export const App = () => {
         <summary>How the back room stays honest — and cheap</summary>
         <div className="pitch-body">
           <p className="hero-pitch">
-            Coin flips and a numbers game where <strong>nobody can cook the draw</strong> — not the house, not the
-            player across the table, not even{' '}
+            Two kinds of tables, one promise: <strong>the draw is sealed before you play</strong>, and your own
+            browser re-runs the count on every result. The coin flip and the numbers draw their seed from validator
+            secrets locked on{' '}
             <a href="https://msgboard.xyz" target="_blank" rel="noreferrer">
-              MsgBoard
+              chain
             </a>
-            . Every result comes from validator secrets locked in before you play, and your own browser re-runs the
-            count on every settled game. A trust-me casino asks you to believe the odds; this table hands you the
-            books.
+            ; the dice, limbo, plinko, keno, mines, and hi-lo tables lock their seed before the first hand and settle
+            off chain, co-signed, with the trail posted to MsgBoard. A trust-me casino asks you to believe the odds;
+            this room hands you the books.
           </p>
           <div className="howit">
             <div className="howit-step">
               <span className="howit-num">1</span>
-              <strong>Secrets go in before the action.</strong> Validators ink hashed secrets on chain ahead of every
-              game, and your entry pins that exact set — no late swaps. Don't trust the set? Anyone can ink and
-              join it — you or the house included.
+              <strong>Sealed before you play.</strong> On the chain games, validators ink hashed secrets ahead of the
+              draw and your entry pins that exact set. At the tables, the seed is committed before the first hand. Either
+              way, nothing can change once you've bet.
             </div>
             <div className="howit-step">
               <span className="howit-num">2</span>
-              <strong>The reveal is the draw.</strong> The seed is the hash of all the validators' revealed secrets
-              together — one honest validator beats any cartel, and the outcome is pure math on the seed.
+              <strong>The reveal is the draw.</strong> Chain games: the seed is the hash of the validators' revealed
+              secrets — one honest validator beats any cartel. Tables: each hand reveals the next sealed seed, co-signed
+              by you and the house off chain over MsgBoard — no gas per play.
             </div>
             <div className="howit-step">
               <span className="howit-num">3</span>
-              <strong>You keep the books.</strong> Your browser recomputes every outcome and stamps the slip{' '}
-              <em>on the level</em> — or calls it crooked. Don't trust the table; audit it.
+              <strong>You keep the books.</strong> Your browser recomputes every outcome — re-verifying the chain draw,
+              or replaying the co-signed table transcript — and stamps the slip <em>on the level</em> or calls it
+              crooked. Don't trust the room; audit it.
             </div>
           </div>
           <p className="howit-footer">
-            <strong>Supercharged by MsgBoard:</strong> the validators coordinate with proof-of-work stamps instead
-            of gas, so fees never bleed the odds — every settlement leaves a notice on the board (follow the
-            msgboard trail from <em>The record</em>). And if a chain's vault ever runs dry, the tables simply
-            pause; nothing breaks, and play resumes the moment it's refilled.
+            <strong>Supercharged by MsgBoard:</strong> coordination rides proof-of-work stamps instead of gas, so fees
+            never bleed the odds — every settlement leaves a notice on the board (follow the trail from{' '}
+            <em>The record</em>). And if a chain's vault ever runs dry, the tables simply pause; nothing breaks, and
+            play resumes the moment it's refilled.
           </p>
         </div>
       </details>
