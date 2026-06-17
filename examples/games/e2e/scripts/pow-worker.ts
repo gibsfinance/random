@@ -15,7 +15,15 @@ const buf = (hex: string): Buffer => Buffer.from(hex.slice(2), 'hex')
 
 parentPort.on('message', (job: Job) => {
   try {
-    const out = nativeStamp(buf(job.category), buf(job.data), job.wm, job.wd, buf(job.blockHash), 0, job.maxIters)
+    const out = nativeStamp({
+      category: buf(job.category),
+      data: buf(job.data),
+      workMultiplier: job.wm,
+      workDivisor: job.wd,
+      blockHash: buf(job.blockHash),
+      startNonce: 0,
+      maxIters: job.maxIters,
+    })
     if (!out) {
       parentPort!.postMessage({ id: job.id, error: 'stamp: maxIters exhausted' })
       return

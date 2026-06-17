@@ -27,7 +27,7 @@ self.onmessage = async (e: MessageEvent<Job>) => {
   try {
     if (!ready) ready = init() // instantiate the wasm module once, lazily
     await ready
-    const packed = stamp(category, data, wm, wd, blockHash, 0, maxIters)
+    const packed = stamp({ category, data, workMultiplier: wm, workDivisor: wd, blockHash, startNonce: 0, maxIters })
     if (!packed) {
       ;(self as unknown as Worker).postMessage({ id, error: 'stamp: maxIters exhausted' })
       return

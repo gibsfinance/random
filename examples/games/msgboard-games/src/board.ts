@@ -92,12 +92,18 @@ export type Stamper = (input: StampInput) => Promise<Stamp> | Stamp
  * injected `stamp` engine (native/WASM/JS — that's the only heavy part), then submits. The node
  * recomputes the hash, so only the nonce is needed on the wire (see toRLP).
  */
-export async function post(
-  board: MsgBoardClient,
-  categoryName: string,
-  notice: unknown,
-  stamp: Stamper,
-): Promise<Hex> {
+export async function post({
+  board,
+  category: categoryName,
+  notice,
+  stamp,
+}: {
+  board: MsgBoardClient
+  /** the category NAME (hashed here), e.g. `games.msgboard.xyz:lobby:943`. */
+  category: string
+  notice: unknown
+  stamp: Stamper
+}): Promise<Hex> {
   const status = await board.status()
   const { hash: blockHash } = await board.lastestBlock()
   const category = categoryHash(categoryName)

@@ -17,7 +17,13 @@ const STAMP_MAX_ITERS = 50_000_000 // ample for the 943 floor (~190k iters)
  *
  * No-op when the deployment has no `boardRpc`. Reading the feed (`useBoardFeed`) needs no worker.
  */
-export const useBoardBroadcaster = (boardRpc: string | undefined, chainId: number): ((n: LobbyNotice) => void) => {
+export const useBoardBroadcaster = ({
+  boardRpc,
+  chainId,
+}: {
+  boardRpc: string | undefined
+  chainId: number
+}): ((n: LobbyNotice) => void) => {
   const workerRef = useRef<Worker | null>(null)
   const boardRef = useRef<ReturnType<typeof createMsgBoardClient> | null>(null)
   const busy = useRef(false)
@@ -77,7 +83,7 @@ export const useBoardBroadcaster = (boardRpc: string | undefined, chainId: numbe
       const board = boardRef.current
       if (!board || !boardRpc || busy.current) return // drop-if-busy — PoW + RPC take a moment
       busy.current = true
-      void post(board, `games.msgboard.xyz:lobby:${chainId}`, { v: 1, at: Date.now(), ...notice }, stamper)
+      void post({ board, category: `games.msgboard.xyz:lobby:${chainId}`, notice: { v: 1, at: Date.now(), ...notice }, stamp: stamper })
         .catch(() => {}) // best-effort live signal
         .finally(() => {
           busy.current = false

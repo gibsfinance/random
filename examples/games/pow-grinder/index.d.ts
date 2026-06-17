@@ -5,12 +5,12 @@
  *          (Returned as a Node `Buffer` at runtime; typed as its `Uint8Array` supertype so this
  *          package needs no `@types/node`. Pass Node `Buffer`s for the inputs — they are Uint8Arrays.)
  */
-export function stamp(
-  category: Uint8Array,
-  data: Uint8Array,
-  workMultiplier: number,
-  workDivisor: number,
-  blockHash: Uint8Array,
-  startNonce: number,
-  maxIters: number,
-): Uint8Array | null
+export function stamp(req: {
+  category: Uint8Array
+  data: Uint8Array
+  workMultiplier: number
+  workDivisor: number
+  blockHash: Uint8Array
+  startNonce: number
+  maxIters: number
+}): Uint8Array | null

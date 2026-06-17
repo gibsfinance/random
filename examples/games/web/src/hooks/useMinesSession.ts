@@ -172,12 +172,16 @@ const claimFor = (state: MinesState): MinesClaim => ({
  * Drives one stateful mines game. The injected `walletClient` is the player (used only to anchor
  * the player address for the move log / receipt today; per-move co-signing is the production add).
  */
-export const useMinesSession = (
-  _walletClient?: viem.WalletClient,
-  boardRpc?: string,
+export const useMinesSession = ({
+  walletClient: _walletClient,
+  boardRpc,
   chainId = 0,
-): MinesSessionApi => {
-  const broadcastLobby = useBoardBroadcaster(boardRpc, chainId)
+}: {
+  walletClient?: viem.WalletClient
+  boardRpc?: string
+  chainId?: number
+} = {}): MinesSessionApi => {
+  const broadcastLobby = useBoardBroadcaster({ boardRpc, chainId })
   const [status, setStatus] = useState<MinesStatus>('idle')
   const [error, setError] = useState<string>()
   const [state, setState] = useState<MinesState>()

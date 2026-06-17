@@ -143,7 +143,7 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
     boardRpc,
     gameLabel,
   } = config
-  const broadcastLobby = useBoardBroadcaster(boardRpc, chainId)
+  const broadcastLobby = useBoardBroadcaster({ boardRpc, chainId })
 
   const [status, setStatus] = useState<SessionStatus>('idle')
   const [error, setError] = useState<string>()

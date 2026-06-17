@@ -157,7 +157,7 @@ export const useWarSession = (config: UseWarSessionConfig = {}): WarSessionApi =
     escrowEach = viem.parseEther('1'),
     boardRpc,
   } = config
-  const broadcastLobby = useBoardBroadcaster(boardRpc, chainId ?? 0)
+  const broadcastLobby = useBoardBroadcaster({ boardRpc, chainId: chainId ?? 0 })
 
   const [status, setStatus] = useState<WarStatus>('idle')
   const [error, setError] = useState<string>()

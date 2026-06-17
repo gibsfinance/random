@@ -196,26 +196,30 @@ mod napi_binding {
     use napi::bindgen_prelude::Buffer;
     use napi_derive::napi;
 
+    /// Single-object input to `stamp` (JS sees camelCase: category, data, workMultiplier, …).
+    #[napi(object)]
+    pub struct StampRequest {
+        pub category: Buffer,
+        pub data: Buffer,
+        pub work_multiplier: u32,
+        pub work_divisor: u32,
+        pub block_hash: Buffer,
+        pub start_nonce: u32,
+        pub max_iters: u32,
+    }
+
     /// Mint a MsgBoard PoW stamp natively. Returns a 40-byte Buffer `nonce_be(8) ‖ hash(32)`, or null
-    /// if `max_iters` was exhausted. Pure compute — no keys, no RPC. (SDK verb: `stamp`.)
+    /// if `maxIters` was exhausted. Pure compute — no keys, no RPC. (SDK verb: `stamp`.)
     #[napi]
-    pub fn stamp(
-        category: Buffer,
-        data: Buffer,
-        work_multiplier: u32,
-        work_divisor: u32,
-        block_hash: Buffer,
-        start_nonce: u32,
-        max_iters: u32,
-    ) -> Option<Buffer> {
+    pub fn stamp(req: StampRequest) -> Option<Buffer> {
         super::grind_packed(
-            &category,
-            &data,
-            work_multiplier as u64,
-            work_divisor as u64,
-            &block_hash,
-            start_nonce as u64,
-            max_iters as u64,
+            &req.category,
+            &req.data,
+            req.work_multiplier as u64,
+            req.work_divisor as u64,
+            &req.block_hash,
+            req.start_nonce as u64,
+            req.max_iters as u64,
         )
         .map(Buffer::from)
     }
@@ -224,29 +228,38 @@ mod napi_binding {
 // ── wasm (browser Web Worker grinder) ───────────────────────────────────────────────────────────
 #[cfg(feature = "wasm")]
 mod wasm_binding {
-    use wasm_bindgen::prelude::wasm_bindgen;
+    use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
-    /// Mint a MsgBoard PoW stamp in WASM. Returns a 40-byte Uint8Array `nonce_be(8) ‖ hash(32)`, or
-    /// undefined if `max_iters` was exhausted. Pure compute — no keys, no RPC. (SDK verb: `stamp`.)
-    #[wasm_bindgen]
-    pub fn stamp(
-        category: &[u8],
-        data: &[u8],
+    /// Single-object input to `stamp` (the byte fields are Uint8Arrays in JS).
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct StampRequest {
+        category: Vec<u8>,
+        data: Vec<u8>,
         work_multiplier: u32,
         work_divisor: u32,
-        block_hash: &[u8],
+        block_hash: Vec<u8>,
         start_nonce: u32,
         max_iters: u32,
-    ) -> Option<Vec<u8>> {
-        super::grind_packed(
-            category,
-            data,
-            work_multiplier as u64,
-            work_divisor as u64,
-            block_hash,
-            start_nonce as u64,
-            max_iters as u64,
-        )
+    }
+
+    /// Mint a MsgBoard PoW stamp in WASM. Takes one object `{ category, data, workMultiplier,
+    /// workDivisor, blockHash, startNonce, maxIters }`; returns a 40-byte Uint8Array
+    /// `nonce_be(8) ‖ hash(32)`, or undefined if `maxIters` was exhausted. Pure compute — no keys,
+    /// no RPC. (SDK verb: `stamp`.)
+    #[wasm_bindgen]
+    pub fn stamp(req: JsValue) -> Result<Option<Vec<u8>>, JsValue> {
+        let r: StampRequest =
+            serde_wasm_bindgen::from_value(req).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        Ok(super::grind_packed(
+            &r.category,
+            &r.data,
+            r.work_multiplier as u64,
+            r.work_divisor as u64,
+            &r.block_hash,
+            r.start_nonce as u64,
+            r.max_iters as u64,
+        ))
     }
 }
 

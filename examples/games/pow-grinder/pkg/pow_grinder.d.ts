@@ -2,18 +2,24 @@
 /* eslint-disable */
 
 /**
- * Mint a MsgBoard PoW stamp in WASM. Returns a 40-byte Uint8Array `nonce_be(8) ‖ hash(32)`, or
- * undefined if `max_iters` was exhausted. Pure compute — no keys, no RPC. (SDK verb: `stamp`.)
+ * Mint a MsgBoard PoW stamp in WASM. Takes one object `{ category, data, workMultiplier,
+ * workDivisor, blockHash, startNonce, maxIters }`; returns a 40-byte Uint8Array
+ * `nonce_be(8) ‖ hash(32)`, or undefined if `maxIters` was exhausted. Pure compute — no keys,
+ * no RPC. (SDK verb: `stamp`.)
  */
-export function stamp(category: Uint8Array, data: Uint8Array, work_multiplier: number, work_divisor: number, block_hash: Uint8Array, start_nonce: number, max_iters: number): Uint8Array | undefined;
+export function stamp(req: any): Uint8Array | undefined;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly stamp: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number];
-    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly stamp: (a: any) => [number, number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
+    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_exn_store: (a: number) => void;
+    readonly __externref_table_alloc: () => number;
+    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_start: () => void;
 }

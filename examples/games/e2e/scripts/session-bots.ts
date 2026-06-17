@@ -228,7 +228,7 @@ const broadcast = (tableId: viem.Hex, msg: Record<string, unknown>): void => {
   posting = true
   const started = Date.now()
   console.log(`[board] stamping ${msg.kind}/${msg.game}…`)
-  inFlight = post(board, LOBBY_CATEGORY, { v: 1, tableId, at: started, ...msg }, stamper)
+  inFlight = post({ board, category: LOBBY_CATEGORY, notice: { v: 1, tableId, at: started, ...msg }, stamp: stamper })
     .then((hash) => console.log(`[board] posted ${msg.kind}/${msg.game} in ${Date.now() - started}ms ${String(hash).slice(0, 12)}…`))
     .catch((e: unknown) => console.log(`[board] post failed (${msg.kind}/${msg.game}) after ${Date.now() - started}ms: ${(e as Error).message?.split('\n')[0]}`))
     .finally(() => {

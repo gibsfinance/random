@@ -12,7 +12,7 @@ default = []
 # native node addon (bots' worker_threads grinder)
 napi = ["dep:napi", "dep:napi-derive"]
 # browser Web Worker grinder
-wasm = ["dep:wasm-bindgen"]
+wasm = ["dep:wasm-bindgen", "dep:serde", "dep:serde-wasm-bindgen"]
 
 [dependencies]
 # secp256k1 point arithmetic (projective coords → no per-step inversion, ~100x the JS `elliptic` loop),
@@ -25,6 +25,8 @@ primitive-types = { version = "0.12", default-features = false }
 napi = { version = "2", default-features = false, features = ["napi8"], optional = true }
 napi-derive = { version = "2", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
+serde = { version = "1", default-features = false, features = ["derive"], optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
 
 [build-dependencies]
 # only runs (on the host) when the `napi` feature is on — wires the Node-API addon linkage.
