@@ -164,6 +164,92 @@ pub fn grind(
     None
 }
 
+/// Binding-friendly grind: returns 40 bytes `nonce_be(8) ‖ hash(32)` on success, else `None`.
+/// (Packing keeps the napi/wasm bindings trivial — JS reads the u64 nonce from the first 8 bytes.)
+pub fn grind_packed(
+    category: &[u8],
+    data: &[u8],
+    wm: u64,
+    wd: u64,
+    block_hash: &[u8],
+    start_nonce: u64,
+    max_iters: u64,
+) -> Option<Vec<u8>> {
+    if category.len() != 32 || block_hash.len() != 32 {
+        return None;
+    }
+    let mut cat = [0u8; 32];
+    cat.copy_from_slice(category);
+    let mut bh = [0u8; 32];
+    bh.copy_from_slice(block_hash);
+    grind(&cat, data, wm, wd, &bh, start_nonce, max_iters).map(|f| {
+        let mut out = Vec::with_capacity(40);
+        out.extend_from_slice(&f.nonce.to_be_bytes());
+        out.extend_from_slice(&f.hash);
+        out
+    })
+}
+
+// ── napi (native node addon for the bots' worker_threads grinder) ───────────────────────────────
+#[cfg(feature = "napi")]
+mod napi_binding {
+    use napi::bindgen_prelude::Buffer;
+    use napi_derive::napi;
+
+    /// Mint a MsgBoard PoW stamp natively. Returns a 40-byte Buffer `nonce_be(8) ‖ hash(32)`, or null
+    /// if `max_iters` was exhausted. Pure compute — no keys, no RPC. (SDK verb: `stamp`.)
+    #[napi]
+    pub fn stamp(
+        category: Buffer,
+        data: Buffer,
+        work_multiplier: u32,
+        work_divisor: u32,
+        block_hash: Buffer,
+        start_nonce: u32,
+        max_iters: u32,
+    ) -> Option<Buffer> {
+        super::grind_packed(
+            &category,
+            &data,
+            work_multiplier as u64,
+            work_divisor as u64,
+            &block_hash,
+            start_nonce as u64,
+            max_iters as u64,
+        )
+        .map(Buffer::from)
+    }
+}
+
+// ── wasm (browser Web Worker grinder) ───────────────────────────────────────────────────────────
+#[cfg(feature = "wasm")]
+mod wasm_binding {
+    use wasm_bindgen::prelude::wasm_bindgen;
+
+    /// Mint a MsgBoard PoW stamp in WASM. Returns a 40-byte Uint8Array `nonce_be(8) ‖ hash(32)`, or
+    /// undefined if `max_iters` was exhausted. Pure compute — no keys, no RPC. (SDK verb: `stamp`.)
+    #[wasm_bindgen]
+    pub fn stamp(
+        category: &[u8],
+        data: &[u8],
+        work_multiplier: u32,
+        work_divisor: u32,
+        block_hash: &[u8],
+        start_nonce: u32,
+        max_iters: u32,
+    ) -> Option<Vec<u8>> {
+        super::grind_packed(
+            category,
+            data,
+            work_multiplier as u64,
+            work_divisor as u64,
+            block_hash,
+            start_nonce as u64,
+            max_iters as u64,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

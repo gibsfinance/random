@@ -1,5 +1,5 @@
-import { createPublicClient, http, type Hex } from 'viem'
-import { MsgBoardClient } from '@msgboard/sdk'
+import { createPublicClient, http, stringToHex, type Hex } from 'viem'
+import { MsgBoardClient, categoryHash } from '@msgboard/sdk'
 import type { BoardClient } from './msgboardTransport'
 
 /**
@@ -46,10 +46,9 @@ export function msgBoardClientAdapter(board: MsgBoardClient): BoardClient {
   }
 }
 
-/** Build a live `BoardClient` from an RPC URL whose node runs the `msgboard_` module (e.g. a
- *  valve.city endpoint: https://one.valve.city/rpc/<key>/evm/<chainId>). The returned client posts
- *  real PoW-stamped notices and reads the live board. */
-export function createBoardClient(rpcUrl: string): BoardClient {
+/** The raw SDK `MsgBoardClient` for an RPC whose node runs the `msgboard_` module (e.g. a valve.city
+ *  endpoint: https://one.valve.city/rpc/<key>/evm/<chainId>). Used by `post` for status/block/submit. */
+export function createMsgBoardClient(rpcUrl: string): MsgBoardClient {
   const viemClient = createPublicClient({ transport: http(rpcUrl) })
   // viem's `request` is typed to a fixed RPC schema; the board needs the SDK's looser
   // `{ method: string; params }` Provider. Forward through a thin wrapper (the msgboard_* methods
@@ -58,5 +57,61 @@ export function createBoardClient(rpcUrl: string): BoardClient {
     request: <T, U extends unknown[]>(arg: { method: string; params: U }): Promise<T> =>
       viemClient.request(arg as never) as Promise<T>,
   }
-  return msgBoardClientAdapter(new MsgBoardClient(provider))
+  return new MsgBoardClient(provider)
+}
+
+/** Build a live `BoardClient` from an RPC URL. The returned client posts real PoW-stamped notices
+ *  (JS grind) and reads the live board — used by `MsgBoardTransport` (e.g. the read-only live feed). */
+export function createBoardClient(rpcUrl: string): BoardClient {
+  return msgBoardClientAdapter(createMsgBoardClient(rpcUrl))
+}
+
+// ── unified post API (SDK-friendly verbs: `stamp` + `post`) ─────────────────────────────────────
+// The crypto step — minting the proof-of-work "stamp" for a message (what the SDK calls `doPoW`) — is
+// the slow part and the part that must run OFF the UI/main thread. We model it as a pluggable
+// `Stamper` so the heavy grind lives wherever it should: a native Rust addon in the bots, a WASM
+// module in the browser worker, or the SDK's JS grind as a fallback. The thin RPC bits (read the
+// board's difficulty + head block, then submit) stay on the calling thread.
+
+/** Inputs a stamper needs to mint a PoW stamp for one message. */
+export type StampInput = {
+  category: Hex
+  data: Hex
+  workMultiplier: bigint
+  workDivisor: bigint
+  blockHash: Hex
+}
+/** The minted stamp: the PoW nonce (and its hash, for reference). */
+export type Stamp = { nonce: bigint; hash: Hex }
+/** Mints a PoW stamp for a message. Pure compute — given no key and no network. */
+export type Stamper = (input: StampInput) => Promise<Stamp> | Stamp
+
+/**
+ * Stamp a notice and submit it to the board under `categoryName` — the one-call unification of
+ * `doPoW` + `addMessage`. Reads the board's live difficulty + head block, hands the message to the
+ * injected `stamp` engine (native/WASM/JS — that's the only heavy part), then submits. The node
+ * recomputes the hash, so only the nonce is needed on the wire (see toRLP).
+ */
+export async function post(
+  board: MsgBoardClient,
+  categoryName: string,
+  notice: unknown,
+  stamp: Stamper,
+): Promise<Hex> {
+  const status = await board.status()
+  const { hash: blockHash } = await board.lastestBlock()
+  const category = categoryHash(categoryName)
+  const data = stringToHex(JSON.stringify(notice))
+  const workMultiplier = BigInt(status.workMultiplier)
+  const workDivisor = BigInt(status.workDivisor)
+  const { nonce } = await stamp({ category, data, workMultiplier, workDivisor, blockHash })
+  return (await board.addMessage({
+    version: 1,
+    blockHash,
+    category,
+    data,
+    nonce,
+    workMultiplier,
+    workDivisor,
+  })) as Hex
 }
