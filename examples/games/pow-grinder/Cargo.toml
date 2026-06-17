@@ -1,0 +1,17 @@
+[package]
+name = "pow-grinder"
+version = "0.0.1"
+edition = "2021"
+description = "Fast MsgBoard proof-of-work grinder (bit-identical to reth msgboard-types pow.rs)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# secp256k1 point arithmetic (projective coords → no per-step inversion, ~100x the JS `elliptic` loop),
+# pure-Rust so it also compiles to wasm32 for the browser worker.
+k256 = { version = "0.13", default-features = false, features = ["arithmetic"] }
+sha2 = { version = "0.10", default-features = false }
+# 256-bit integer arithmetic for the scalar reduction + the hash % difficulty check, mirroring the
+# node's U256 carry handling exactly.
+primitive-types = { version = "0.12", default-features = false }
