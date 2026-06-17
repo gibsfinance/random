@@ -5,6 +5,7 @@ import type { GameDeployment } from '../config'
 import { useSession, type RoundRecord } from '../hooks/useSession'
 import { StakeInput, parseStake } from './StakeInput'
 import { TurnTiming } from './TurnTiming'
+import { InfoDot } from './Meta'
 
 const HUNDREDTHS = 100n
 
@@ -98,7 +99,14 @@ export const LimboScreen = ({
   return (
     <div>
       <div className="card">
-        <h3>Limbo</h3>
+        <h3>
+          Limbo
+          <InfoDot>
+            <strong>Pick a target multiplier.</strong> A random multiplier is drawn — reach your
+            target and you win that multiple. Aim higher for a bigger prize at a smaller chance.
+            Instant off-chain settle, no gas, sealed seed you can re-check.
+          </InfoDot>
+        </h3>
         <div className="row">
           <StakeInput value={amount} onChange={setAmount} />
           <label className="threshold-label">
@@ -135,19 +143,15 @@ export const LimboScreen = ({
               target must be between {MIN_TARGET_MULT.toFixed(2)}x and {MAX_TARGET_MULT.toFixed(2)}x ·{' '}
             </span>
           )}
-          result must reach your target to win
           {targetX100 !== undefined && (
-            <span className="ok"> · pays {fmtMult(targetX100)}</span>
+            <span className="ok">pays {fmtMult(targetX100)}</span>
           )}
           {winChanceX100 !== undefined && (
-            <span className="muted"> ({fmtWinChance(winChanceX100)} win chance</span>
+            <span className="muted"> · {fmtWinChance(winChanceX100)} win chance</span>
           )}
-          {potentialWin !== undefined && potentialWin > 0n && winChanceX100 !== undefined && (
-            <span className="muted">, +{viem.formatEther(potentialWin)} on a win</span>
+          {potentialWin !== undefined && potentialWin > 0n && (
+            <span className="muted"> · +{viem.formatEther(potentialWin)} on a win</span>
           )}
-          {winChanceX100 !== undefined && <span className="muted">)</span>}
-          . Every round is co-signed off-chain by you and the house over MsgBoard — no gas per roll,
-          and the server seed was committed before you opened the table.
         </p>
         {session.commit && (
           <p className="card-meta muted">

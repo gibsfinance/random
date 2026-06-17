@@ -12,6 +12,7 @@ import type { GameDeployment } from '../config'
 import { useSession, type RoundRecord } from '../hooks/useSession'
 import { StakeInput, parseStake } from './StakeInput'
 import { TurnTiming } from './TurnTiming'
+import { InfoDot } from './Meta'
 
 /** the row counts this screen offers; default 16 matches the package's DEFAULT_ROWS. */
 const ALLOWED_ROWS = [8, 12, 16] as const
@@ -113,7 +114,14 @@ export const PlinkoScreen = ({
   return (
     <div>
       <div className="card">
-        <h3>Drop the ball</h3>
+        <h3>
+          Drop the ball
+          <InfoDot>
+            <strong>Drop a ball through the pegs.</strong> Where it lands sets your multiplier — more
+            rows and higher risk spread the payouts wider, and the edge buckets pay the most. (Payout
+            values shown are illustrative.) Instant off-chain settle, no gas.
+          </InfoDot>
+        </h3>
         <div className="row">
           <StakeInput value={amount} onChange={setAmount} />
           <label className="threshold-label">
@@ -181,12 +189,9 @@ export const PlinkoScreen = ({
           {rowsOk && ladder === undefined && (
             <span className="bad">no paytable for {risk} risk at {rows} rows · </span>
           )}
-          a {rows}-row board lands in a bucket [0, {rows}]; the edges pay the most
           {maxMult !== undefined && maxMult > 0n && (
-            <span className="ok"> · up to {fmtMult(maxMult)}</span>
+            <span className="ok">up to {fmtMult(maxMult)}</span>
           )}
-          . Every round is co-signed off-chain by you and the house over MsgBoard — no gas per drop,
-          and the server seed was committed before you opened the table.
         </p>
         {session.commit && (
           <p className="card-meta muted">

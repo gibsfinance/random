@@ -5,6 +5,7 @@ import type { GameDeployment } from '../config'
 import { useSession, type RoundRecord } from '../hooks/useSession'
 import { StakeInput, parseStake } from './StakeInput'
 import { TurnTiming } from './TurnTiming'
+import { InfoDot } from './Meta'
 
 const HUNDREDTHS = 100n
 
@@ -97,7 +98,14 @@ export const DiceScreen = ({
   return (
     <div>
       <div className="card">
-        <h3>Roll under</h3>
+        <h3>
+          Roll under
+          <InfoDot>
+            <strong>Roll under your win chance to win.</strong> The lower the chance, the bigger the
+            payout. Each roll is settled instantly off-chain — no gas — and the seed was sealed before
+            you opened the table, so you can re-check it.
+          </InfoDot>
+        </h3>
         <div className="row">
           <StakeInput value={amount} onChange={setAmount} />
           <label className="threshold-label">
@@ -130,17 +138,14 @@ export const DiceScreen = ({
         <p className="muted">
           {amount !== '' && stake === undefined && <span className="bad">enter a positive amount · </span>}
           {targetPct !== '' && !targetOk && (
-            <span className="bad">win chance must be between {MIN_TARGET_PCT}% and {MAX_TARGET_PCT}% · </span>
+            <span className="bad">
+              win chance {MIN_TARGET_PCT}–{MAX_TARGET_PCT}% ·{' '}
+            </span>
           )}
-          roll under your number to win
-          {multiplierX100 !== undefined && (
-            <span className="ok"> · pays {fmtMult(multiplierX100)}</span>
-          )}
+          {multiplierX100 !== undefined && <span className="ok">pays {fmtMult(multiplierX100)}</span>}
           {potentialWin !== undefined && potentialWin > 0n && (
-            <span className="muted"> (+{viem.formatEther(potentialWin)} on a win)</span>
+            <span className="muted"> · +{viem.formatEther(potentialWin)} on a win</span>
           )}
-          . Every round is co-signed off-chain by you and the house over MsgBoard — no gas per roll,
-          and the server seed was committed before you opened the table.
         </p>
         {session.commit && (
           <p className="card-meta muted">

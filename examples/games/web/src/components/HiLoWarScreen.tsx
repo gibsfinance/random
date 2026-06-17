@@ -5,6 +5,7 @@ import type { Bet } from '@gibs/hilo-war'
 import type { GameDeployment } from '../config'
 import { useWarSession, type FlipRecord } from '../hooks/useWarSession'
 import { TurnTiming } from './TurnTiming'
+import { InfoDot } from './Meta'
 
 /** hidden-card glyph for a folded / unrevealed opponent card. */
 const CARD_BACK = '🂠'
@@ -108,7 +109,15 @@ export const HiLoWarScreen = ({
   return (
     <div>
       <div className="card">
-        <h3>Hi-Lo War</h3>
+        <h3>
+          Hi-Lo War
+          <InfoDot>
+            <strong>Higher card wins the pot.</strong> Each flip you and the house get one card
+            face-down. Hold to ante, or Raise to push — the other side Calls (showdown) or Folds (its
+            card stays hidden). Ties carry a war pot to the next flip. One shuffle, sealed at the
+            start; no per-flip gas.
+          </InfoDot>
+        </h3>
         <div className="row" style={{ gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <span className="muted">bet</span>
           <Chip value="HOLD" current={bet} set={setBet}>
@@ -143,13 +152,6 @@ export const HiLoWarScreen = ({
             <span className="muted">acknowledge the house rules above first</span>
           )}
         </div>
-        <p className="muted">
-          Two peers, one masked deck. Each flip you and the house are dealt one card face-down; higher
-          rank wins the pot. Hold to ante only, or Raise to add another ante — if one side raises, the
-          other Calls (showdown) or Folds (its card stays masked forever). Ties carry a war pot to the
-          next flip. There's no server seed and no per-flip gas — the deck shuffle is co-signed once at
-          genesis and every flip is co-signed off-chain by both peers.
-        </p>
         {session.deckCommitment && (
           <p className="card-meta muted">
             deck commitment <span className="mono">{session.deckCommitment.slice(0, 10)}…</span>

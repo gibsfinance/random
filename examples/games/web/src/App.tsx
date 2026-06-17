@@ -22,18 +22,31 @@ const PITCH_KEY = 'msgboard-games:pitch-collapsed'
 const chainIcon = (chainId: number): string | undefined =>
   chainId === 31337 ? undefined : `https://gib.show/image/${chainId}?w=32&h=32&format=webp`
 
+/** The venue's table list — too many for a tab strip now, so the picker is a select-style Menu. */
+const GAMES = [
+  { id: 'coinflip', label: '🪙 Coin Flip' },
+  { id: 'raffle', label: '🎟 The Numbers' },
+  { id: 'dice', label: '🎲 Dice' },
+  { id: 'limbo', label: '🚀 Limbo' },
+  { id: 'plinko', label: '⚪ Plinko' },
+  { id: 'keno', label: '🔢 Keno' },
+  { id: 'mines', label: '💣 Mines' },
+  { id: 'hilo', label: '⚔️ Hi-Lo War' },
+  { id: 'live', label: '🟢 Live' },
+] as const
+type Tab = (typeof GAMES)[number]['id']
+
 export const App = () => {
   const [deploymentIndex, setDeploymentIndex] = useState(0)
-  const [tab, setTab] = useState<
-    'coinflip' | 'raffle' | 'dice' | 'limbo' | 'plinko' | 'keno' | 'mines' | 'hilo' | 'live'
-  >('coinflip')
+  const [tab, setTab] = useState<Tab>('coinflip')
   const deployment = deployments[deploymentIndex]
   const wallet = useWallet(deployment?.chainId ?? 31337)
   const data = useChainData(deployment ?? null, wallet.address)
   const [trustAcknowledged, setTrustAcknowledged] = useState(() =>
     deployment ? isTrustAcknowledged(deployment.chainId) : false,
   )
-  const [pitchOpen, setPitchOpen] = useState(() => localStorage.getItem(PITCH_KEY) !== 'true')
+  // Collapsed by default — show the tables, not a wall of text. We remember if a player opened it.
+  const [pitchOpen, setPitchOpen] = useState(() => localStorage.getItem(PITCH_KEY) === 'false')
 
   if (!deployment) {
     return (
@@ -128,33 +141,12 @@ export const App = () => {
       {wallet.error && <div className="banner bad">{wallet.error}</div>}
       {data.error && <div className="banner bad">chain read failed: {data.error}</div>}
       <div className="tabs">
-        <button className={tab === 'coinflip' ? 'tab active' : 'tab'} onClick={() => setTab('coinflip')}>
-          <span className="coin" /> Coin Flip
-        </button>
-        <button className={tab === 'raffle' ? 'tab active' : 'tab'} onClick={() => setTab('raffle')}>
-          🎟 The Numbers
-        </button>
-        <button className={tab === 'dice' ? 'tab active' : 'tab'} onClick={() => setTab('dice')}>
-          🎲 Dice
-        </button>
-        <button className={tab === 'limbo' ? 'tab active' : 'tab'} onClick={() => setTab('limbo')}>
-          🚀 Limbo
-        </button>
-        <button className={tab === 'plinko' ? 'tab active' : 'tab'} onClick={() => setTab('plinko')}>
-          🪙 Plinko
-        </button>
-        <button className={tab === 'keno' ? 'tab active' : 'tab'} onClick={() => setTab('keno')}>
-          🔢 Keno
-        </button>
-        <button className={tab === 'mines' ? 'tab active' : 'tab'} onClick={() => setTab('mines')}>
-          💣 Mines
-        </button>
-        <button className={tab === 'hilo' ? 'tab active' : 'tab'} onClick={() => setTab('hilo')}>
-          ⚔️ Hi-Lo War
-        </button>
-        <button className={tab === 'live' ? 'tab active' : 'tab'} onClick={() => setTab('live')}>
-          🟢 Live
-        </button>
+        <Menu
+          label="game"
+          options={GAMES.map((g) => g.label)}
+          value={Math.max(0, GAMES.findIndex((g) => g.id === tab))}
+          onChange={(i) => setTab(GAMES[i]!.id)}
+        />
         <span className="blockline">block {data.blockNumber.toString()}</span>
       </div>
       <TrustBanner deployment={deployment} onAcknowledged={() => setTrustAcknowledged(true)} />

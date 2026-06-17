@@ -13,6 +13,7 @@ import type { GameDeployment } from '../config'
 import { useSession, type RoundRecord } from '../hooks/useSession'
 import { StakeInput, parseStake } from './StakeInput'
 import { TurnTiming } from './TurnTiming'
+import { InfoDot } from './Meta'
 
 /** keno multipliers come back from the module's paytable in hundredths (2.00x == 200). */
 const fmtMult = (x100: bigint): string => `${(Number(x100) / 100).toFixed(2)}x`
@@ -123,7 +124,14 @@ export const KenoScreen = ({
   return (
     <div>
       <div className="card">
-        <h3>Keno</h3>
+        <h3>
+          Keno
+          <InfoDot>
+            <strong>Pick your numbers.</strong> The round draws its own set and pays by how many you
+            match — more matches, bigger payout. (Payout values shown are illustrative.) Instant
+            off-chain settle, no gas.
+          </InfoDot>
+        </h3>
         <div className="row">
           <StakeInput value={amount} onChange={setAmount} />
           {session.ready ? (
@@ -197,9 +205,6 @@ export const KenoScreen = ({
         <p className="muted">
           {amount !== '' && stake === undefined && <span className="bad">enter a positive amount · </span>}
           {picks.length === 0 && <span className="bad">pick at least one number · </span>}
-          pick 1–{MAX_PICKS} numbers from 1–{POOL}; the round draws {DEFAULT_DRAWN} and pays by how many you
-          hit. Every round is co-signed off-chain by you and the house over MsgBoard — no gas per roll, and
-          the server seed was committed before you opened the table.
         </p>
         {session.commit && (
           <p className="card-meta muted">

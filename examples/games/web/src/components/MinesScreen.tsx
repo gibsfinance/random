@@ -9,6 +9,7 @@ import type { GameDeployment } from '../config'
 import { useMinesSession, type MinesGameRecord } from '../hooks/useMinesSession'
 import { StakeInput, parseStake } from './StakeInput'
 import { TurnTiming } from './TurnTiming'
+import { InfoDot } from './Meta'
 
 const HUNDREDTHS = 100n
 
@@ -123,7 +124,14 @@ export const MinesScreen = ({
   return (
     <div>
       <div className="card">
-        <h3>Mines</h3>
+        <h3>
+          Mines
+          <InfoDot>
+            <strong>Clear safe tiles to grow your multiplier.</strong> Cash out any time — hit a mine
+            and you bust. More mines means faster growth and bigger risk. The board is sealed before
+            your first pick (it can't move under you), and you can re-check the whole game after.
+          </InfoDot>
+        </h3>
         <div className="row">
           <StakeInput value={amount} onChange={setAmount} />
           <label className="threshold-label">
@@ -172,19 +180,14 @@ export const MinesScreen = ({
         <p className="muted">
           {amount !== '' && stake === undefined && <span className="bad">enter a positive amount · </span>}
           {!minesOk && <span className="bad">mines must be between 1 and {tiles - 1} · </span>}
-          Reveal safe tiles to grow your multiplier; one mine hit and you bust. Cash out any time
-          after the first safe reveal.
           {playing && (
             <span className="ok">
-              {' '}
-              · now {fmtMult(session.multiplierX100)}
+              now {fmtMult(session.multiplierX100)}
               {nextMultiplierX100 !== undefined && (
                 <span className="muted"> (next {fmtMult(nextMultiplierX100)})</span>
               )}
             </span>
           )}
-          . The board is committed before your first reveal (provably fair) — the house can't move a
-          mine onto a tile you pick, and you can re-check the whole game after it ends.
         </p>
         {session.commit && (
           <p className="card-meta muted">
