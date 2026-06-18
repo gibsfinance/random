@@ -6,7 +6,7 @@ import type { ChainData } from '../hooks/useChainData'
 import type { FlipView } from '../model/coinflip-lobby'
 import { sendGameTx, nextHeatLocations } from '../tx'
 import { CoinFlipVerifyPanel } from './VerifyPanel'
-import { AddressLink, Provenance, SourceNote, archiveTrailUrl, formatWhen } from './Meta'
+import { AddressLink, Provenance, SourceNote, archiveTrailUrl, fmtAmount, formatWhen } from './Meta'
 import { StakeInput, parseStake } from './StakeInput'
 import { RoundTiming } from './TurnTiming'
 import { involvement } from '../model/participation'
@@ -44,7 +44,7 @@ const FlipCard = ({
         ) : (
           <span className="ok">
             {flip.winningSide} wins — <AddressLink deployment={deployment} address={flip.winner!} /> takes{' '}
-            {viem.formatEther(flip.stake * 2n)}
+            {fmtAmount(deployment, flip.stake * 2n)}
           </span>
         )}
       </span>
@@ -203,7 +203,7 @@ export const CoinFlipScreen = ({
               {entry.mine && <span className="tag ok">you</span>}
             </span>
             <span className="row">
-              <span>{viem.formatEther(entry.stake)} staked</span>
+              <span>{fmtAmount(deployment, entry.stake)} staked</span>
               {entry.mine && (
                 <button className="danger" onClick={() => void cancel(entry.id)} disabled={busy}>
                   Cancel
@@ -238,7 +238,7 @@ export const CoinFlipScreen = ({
                 {myPlayed.length > 0 && (
                   <span className="muted">
                     {' '}
-                    · {myWins.length}/{myPlayed.length} won · {viem.formatEther(myTakings)} taken
+                    · {myWins.length}/{myPlayed.length} won · {fmtAmount(deployment, myTakings)} taken
                   </span>
                 )}
               </summary>
@@ -264,7 +264,7 @@ export const CoinFlipScreen = ({
       {settled.length > 0 && (
         <details className="history">
           <summary>
-            {settled.length} settled flip{settled.length === 1 ? '' : 's'} · {viem.formatEther(settledPot)} paid out
+            {settled.length} settled flip{settled.length === 1 ? '' : 's'} · {fmtAmount(deployment, settledPot)} paid out
             {lastSettledWhen && <span className="muted"> · last {lastSettledWhen}</span>}
             {archiveTrailUrl(deployment) && (
               <a

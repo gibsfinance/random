@@ -9,7 +9,7 @@ import { saveSalt, loadSalt, exportBackup, importBackup } from '../model/salts'
 import { sendGameTx, nextHeatLocations } from '../tx'
 import { publicClientFor } from '../wallet'
 import { RaffleVerifyPanel } from './VerifyPanel'
-import { AddressLink, Provenance, SourceNote, archiveTrailUrl, explorerUrl, formatWhen } from './Meta'
+import { AddressLink, Provenance, SourceNote, archiveTrailUrl, explorerUrl, fmtAmount, formatWhen } from './Meta'
 import { StakeInput, parseStake } from './StakeInput'
 import { RoundTiming } from './TurnTiming'
 import { involvement } from '../model/participation'
@@ -59,8 +59,8 @@ validated?: boolean
     <div className="row" style={{ justifyContent: 'space-between' }}>
       <span>
         <span className="tag">{phaseTag(round)}</span>
-        {viem.formatEther(round.stake)} per ticket · {round.threshold.toString()} players ·{' '}
-        pot {viem.formatEther(round.stake * round.commitCount)}
+        {fmtAmount(deployment, round.stake)} per ticket · {round.threshold.toString()} players ·{' '}
+        pot {fmtAmount(deployment, round.stake * round.commitCount)}
         {round.draw !== undefined && <span className="tag">draw: {round.draw.toString()}</span>}
         {validated && <span className="tag gold">you validated</span>}
       </span>
@@ -85,7 +85,7 @@ validated?: boolean
     {round.phase === 'paid' && (
       <p className="ok">
         winner <AddressLink deployment={deployment} address={round.winner!} /> took{' '}
-        {viem.formatEther(round.payout!)}
+        {fmtAmount(deployment, round.payout!)}
       </p>
     )}
     <Provenance
@@ -462,7 +462,7 @@ export const RaffleScreen = ({
                 {myFinished.length > 0 && (
                   <span className="muted">
                     {' '}
-                    · {myWon.length}/{myFinished.length} won · {viem.formatEther(myTakings)} taken
+                    · {myWon.length}/{myFinished.length} won · {fmtAmount(deployment, myTakings)} taken
                   </span>
                 )}
               </summary>
@@ -497,7 +497,7 @@ export const RaffleScreen = ({
       {doneRounds.length > 0 && (
         <details className="history">
           <summary>
-            {doneRounds.length} finished round{doneRounds.length === 1 ? '' : 's'} · {viem.formatEther(paidOut)} paid
+            {doneRounds.length} finished round{doneRounds.length === 1 ? '' : 's'} · {fmtAmount(deployment, paidOut)} paid
             out
             {lastDoneWhen && <span className="muted"> · last {lastDoneWhen}</span>}
             {archiveTrailUrl(deployment) && (

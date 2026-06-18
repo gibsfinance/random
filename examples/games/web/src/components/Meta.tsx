@@ -1,9 +1,22 @@
 import type { ReactNode } from 'react'
 import type * as viem from 'viem'
+import { formatEther } from 'viem'
+import { chains } from '@gibs/games-core'
 import type { GameDeployment } from '../config'
 
 /** Where the "check it yourself" playbook lives today — the venue's docs on MsgBoard. */
 export const MSGBOARD_GAMES_DOCS = 'https://msgboard.xyz/#/games'
+
+/** The chain's native-currency symbol (943 → v4PLS, 369 → PLS). CoinFlip + Raffle stake the native token. */
+export const nativeSymbol = (deployment: GameDeployment): string =>
+  chains[deployment.chainId]?.nativeCurrency.symbol ?? ''
+
+/**
+ * Format a wei amount WITH its native-currency unit. Bare `formatEther` output (e.g. "219.8") next to
+ * another number reads as a ratio ("1099 out of 219.8"); the unit ("219.8 v4PLS") removes the ambiguity.
+ */
+export const fmtAmount = (deployment: GameDeployment, wei: bigint): string =>
+  `${formatEther(wei)} ${nativeSymbol(deployment)}`
 
 export const explorerUrl = (
   deployment: GameDeployment,
