@@ -149,7 +149,7 @@ export const HiLoWarScreen = ({
           )}
           {!walletClient && <span className="muted">connect a wallet to play</span>}
           {walletClient && !trustAcknowledged && (
-            <span className="muted">acknowledge the house rules above first</span>
+            <span className="muted">tap "Got it" on the fairness note above first</span>
           )}
         </div>
         {session.deckCommitment && (

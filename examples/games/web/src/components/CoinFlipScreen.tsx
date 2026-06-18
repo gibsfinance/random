@@ -6,7 +6,7 @@ import type { ChainData } from '../hooks/useChainData'
 import type { FlipView } from '../model/coinflip-lobby'
 import { sendGameTx, nextHeatLocations } from '../tx'
 import { CoinFlipVerifyPanel } from './VerifyPanel'
-import { AddressLink, Provenance, SourceNote, archiveTrailUrl, fmtAmount, formatWhen } from './Meta'
+import { AddressLink, InfoDot, Provenance, SourceNote, archiveTrailUrl, fmtAmount, formatWhen } from './Meta'
 import { StakeInput, parseStake } from './StakeInput'
 import { RoundTiming } from './TurnTiming'
 import { involvement } from '../model/participation'
@@ -162,7 +162,12 @@ export const CoinFlipScreen = ({
   return (
     <div>
       <div className="card">
-        <h3>Call it in the air</h3>
+        <h3>
+          Call it in the air
+          <InfoDot>
+            Flips pair at the <em>exact same</em> stake — match a waiting entry to flip instantly.
+          </InfoDot>
+        </h3>
         <div className="row">
           <StakeInput value={amount} onChange={setAmount} />
           <span className="side-picker">
@@ -177,13 +182,14 @@ export const CoinFlipScreen = ({
             {busy ? 'Sending…' : `Enter ${side === 0 ? 'heads' : 'tails'}`}
           </button>
           {!walletClient && <span className="muted">connect a wallet to play</span>}
-          {walletClient && !trustAcknowledged && <span className="muted">acknowledge the house rules above first</span>}
+          {walletClient && !trustAcknowledged && <span className="muted">tap "Got it" on the fairness note above first</span>}
         </div>
-        <p className="muted">
-          {amount !== '' && stake === undefined && <span className="bad">enter a positive amount · </span>}
-          flips pair at the <em>exact same</em> stake — match a waiting entry to flip instantly
-          {matchableNow && <span className="ok"> · an opponent is waiting at this stake right now</span>}
-        </p>
+        {(amount !== '' && stake === undefined) || matchableNow ? (
+          <p className="muted">
+            {amount !== '' && stake === undefined && <span className="bad">enter a positive amount</span>}
+            {matchableNow && <span className="ok">an opponent is waiting at this stake right now</span>}
+          </p>
+        ) : null}
         {error && <p className="bad">{error}</p>}
       </div>
 

@@ -128,9 +128,15 @@ export const AddressLink = ({ deployment, address }: { deployment: GameDeploymen
 }
 
 /** A small ⓘ that opens a hover/focus popover — for "where does this info come from?". */
-export const InfoDot = ({ children }: { children: ReactNode }) => (
+export const InfoDot = ({
+  children,
+  label = 'where this information comes from',
+}: {
+  children: ReactNode
+  label?: string
+}) => (
   <span className="info-dot">
-    <button type="button" className="info-trigger" aria-label="where this information comes from">
+    <button type="button" className="info-trigger" aria-label={label}>
       i
     </button>
     <span className="info-pop" role="tooltip">

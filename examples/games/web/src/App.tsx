@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import * as viem from 'viem'
 import { deployments } from './config'
 import { useWallet } from './hooks/useWallet'
@@ -36,10 +36,31 @@ const GAMES = [
 ] as const
 type Tab = (typeof GAMES)[number]['id']
 
+// Deep-link state: the active game (and chain) live in the URL query so a refresh, share, or bookmark
+// lands back on the same table instead of resetting to Coin Flip.
+const readParams = () => new URLSearchParams(window.location.search)
+const initialTab = (): Tab => {
+  const g = readParams().get('game')
+  return GAMES.some((x) => x.id === g) ? (g as Tab) : 'coinflip'
+}
+const initialDeploymentIndex = (): number => {
+  const c = readParams().get('chain')
+  const i = c ? deployments.findIndex((d) => String(d.chainId) === c) : -1
+  return i >= 0 ? i : 0
+}
+
 export const App = () => {
-  const [deploymentIndex, setDeploymentIndex] = useState(0)
-  const [tab, setTab] = useState<Tab>('coinflip')
+  const [deploymentIndex, setDeploymentIndex] = useState(initialDeploymentIndex)
+  const [tab, setTab] = useState<Tab>(initialTab)
   const deployment = deployments[deploymentIndex]
+
+  // Mirror the active game + chain into the URL query (replaceState — no history spam) for refresh routing.
+  useEffect(() => {
+    const sp = readParams()
+    sp.set('game', tab)
+    if (deployment) sp.set('chain', String(deployment.chainId))
+    window.history.replaceState(null, '', `${window.location.pathname}?${sp}${window.location.hash}`)
+  }, [tab, deployment])
   const wallet = useWallet(deployment?.chainId ?? 31337)
   const data = useChainData(deployment ?? null, wallet.address)
   const [trustAcknowledged, setTrustAcknowledged] = useState(() =>

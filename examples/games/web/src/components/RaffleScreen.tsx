@@ -9,7 +9,7 @@ import { saveSalt, loadSalt, exportBackup, importBackup } from '../model/salts'
 import { sendGameTx, nextHeatLocations } from '../tx'
 import { publicClientFor } from '../wallet'
 import { RaffleVerifyPanel } from './VerifyPanel'
-import { AddressLink, Provenance, SourceNote, archiveTrailUrl, explorerUrl, fmtAmount, formatWhen } from './Meta'
+import { AddressLink, InfoDot, Provenance, SourceNote, archiveTrailUrl, explorerUrl, fmtAmount, formatWhen } from './Meta'
 import { StakeInput, parseStake } from './StakeInput'
 import { RoundTiming } from './TurnTiming'
 import { involvement } from '../model/participation'
@@ -340,7 +340,14 @@ export const RaffleScreen = ({
   return (
     <div>
       <div className="card">
-        <h3>Play a number</h3>
+        <h3>
+          Play a number
+          <InfoDot>
+            Tickets with the same price and player count pool into the same round. The draw fires once the
+            round has its players. Your number stays hidden until you reveal — the salt proving it lives in
+            THIS browser; lose it before revealing and the stake is forfeit. Keep the backup string safe.
+          </InfoDot>
+        </h3>
         <div className="row">
           <StakeInput value={amount} onChange={setAmount} placeholder="ticket price" />
           <label className="threshold-label">
@@ -368,24 +375,23 @@ export const RaffleScreen = ({
             {busy ? 'Sending…' : 'Commit'}
           </button>
           {!walletClient && <span className="muted">connect a wallet to play</span>}
-          {walletClient && !trustAcknowledged && <span className="muted">acknowledge the house rules above first</span>}
+          {walletClient && !trustAcknowledged && <span className="muted">tap "Got it" on the fairness note above first</span>}
         </div>
-        <p className="muted">
-          {amount !== '' && stake === undefined && <span className="bad">enter a positive ticket price · </span>}
-          {threshold !== '' && (thresholdN === undefined || thresholdN < 2n) && (
-            <span className="bad">threshold must be at least 2 players · </span>
-          )}
-          tickets with the same price and player count pool into the same round
-          {joinsRound && (
-            <span className="ok">
-              {' '}
-              · joins the round filling now ({joinsRound.commitCount.toString()}/{joinsRound.threshold.toString()})
-            </span>
-          )}
-          . The draw fires once the round has its players. Your number stays hidden until you reveal —
-          the salt proving it lives in THIS browser; lose it before revealing and the stake is forfeit.
-          Keep the backup string safe.
-        </p>
+        {(amount !== '' && stake === undefined) ||
+        (threshold !== '' && (thresholdN === undefined || thresholdN < 2n)) ||
+        joinsRound ? (
+          <p className="muted" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {amount !== '' && stake === undefined && <span className="bad">enter a positive ticket price</span>}
+            {threshold !== '' && (thresholdN === undefined || thresholdN < 2n) && (
+              <span className="bad">threshold must be at least 2 players</span>
+            )}
+            {joinsRound && (
+              <span className="ok">
+                joins the round filling now ({joinsRound.commitCount.toString()}/{joinsRound.threshold.toString()})
+              </span>
+            )}
+          </p>
+        ) : null}
         {backupShown && (
           <div className="banner">
             <strong>Backup your salts now:</strong>

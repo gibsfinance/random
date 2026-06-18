@@ -386,22 +386,22 @@
       .stamp.ok { color: #1d7a4c; }
       .stamp.bad { color: #b3261e; }
 
-      /* ---------- house rules (trust) ---------- */
-      .house-rules { border: 1px solid var(--brass-soft); border-radius: 6px; background: var(--felt-700); margin: 0.7rem 0; overflow: hidden; }
-      .house-rules > summary {
-        list-style: none; cursor: pointer; user-select: none;
-        display: flex; align-items: center; gap: 0.6rem;
-        padding: 0.65rem 1rem;
-        font: 700 0.95rem var(--serif);
-        color: var(--brass);
+      /* ---------- the fairness strip (trust, compacted) ---------- */
+      .trust-strip {
+        display: flex; align-items: center; gap: 0.5rem 0.7rem; flex-wrap: wrap;
+        border: 1px solid var(--brass-soft); border-radius: 6px;
+        background: linear-gradient(180deg, var(--felt-700), var(--felt-800));
+        padding: 0.5rem 0.9rem; margin: 0.7rem 0;
+        font: 500 0.88rem var(--sans); color: var(--cream-dim);
       }
-      .house-rules > summary::-webkit-details-marker { display: none; }
-      .house-rules > summary::after { content: '▾'; margin-left: auto; transition: transform 0.2s; color: var(--brass-soft); }
-      .house-rules[open] > summary::after { transform: rotate(180deg); }
-      .house-rules .body { padding: 0 1rem 1rem; border-top: 1px solid var(--line); }
-      .house-rules ul { margin: 0.6rem 0; padding-left: 1.1rem; }
-      .house-rules a { color: var(--brass); }
-      .rules-ack { font: 600 0.78rem var(--sans); letter-spacing: 0.05em; color: var(--ok); }
+      .trust-seal { color: var(--brass); font-size: 1.05rem; line-height: 1; filter: drop-shadow(0 0 6px rgba(201, 162, 39, 0.35)); }
+      .trust-line { display: inline-flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+      .trust-line strong { color: var(--cream); }
+      .trust-ack, .trust-strip .rules-ack { margin-left: auto; }
+      .trust-ack { padding: 0.34rem 0.85rem; font-size: 0.82rem; }
+      .rules-ack { font: 600 0.8rem var(--sans); letter-spacing: 0.04em; color: var(--ok); white-space: nowrap; }
+      .trust-validators { margin: 0.55rem 0 0; }
+      .trust-validators a { color: var(--brass); }
 
       /* ---------- provenance: when it happened + where to check it ---------- */
       .card-meta {
