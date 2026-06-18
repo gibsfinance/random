@@ -24,6 +24,9 @@ export type GameDeployment = {
   /** RPC whose node runs the `msgboard_` module (valve.city) — used to read the live session-game
    *  feed (and, later, to broadcast play). Reads need no proof-of-work; the demo key is fine. */
   boardRpc?: string
+  /** GraphQL URL of the games Ponder indexer (@gibs/games-indexer). When set, the frontend reads
+   *  rounds from it instead of scraping eth_getLogs. Unset → incremental/chunked getLogs fallback. */
+  gamesIndexer?: string
 }
 
 /**
