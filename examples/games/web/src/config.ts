@@ -68,6 +68,10 @@ export const deployments: GameDeployment[] = [
     explorer: 'https://scan.v4.testnet.pulsechain.com/#',
     archive: 'https://archive.msgboard.xyz',
     boardRpc: 'https://one.valve.city/rpc/vk_demo/evm/943',
+    // Ponder indexer (deploy/games-indexer on the msgboard box) — CoinFlip+Raffle logs served as
+    // GraphQL under the already-resolving games host, so the lobby/round views read from one indexed
+    // query per poll instead of scanning the chain (was hammering the RPC into 429s). Full GraphQL URL.
+    gamesIndexer: 'https://games.msgboard.xyz/games-indexer/graphql',
   },
   // Deployed by the 2026-06-11 mainnet bring-up (gate run + ink-pools; e2e/scripts/369-deployment.json).
   // deployBlock = the web pools' ink block so the site and the cast watcher count heats
