@@ -51,6 +51,7 @@ contract HouseChannel is SessionStateEIP712, Ownable {
     error BadClock();
     error Expired();
     error WrongTable();
+    error WrongGame();
     error BadMode();
     error BadSig();
     error NotPlayer();
@@ -173,6 +174,36 @@ contract HouseChannel is SessionStateEIP712, Ownable {
         emit DisputeOpened(s.tableId, seat, s.nonce, t.disputeDeadline);
     }
 
+    /// Refund floor (no signature needed). If a table is opened but NO state was ever co-signed
+    /// off-chain — e.g. the house took the player's open() escrow then refused to co-sign nonce 0 —
+    /// the cooperative paths are unreachable and the funds would otherwise lock forever. Either party
+    /// may post the CANONICAL opening split (escrowPlayer→player, escrowHouse→pool) as a synthetic
+    /// nonce-0 dispute and start the clock. The counterparty overrides it with ANY real co-signed
+    /// state (nonce ≥ 1 > 0) via respondWithState; if none exists, resolveTimeout returns each side
+    /// exactly what it escrowed. No theft is possible: the synthetic state conserves the pot and pays
+    /// back the deposits, and a real round always out-ranks nonce 0.
+    function disputeFromOpen(bytes32 tableId) external {
+        Table storage t = tables[tableId];
+        if (t.status != Status.Live) revert BadStatus();
+        uint8 seat = _seatOf(t, msg.sender);
+        SessionState memory s;
+        s.tableId = tableId;
+        s.nonce = 0;
+        s.balancePlayer = t.escrowPlayer;
+        s.balanceHouse = t.escrowHouse;
+        s.settlementMode = 1;
+        s.gameId = t.gameId;
+        // gameStateHash + rngCommit stay zero: a synthetic state carries no signatures and is never
+        // re-verified — only its conserved balances are paid out.
+        t.status = Status.Disputed;
+        t.disputant = seat;
+        t.disputeState = s;
+        t.checkpointNonce = 0;
+        t.hasCheckpoint = true;
+        t.disputeDeadline = uint64(block.number) + t.clockBlocks;
+        emit DisputeOpened(tableId, seat, 0, t.disputeDeadline);
+    }
+
     /// Override a dispute with a strictly-newer both-signed state — which IS the true latest, so
     /// it settles immediately (single-draw games have no further play to resume).
     function respondWithState(SessionState calldata s, bytes calldata sigPlayer, bytes calldata sigHouse) external {
@@ -195,6 +226,7 @@ contract HouseChannel is SessionStateEIP712, Ownable {
 
     function _checkCoSigned(Table storage t, SessionState calldata s, bytes calldata sigPlayer, bytes calldata sigHouse) internal view {
         if (s.tableId == bytes32(0) || t.status == Status.None) revert WrongTable();
+        if (s.gameId != t.gameId) revert WrongGame();
         if (s.settlementMode != 1) revert BadMode();
         if (s.balancePlayer + s.balanceHouse != t.escrowPlayer + t.escrowHouse) revert ConservationViolated();
         bytes32 digest = _hashTypedData(s.structHash());

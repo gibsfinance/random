@@ -167,4 +167,45 @@ contract HouseChannelTest is Test {
         vm.expectRevert(HouseChannel.StaleNonce.selector);
         ch.respondWithState(older, sp2, sh2);
     }
+
+    // ---- audit finding I: a both-signed state for the WRONG game must not settle this table ----
+    function test_settleRejectsWrongGameId() public {
+        _open(); // table is gameId 1
+        SessionState memory f = _state(5, 260, 140);
+        f.gameId = 2; // conservation still holds (400); only the game differs
+        (bytes memory sp, bytes memory sh) = _coSign(f); // validly co-signed, wrong game
+        vm.expectRevert(HouseChannel.WrongGame.selector);
+        ch.settle(f, sp, sh);
+    }
+
+    // ---- audit finding B: opened-but-never-co-signed table can always be refunded ----
+    function test_disputeFromOpenRefundsOpeningSplit() public {
+        _open(); // player escrowed 200, house reserved 200; NO state ever co-signed
+        vm.prank(playerWallet);
+        ch.disputeFromOpen(TID);
+        vm.roll(block.number + CLOCK + 1);
+        ch.resolveTimeout(TID);
+        assertEq(chips.balanceOf(playerWallet), 1_000); // 800 left after open + 200 refunded
+        assertEq(ch.housePool(), 10_000);               // 9_800 + 200 escrow returned to pool
+    }
+
+    function test_disputeFromOpenOverriddenByRealRound() public {
+        _open();
+        // Player tries to escape via the opening floor; the house defends with the real co-signed
+        // round (a player loss) before the clock expires.
+        vm.prank(playerWallet);
+        ch.disputeFromOpen(TID);
+        SessionState memory lost = _state(3, 50, 350); // real co-signed round: player down to 50
+        (bytes memory sp, bytes memory sh) = _coSign(lost);
+        ch.respondWithState(lost, sp, sh);
+        assertEq(chips.balanceOf(playerWallet), 800 + 50);
+        assertEq(ch.housePool(), 9_800 + 350);
+    }
+
+    function test_disputeFromOpenRejectsStranger() public {
+        _open();
+        vm.prank(address(0xDEAD));
+        vm.expectRevert(HouseChannel.NotPlayer.selector);
+        ch.disputeFromOpen(TID);
+    }
 }
