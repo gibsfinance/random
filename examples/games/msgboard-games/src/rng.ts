@@ -23,6 +23,14 @@ export function verifyReveal(priorLink: Hex, revealed: Hex): boolean {
   return keccak256(revealed) === priorLink
 }
 
+/** Commit to a secret seed for later reveal: keccak256(seed). Used by the player to bind its
+ *  clientSeed at OPEN without revealing it — so the house must commit its OWN seed chain BLIND
+ *  (it can't grind its tip against a known clientSeed). The seed is revealed at round time and
+ *  checked with verifyReveal(commit, seed). Mirrors the server seed-chain commit (seeds[0]). */
+export function commitSeed(seed: Hex): Hex {
+  return keccak256(seed)
+}
+
 /** Round randomness: uint256(keccak256(abi.encode(serverSeed, clientSeed, nonce))). */
 export function roundRandom(serverSeed: Hex, clientSeed: Hex, nonce: bigint): bigint {
   const packed = encodeAbiParameters(

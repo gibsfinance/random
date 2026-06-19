@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { keccak256, type Hex } from 'viem'
-import { buildSeedChain, verifyReveal, roundRandom } from '../src/rng'
+import { buildSeedChain, verifyReveal, roundRandom, commitSeed } from '../src/rng'
 
 describe('server-seed hash chain', () => {
   const tip = `0x${'77'.repeat(32)}` as Hex
@@ -21,6 +21,14 @@ describe('server-seed hash chain', () => {
     expect(verifyReveal(chain.seeds[1]!, chain.seeds[2]!)).toBe(true)
     expect(verifyReveal(chain.commit, chain.seeds[2]!)).toBe(false) // skips a link
     expect(verifyReveal(chain.commit, `0x${'00'.repeat(32)}`)).toBe(false)
+  })
+
+  it('commitSeed binds a seed for reveal: verifyReveal(commit, seed) round-trips, wrong seed fails', () => {
+    const seed = `0x${'33'.repeat(32)}` as Hex
+    const commit = commitSeed(seed)
+    expect(commit).toBe(keccak256(seed))
+    expect(verifyReveal(commit, seed)).toBe(true) // the house checks a revealed clientSeed this way
+    expect(verifyReveal(commit, `0x${'34'.repeat(32)}`)).toBe(false) // a substituted seed is rejected
   })
 
   it('roundRandom is deterministic and changes with each input', () => {
