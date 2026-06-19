@@ -5,17 +5,13 @@ import { useBoardBroadcaster } from './useBoardBroadcaster'
 import {
   MsgBoardTransport,
   makeDomain,
-  decisionMs,
-  networkMs,
-  totalMs,
   runPlayerSide,
-  commitSeed,
   type BoardClient,
   type Game,
   type Signer,
   type CoSignTransport,
 } from '@gibs/msgboard-games'
-import { buildOpenRequest } from '../lib/playerCoSign'
+import { buildOpenRequest, DUMMY_SEED_TIP } from '../lib/playerCoSign'
 import { saveClientSeed, removeClientSeed, type SeedStore } from '../lib/clientSeeds'
 
 /**
@@ -83,9 +79,19 @@ export type UseSessionConfig<TParams> = {
   /** the injected wallet — the player. Undefined until connected. */
   walletClient?: viem.WalletClient
   chainId: number
-  /** EIP-712 verifyingContract for the session domain (= the HouseChannel contract address).
-   *  Sessions bind co-signatures to this address so the player's worst case is always "reclaim
-   *  my stake" via disputeFromOpen. Pass `deployment.houseChannel` from config. */
+  /**
+   * HouseChannel contract address — the EIP-712 `verifyingContract` for the session domain.
+   * Sessions bind co-signatures to this address so the player's worst case is always "reclaim
+   * my stake" via disputeFromOpen. Pass `deployment.houseChannel` from config.
+   *
+   * When provided this takes precedence over the deprecated `verifyingContract` field.
+   * Falls back to `PLACEHOLDER_VERIFIER` only when absent (dev/headless/test contexts).
+   */
+  houseChannel?: viem.Hex
+  /**
+   * @deprecated Pass `houseChannel` instead. This field is retained for backward compatibility
+   * but is overridden by `houseChannel` when both are present.
+   */
   verifyingContract?: viem.Hex
   /** how many rounds the committed seed chain affords. */
   chainLength?: number
@@ -116,7 +122,22 @@ export type UseSessionConfig<TParams> = {
 }
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000' as viem.Hex
-const PLACEHOLDER_VERIFIER = '0x00000000000000000000000000000000000a3eb1' as viem.Hex
+/** Sentinel used when no HouseChannel address is available (dev/headless/test contexts). */
+export const PLACEHOLDER_VERIFIER = '0x00000000000000000000000000000000000a3eb1' as viem.Hex
+
+/**
+ * Resolve the EIP-712 `verifyingContract` for a session.
+ *
+ * Priority: `houseChannel` (from the deployment) > deprecated `verifyingContract` > `PLACEHOLDER_VERIFIER`.
+ *
+ * Exported for unit-testing — the hook calls this internally.
+ */
+export function resolveVerifyingContract(
+  houseChannel?: viem.Hex,
+  verifyingContractProp?: viem.Hex,
+): viem.Hex {
+  return houseChannel ?? verifyingContractProp ?? PLACEHOLDER_VERIFIER
+}
 
 /** Adapt the injected viem WalletClient to the session `Signer` shape by binding its account. */
 const walletClientToSigner = (client: viem.WalletClient): Signer => {
@@ -168,7 +189,8 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
     game,
     walletClient,
     chainId,
-    verifyingContract = PLACEHOLDER_VERIFIER,
+    houseChannel,
+    verifyingContract: verifyingContractProp,
     chainLength = 64,
     openBalances = { player: 10n ** 18n, house: 10n ** 21n },
     assertEscrowBalances,
@@ -177,6 +199,11 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
     gameLabel,
     seedStore,
   } = config
+
+  // Resolve the EIP-712 verifyingContract from houseChannel (preferred) or the deprecated
+  // verifyingContract prop, falling back to PLACEHOLDER_VERIFIER only in dev/headless contexts
+  // where neither is available. In production, deployment.houseChannel should always be set.
+  const verifyingContract = resolveVerifyingContract(houseChannel, verifyingContractProp)
   const broadcastLobby = useBoardBroadcaster({ boardRpc, chainId })
 
   const [status, setStatus] = useState<SessionStatus>('idle')
@@ -187,10 +214,8 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
   const [roundsLeft, setRoundsLeft] = useState(0)
 
   // Mutable session state — engine state that changes on every round, not render state.
-  // We store the co-sign transport so that play() can trigger round co-signs without re-opening.
   const clientSeedRef = useRef<viem.Hex>()
   const tableIdRef = useRef<viem.Hex>()
-  const playerCoSignTransportRef = useRef<CoSignTransport>()
   const transcriptRef = useRef<string>()
   const busy = useRef(false)
 
@@ -248,40 +273,24 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
       const boardTransport = new MsgBoardTransport(board, tableId)
       await boardTransport.send(openReq)
 
-      // Wire the player-side co-sign transport. In production this is backed by the board:
-      // the house posts co-sign requests to the table's board category; the player polls and
-      // responds. Here we build an in-memory CoSignTransport and launch `runPlayerSide` as a
-      // background promise that co-signs OPEN + ROUND requests as they arrive.
+      // TODO(Task 7): wire the board-backed CoSignTransport here and launch runPlayerSide (or
+      // runPlayerCoSign) against it so the player co-signs OPEN + ROUND requests as they arrive
+      // from the house over the MsgBoard transport. The transport pair (playerT / houseT) must be
+      // stored in a ref so play() can drive round co-signs without re-opening the session.
       //
-      // The transport is stored in a ref so play() can interact with it (for multi-round sessions).
-      const { playerT, houseT } = buildCoSignPair()
-      playerCoSignTransportRef.current = houseT // houseT is what the caller (house) uses to request
-
-      // Launch the player-side co-sign loop in the background. It will co-sign OPEN + ROUND
-      // as they arrive over the transport. The loop terminates after chainLength rounds.
-      const domain = makeDomain(chainId, verifyingContract)
-
-      // Kick off the player's co-sign listener (runs in background — does not block start()).
-      // The listener co-signs requests from the house using ONLY the player's key.
-      // The player does not have the house's seedTip; a dummy value is provided because
-      // runPlayerSide (via verifyProposedState) never reads seedTip — it only validates the
-      // revealed serverSeed against the rngCommit that was fixed in the OPEN state.
-      const DUMMY_SEED_TIP = viem.zeroHash
-      void runPlayerSide(
-        {
-          domain,
-          tableId,
-          game,
-          player,
-          houseRemote: true as const,
-          clientSeed,
-          seedTip: DUMMY_SEED_TIP,
-          chainLength,
-          openBalances,
-          settlementMode: 0,
-        },
-        playerT,
-      )
+      // When launched, attach error handling that surfaces funds-safety refusals via setError —
+      // a tamper or anti-house-bias rejection from runPlayerSide MUST reach the UI, never be
+      // swallowed. Pattern:
+      //
+      //   const { playerT, houseT } = buildCoSignPair()
+      //   const domain = makeDomain(chainId, verifyingContract)
+      //   runPlayerSide({ domain, tableId, game, player, houseRemote: true, clientSeed,
+      //                   seedTip: DUMMY_SEED_TIP, chainLength, openBalances, settlementMode: 0 },
+      //                 playerT)
+      //     .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      //
+      // DO NOT launch a dangling void promise here — a thrown anti-house-bias/tamper refusal
+      // would become an unhandled rejection and never reach the UI.
 
       setCommit(undefined) // rngCommit comes from the house's seed chain; set when received
       setBalances(openBalances)
@@ -300,10 +309,16 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
     } finally {
       busy.current = false
     }
-  }, [walletClient, chainId, verifyingContract, game, chainLength, openBalances, assertEscrowBalances, board, boardRpc, gameLabel, seedStore])
+  }, [walletClient, chainId, houseChannel, verifyingContractProp, game, chainLength, openBalances, assertEscrowBalances, board, boardRpc, gameLabel, seedStore])
 
   const play = useCallback(
-    async (stake: bigint, params: TParams): Promise<RoundRecord | undefined> => {
+    // TODO(Task 7): play() currently returns a placeholder RoundRecord; it MUST return a record
+    // DERIVED FROM the co-signed ROUND SessionState (the one the background runPlayerSide
+    // accepted), never a fabricated literal — a fabricated outcome shown to the UI would not match
+    // what the contract pays at settle once real stakes are attached. Wire the board-backed
+    // CoSignTransport (see TODO above in start()), drive the round-request → runHouseSide →
+    // runPlayerSide co-sign flow, then derive this record from the resulting SessionState.
+    async (stake: bigint, _params: TParams): Promise<RoundRecord | undefined> => {
       const clientSeed = clientSeedRef.current
       if (!clientSeed) {
         setError('open a table first')
@@ -314,12 +329,9 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
       setStatus('playing')
       setError(undefined)
       try {
-        // In the real deployment: post a round-request (with the revealed clientSeed) to the board.
-        // The house picks it up, co-signs via runHouseSide, and posts back a transcript.
-        // The player's background runPlayerSide loop processes the ROUND co-sign request.
-        //
-        // For now we synthesize a round record; the full board round-request flow is wired
-        // when the board-backed CoSignTransport is in place (separate operator task).
+        // PLACEHOLDER (Task 7): the record below is a fabricated literal — win:false, delta 0.
+        // It exists only so the UI compiles and renders while the real co-sign transport is
+        // wired in Task 7. The actual outcome MUST come from the co-signed ROUND SessionState.
         const current = balances ?? openBalances
         const record: RoundRecord = {
           round: 1,
@@ -355,6 +367,10 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
     [chainId, openBalances, balances, seedStore],
   )
 
+  // TODO(Task 7): transcriptJson() returns undefined until a real co-signed session is stored
+  // into transcriptRef by the board-backed runPlayerSide loop. Once Task 7 wires the transport,
+  // transcriptRef.current will hold the JSON produced by the player's finished SessionState and
+  // this function will expose it for auditable verification via verifyFinishedSession.
   const transcriptJson = useCallback(() => transcriptRef.current, [])
 
   return {

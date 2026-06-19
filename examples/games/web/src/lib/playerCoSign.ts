@@ -29,11 +29,16 @@ import {
 } from '@gibs/msgboard-games'
 import type { SessionConfig } from '@gibs/msgboard-games'
 
-// A dummy seedTip passed to runPlayerSide for the player's config. The player does not have the
-// house's secret seed tip — it never needs it. runPlayerSide passes the cfg to verifyProposedState
-// which does NOT read seedTip; the only seed the player validates is the revealed serverSeed
-// (checked against the rngCommit in the OPEN state, without needing the original tip).
-const DUMMY_SEED_TIP = `0x${'00'.repeat(32)}` as Hex
+/**
+ * Canonical dummy seedTip for the player side of a split co-sign session.
+ *
+ * The player does not have the house's secret seed tip — it never needs it.
+ * `runPlayerSide` (via `verifyProposedState`) does NOT read `seedTip`; the only seed the player
+ * validates is the revealed `serverSeed`, checked against the `rngCommit` fixed in the OPEN state.
+ *
+ * Exported so `useSession.ts` can import this single source of truth rather than duplicating it.
+ */
+export const DUMMY_SEED_TIP = `0x${'00'.repeat(32)}` as Hex
 
 /** The open-request payload the player sends to the house to begin a session. */
 export interface OpenRequestPayload {

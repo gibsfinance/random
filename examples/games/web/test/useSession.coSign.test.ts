@@ -29,6 +29,7 @@ import {
 } from '@gibs/msgboard-games'
 import { memoryCoSignPair } from '../../msgboard-games/test/helpers'
 import { runPlayerCoSign, buildOpenRequest, type PlayerCoSignConfig } from '../src/lib/playerCoSign'
+import { resolveVerifyingContract, PLACEHOLDER_VERIFIER } from '../src/hooks/useSession'
 
 // ── test fixtures ─────────────────────────────────────────────────────────────
 
@@ -225,5 +226,31 @@ describe('buildOpenRequest', () => {
     expect(buildOpenRequest(tableId, seed1).clientSeedCommit).not.toBe(
       buildOpenRequest(tableId, seed2).clientSeedCommit,
     )
+  })
+})
+
+// ── unit tests for resolveVerifyingContract (finding #1 fix) ──────────────────
+
+describe('resolveVerifyingContract — EIP-712 verifyingContract defaults to deployment.houseChannel', () => {
+  it('uses houseChannel when provided, WITHOUT the caller passing verifyingContract explicitly', () => {
+    // This test asserts the core finding #1 fix: given a deployment with a houseChannel, the
+    // session's EIP-712 domain verifyingContract equals it without explicit caller override.
+    const result = resolveVerifyingContract(HOUSE_CHANNEL, undefined)
+    expect(result).toBe(HOUSE_CHANNEL)
+    expect(result).not.toBe(PLACEHOLDER_VERIFIER)
+  })
+
+  it('houseChannel takes priority over the deprecated verifyingContract prop', () => {
+    const otherAddr = `0x${'cc'.repeat(20)}` as Hex
+    expect(resolveVerifyingContract(HOUSE_CHANNEL, otherAddr)).toBe(HOUSE_CHANNEL)
+  })
+
+  it('falls back to deprecated verifyingContract when houseChannel is absent', () => {
+    const legacyAddr = `0x${'dd'.repeat(20)}` as Hex
+    expect(resolveVerifyingContract(undefined, legacyAddr)).toBe(legacyAddr)
+  })
+
+  it('falls back to PLACEHOLDER_VERIFIER only when both houseChannel and verifyingContract are absent', () => {
+    expect(resolveVerifyingContract(undefined, undefined)).toBe(PLACEHOLDER_VERIFIER)
   })
 })
