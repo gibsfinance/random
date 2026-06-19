@@ -84,6 +84,12 @@ export interface ConfigureHouseOpts {
   houseKey: viem.Hex
   treasury: bigint
   fund: bigint
+  /**
+   * Optional LEGACY (type-0) gas price applied to every write. REQUIRED for PulseChain, where
+   * default EIP-1559 estimation is unreliable (see scripts/gas.ts). When omitted, viem's default
+   * fee estimation is used (fine for normal 1559 chains / anvil / hardhat).
+   */
+  gasPrice?: bigint
 }
 
 export interface ConfigureHouseResult {
@@ -95,7 +101,7 @@ export interface ConfigureHouseResult {
 // ── Implementation ────────────────────────────────────────────────────────────
 
 export async function configureHouse(opts: ConfigureHouseOpts): Promise<ConfigureHouseResult> {
-  const { walletClient, chips, channel, houseKey, treasury, fund } = opts
+  const { walletClient, chips, channel, houseKey, treasury, fund, gasPrice } = opts
 
   const account = walletClient.account
   if (!account) throw new Error('walletClient must have an account set')
@@ -104,48 +110,42 @@ export async function configureHouse(opts: ConfigureHouseOpts): Promise<Configur
   // on the same transport as the wallet, without requiring a separate publicClient.
   const client = walletClient.extend(viem.publicActions)
 
+  // When a legacy gasPrice is supplied (PulseChain), force a type-0 fee on every write so viem
+  // never auto-derives an EIP-1559 maxFeePerGas from the chain's ~0 base fee. We do NOT reuse the
+  // simulate `request` object for the write (it can carry 1559 fee fields); we re-issue the call
+  // explicitly with the legacy fee. simulate is still run first purely as a revert check.
+  const fee = gasPrice !== undefined ? ({ gasPrice, type: 'legacy' } as const) : ({} as const)
+
   // ── Step 1: setHouseKey ───────────────────────────────────────────────────
-  const { request: reqSetKey } = await client.simulateContract({
-    address: channel,
-    abi: houseChannelAbi,
-    functionName: 'setHouseKey',
-    args: [houseKey],
-    account,
+  await client.simulateContract({ address: channel, abi: houseChannelAbi, functionName: 'setHouseKey', args: [houseKey], account })
+  const setHouseKeyHash = await client.writeContract({
+    address: channel, abi: houseChannelAbi, functionName: 'setHouseKey', args: [houseKey],
+    account, chain: walletClient.chain, ...fee,
   })
-  const setHouseKeyHash = await client.writeContract(reqSetKey)
   await client.waitForTransactionReceipt({ hash: setHouseKeyHash })
 
   // ── Step 2: mint treasury ─────────────────────────────────────────────────
-  const { request: reqMint } = await client.simulateContract({
-    address: chips,
-    abi: chipsAbi,
-    functionName: 'mint',
-    args: [account.address, treasury],
-    account,
+  await client.simulateContract({ address: chips, abi: chipsAbi, functionName: 'mint', args: [account.address, treasury], account })
+  const mintHash = await client.writeContract({
+    address: chips, abi: chipsAbi, functionName: 'mint', args: [account.address, treasury],
+    account, chain: walletClient.chain, ...fee,
   })
-  const mintHash = await client.writeContract(reqMint)
   await client.waitForTransactionReceipt({ hash: mintHash })
 
   // ── Step 3: approve channel to pull `fund` chips (required by fundHouse) ──
-  const { request: reqApprove } = await client.simulateContract({
-    address: chips,
-    abi: chipsAbi,
-    functionName: 'approve',
-    args: [channel, fund],
-    account,
+  await client.simulateContract({ address: chips, abi: chipsAbi, functionName: 'approve', args: [channel, fund], account })
+  const approveHash = await client.writeContract({
+    address: chips, abi: chipsAbi, functionName: 'approve', args: [channel, fund],
+    account, chain: walletClient.chain, ...fee,
   })
-  const approveHash = await client.writeContract(reqApprove)
   await client.waitForTransactionReceipt({ hash: approveHash })
 
   // ── Step 4: fundHouse ─────────────────────────────────────────────────────
-  const { request: reqFund } = await client.simulateContract({
-    address: channel,
-    abi: houseChannelAbi,
-    functionName: 'fundHouse',
-    args: [fund],
-    account,
+  await client.simulateContract({ address: channel, abi: houseChannelAbi, functionName: 'fundHouse', args: [fund], account })
+  const fundHash = await client.writeContract({
+    address: channel, abi: houseChannelAbi, functionName: 'fundHouse', args: [fund],
+    account, chain: walletClient.chain, ...fee,
   })
-  const fundHash = await client.writeContract(reqFund)
   await client.waitForTransactionReceipt({ hash: fundHash })
 
   return {
