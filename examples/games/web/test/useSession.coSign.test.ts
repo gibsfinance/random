@@ -69,7 +69,7 @@ async function driveHouseSide(houseT: ReturnType<typeof memoryCoSignPair>['house
     seedTip,
     chainLength,
     openBalances,
-    settlementMode: 0,
+    settlementMode: 1,
   }
   const play = { stake: 100n, params: { targetX100: 5000n }, clientSeed }
   return runHouseSide(houseCfg, houseT, play)
@@ -86,7 +86,7 @@ function makePlayerCfg(overrides?: Partial<PlayerCoSignConfig<{ targetX100: bigi
     clientSeed,
     chainLength,
     openBalances,
-    settlementMode: 0,
+    settlementMode: 1,
     ...overrides,
   }
 }
@@ -193,7 +193,7 @@ describe('runPlayerCoSign — real co-signing over in-memory transport', () => {
       seedTip,
       chainLength,
       openBalances,
-      settlementMode: 0,
+      settlementMode: 1,
     }
     // The house drives the round with a DIFFERENT clientSeed — the "bias attack".
     const biasedSeed = `0x${'44'.repeat(32)}` as Hex

@@ -77,6 +77,27 @@ export type SessionApi<TParams> = {
   transcriptJson: () => string | undefined
 }
 
+/** Input passed to the injected house driver for each round. */
+export type HouseDriverInput<TParams> = {
+  stake: bigint
+  params: TParams
+  clientSeed: viem.Hex
+  tableId: viem.Hex
+  currentBalances: { player: bigint; house: bigint }
+  playerAddress: viem.Hex
+  houseT: CoSignTransport
+}
+
+/**
+ * Injectable house co-sign driver. Receives round inputs (including the in-memory houseT
+ * transport half) and returns a finished co-signed transcript JSON string.
+ *
+ * SECURITY: The browser production path must NEVER use a hardcoded house key here.
+ * Production: implement a board-backed driver (TODO Task 9/live).
+ * Tests/demo: inject makeInMemoryHouseDriver(game, cfg).
+ */
+export type HouseDriver<TParams> = (input: HouseDriverInput<TParams>) => Promise<string>
+
 export type UseSessionConfig<TParams> = {
   game: Game<TParams>
   /** the injected wallet — the player. Undefined until connected. */
@@ -122,6 +143,15 @@ export type UseSessionConfig<TParams> = {
   /** localStorage-compatible store for persisting the clientSeed across page refreshes.
    *  Defaults to `window.localStorage` in the browser. Inject a Map-backed fake in tests. */
   seedStore?: SeedStore
+  /**
+   * Injectable house co-sign driver. Receives round inputs and returns finished co-signed
+   * transcript JSON. REQUIRED in production (board-backed) and in tests (inject
+   * makeInMemoryHouseDriver). When absent, play() throws with a clear message.
+   *
+   * SECURITY: Never hardcode a house key in the production browser path.
+   * TODO(Task 9/live): implement the board-backed production driver.
+   */
+  houseDriver?: HouseDriver<TParams>
 }
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000' as viem.Hex
@@ -223,6 +253,7 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
     boardRpc,
     gameLabel,
     seedStore,
+    houseDriver,
   } = config
 
   // Resolve the EIP-712 verifyingContract from houseChannel (preferred) or the deprecated
@@ -323,7 +354,7 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
       // UI via setError so the player sees the rejection, never a swallowed unhandled rejection.
       runPlayerSide(
         { domain, tableId, game, player, houseRemote: true as const, clientSeed,
-          seedTip: DUMMY_SEED_TIP, chainLength, openBalances, settlementMode: 0 },
+          seedTip: DUMMY_SEED_TIP, chainLength, openBalances, settlementMode: 1 },
         playerT,
       ).catch((err) => setError(err instanceof Error ? err.message : String(err)))
 
@@ -362,40 +393,27 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
       try {
         const currentBalances = balances ?? openBalances
 
-        // DEMO house signer: drives the in-process co-sign against the player's runPlayerSide.
-        // In production this would be the remote house responding to the board open-request.
-        // NEVER the real house key — DEMO_HOUSE_KEY is a fixed demo key for local dev/test only.
-        const demoHouseAccount = privateKeyToAccount(DEMO_HOUSE_KEY)
-        const houseSigner: Signer = {
-          address: demoHouseAccount.address,
-          signTypedData: (args) => demoHouseAccount.signTypedData(args as Parameters<typeof demoHouseAccount.signTypedData>[0]),
-          signMessage: (args) => demoHouseAccount.signMessage(args as Parameters<typeof demoHouseAccount.signMessage>[0]),
+        // ── House co-sign: call the injected driver ──────────────────────────────────
+        // The driver holds the houseT transport (set up in start()) and drives one round,
+        // returning the finished co-signed transcript JSON. In tests/demo the caller injects
+        // makeInMemoryHouseDriver; in production this posts over the board.
+        if (!houseDriver) {
+          throw new Error(
+            'useSession: no houseDriver injected. ' +
+            'For tests/demo inject makeInMemoryHouseDriver(game, cfg) from this module. ' +
+            'TODO(Task 9/live): implement the board-backed production driver.',
+          )
         }
-        const domain = makeDomain(chainId, verifyingContract)
-        const player = walletClient ? walletClientToSigner(walletClient) : {
-          address: viem.zeroAddress,
-          signTypedData: () => Promise.resolve('0x' as viem.Hex),
-          signMessage: () => Promise.resolve('0x' as viem.Hex),
-        }
-
-        // runHouseSide drives the OPEN + ROUND co-sign via houseT, pushing co-sign requests to
-        // the player's runPlayerSide listener (set up in start()). Returns the finished transcript
-        // JSON when both parties have co-signed both states.
-        const json = await runHouseSide(
-          {
-            domain,
-            tableId,
-            game,
-            player,
-            house: houseSigner,
-            seedTip: DEMO_SEED_TIP,
-            chainLength,
-            openBalances: currentBalances,
-            settlementMode: 0,
-          },
-          pair.houseT,
-          { stake, params, clientSeed },
-        )
+        const playerAddress = walletClient?.account?.address ?? viem.zeroAddress
+        const json = await houseDriver({
+          stake,
+          params,
+          clientSeed,
+          tableId,
+          currentBalances,
+          playerAddress,
+          houseT: pair.houseT,
+        })
         transcriptRef.current = json
 
         // Derive the RoundRecord from the co-signed ROUND SessionState captured in
@@ -435,7 +453,7 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
         busy.current = false
       }
     },
-    [chainId, openBalances, balances, seedStore, game, walletClient, verifyingContract, chainLength],
+    [chainId, openBalances, balances, seedStore, game, walletClient, verifyingContract, chainLength, houseDriver],
   )
 
   const transcriptJson = useCallback(() => transcriptRef.current, [])
@@ -522,6 +540,52 @@ function buildCoSignPair(
   }
 
   return { houseT, playerT }
+}
+
+/**
+ * Create an in-memory house driver for TESTS and DEMO use only.
+ *
+ * Drives `runHouseSide` using the demo keys (DEMO_HOUSE_KEY, DEMO_SEED_TIP) over the
+ * in-memory houseT transport passed in HouseDriverInput. Always uses settlementMode: 1.
+ *
+ * SECURITY: Uses DEMO_HOUSE_KEY. NEVER use in production. Only inject in test harnesses
+ * and the local dev demo where no house service is running.
+ */
+export function makeInMemoryHouseDriver<TParams>(
+  game: Game<TParams>,
+  baseCfg: {
+    domain: ReturnType<typeof makeDomain>
+    chainLength: number
+  },
+): HouseDriver<TParams> {
+  const demoHouseAccount = privateKeyToAccount(DEMO_HOUSE_KEY)
+  const houseSigner: Signer = {
+    address: demoHouseAccount.address,
+    signTypedData: (args) =>
+      demoHouseAccount.signTypedData(args as Parameters<typeof demoHouseAccount.signTypedData>[0]),
+    signMessage: (args) =>
+      demoHouseAccount.signMessage(args as Parameters<typeof demoHouseAccount.signMessage>[0]),
+  }
+  return (input: HouseDriverInput<TParams>) =>
+    runHouseSide(
+      {
+        domain: baseCfg.domain,
+        tableId: input.tableId,
+        game,
+        player: {
+          address: input.playerAddress,
+          signTypedData: () => Promise.resolve('0x' as viem.Hex),
+          signMessage: () => Promise.resolve('0x' as viem.Hex),
+        },
+        house: houseSigner,
+        seedTip: DEMO_SEED_TIP,
+        chainLength: baseCfg.chainLength,
+        openBalances: input.currentBalances,
+        settlementMode: 1,
+      },
+      input.houseT,
+      { stake: input.stake, params: input.params, clientSeed: input.clientSeed },
+    )
 }
 
 export { ZERO_ADDR }

@@ -1,10 +1,9 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import * as viem from 'viem'
-import { dice, diceMultiplierX100, buildSeedChain, type DiceParams } from '@gibs/msgboard-games'
-import { EscrowedSettlement } from '@gibs/msgboard-settle'
-import { makeDomain } from '@gibs/msgboard-games'
+import { dice, diceMultiplierX100, buildSeedChain, makeDomain, type DiceParams } from '@gibs/msgboard-games'
+import { EscrowedSettlement, signOpenTerms, type OpenTerms } from '@gibs/msgboard-settle'
 import type { GameDeployment } from '../config'
-import { useSession, type RoundRecord, DEMO_HOUSE_ADDRESS } from '../hooks/useSession'
+import { useSession, makeInMemoryHouseDriver, PLACEHOLDER_VERIFIER, type RoundRecord, DEMO_HOUSE_ADDRESS } from '../hooks/useSession'
 import { StakeInput, parseStake } from './StakeInput'
 import { TurnTiming } from './TurnTiming'
 import { InfoDot } from './Meta'
@@ -20,6 +19,12 @@ const fmtMult = (x100: bigint): string => `${(Number(x100) / 100).toFixed(2)}x`
 
 /** Per-table settle status: after the round is co-signed, the player can settle on-chain. */
 type TableStatus = 'idle' | 'playing' | 'settle-pending' | 'settling' | 'landed'
+
+const ERC20_APPROVE_ABI = [
+  { name: 'approve', type: 'function', stateMutability: 'nonpayable',
+    inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }],
+    outputs: [{ name: '', type: 'bool' }] },
+] as const
 
 /**
  * Reference OFF-CHAIN session-game screen (Dice). The template the other session games follow:
@@ -72,6 +77,17 @@ export const DiceScreen = ({
   const [tableStatus, setTableStatus] = useState<TableStatus>('idle')
   const [settleError, setSettleError] = useState<string>()
 
+  const sessionDomain = useMemo(
+    () => makeDomain(deployment.chainId, deployment.houseChannel ?? PLACEHOLDER_VERIFIER),
+    [deployment.chainId, deployment.houseChannel],
+  )
+  // TODO(Task 9/live): replace with a board-backed driver that posts the round-request
+  // over MsgBoardTransport and awaits the house service's finished transcript response.
+  const houseDriver = useMemo(
+    () => makeInMemoryHouseDriver(dice, { domain: sessionDomain, chainLength: 64 }),
+    [sessionDomain],
+  )
+
   const session = useSession<DiceParams>({
     game: dice,
     walletClient,
@@ -79,6 +95,7 @@ export const DiceScreen = ({
     boardRpc: deployment.boardRpc,
     gameLabel: 'dice',
     houseChannel: deployment.houseChannel,
+    houseDriver,
   })
 
   const stake = parseStake(amount)
@@ -103,6 +120,89 @@ export const DiceScreen = ({
       setTableStatus('settle-pending')
     } else {
       setTableStatus('idle')
+    }
+  }
+
+  /** faucet → Chips.approve → EscrowedSettlement.buildOpen → open tx → then start the co-sign session */
+  const openAndStart = async () => {
+    if (!walletClient?.account) return
+    if (!deployment.houseChannel) { setSettleError('no houseChannel in deployment config'); return }
+    if (!deployment.chips) {
+      // No Chips token configured — just start the co-sign session (demo without on-chain open)
+      await session.start()
+      return
+    }
+
+    setSettleError(undefined)
+    try {
+      const playerAddress = walletClient.account.address
+      const escrowPlayer = 10n ** 18n   // 1 Chip (matches useSession openBalances default)
+
+      // ── Build open terms (demo: use DEMO_HOUSE_KEY to sign; production: receive from house) ──
+      const { privateKeyToAccount: pkToAccount } = await import('viem/accounts')
+      const DEMO_HOUSE_KEY_LOCAL = `0x${'de'.repeat(32)}` as viem.Hex
+      const DEMO_SEED_TIP_LOCAL = `0x${'55'.repeat(32)}` as viem.Hex
+      const demoHouseAcct = pkToAccount(DEMO_HOUSE_KEY_LOCAL)
+      const chain = buildSeedChain(DEMO_SEED_TIP_LOCAL, 64)
+
+      const tableId = viem.keccak256(
+        viem.stringToHex(`mbg:open:${Date.now()}:${playerAddress}`)
+      ) as viem.Hex
+
+      const terms: OpenTerms = {
+        tableId,
+        player: playerAddress,
+        playerKey: playerAddress,
+        escrowPlayer,
+        escrowHouse: 10n ** 21n,
+        gameId: dice.gameId,
+        rngCommit: chain.commit,
+        clockBlocks: 100n,
+        expiry: BigInt(Math.floor(Date.now() / 1000) + 3600),
+      }
+
+      // TODO(Task 9/live): fetch house-signed OpenTerms from the house service instead.
+      const demoHouseSigner = {
+        address: demoHouseAcct.address,
+        signTypedData: (args: Parameters<typeof demoHouseAcct.signTypedData>[0]) =>
+          demoHouseAcct.signTypedData(args),
+        signMessage: (args: { message: { raw: viem.Hex } }) => demoHouseAcct.signMessage(args),
+      }
+      const houseSig = await signOpenTerms(demoHouseSigner, sessionDomain, terms)
+
+      // ── Approve Chips spend ──────────────────────────────────────────────────────
+      await walletClient.writeContract({
+        address: deployment.chips,
+        abi: ERC20_APPROVE_ABI,
+        functionName: 'approve',
+        args: [deployment.houseChannel, escrowPlayer],
+        account: walletClient.account,
+        chain: walletClient.chain,
+      })
+
+      // ── Submit HouseChannel.open ─────────────────────────────────────────────────
+      const esc = new EscrowedSettlement<DiceParams>({
+        parties: { player: playerAddress, house: demoHouseAcct.address },
+        commit: chain.commit,
+        game: dice,
+        domain: sessionDomain,
+        settlementMode: 1,
+        channel: deployment.houseChannel,
+      })
+      const openTx = esc.buildOpen(terms, houseSig)
+      await walletClient.writeContract({
+        address: openTx.address,
+        abi: openTx.abi as viem.Abi,
+        functionName: openTx.functionName,
+        args: openTx.args,
+        account: walletClient.account,
+        chain: walletClient.chain,
+      })
+
+      // ── Start the co-sign session ────────────────────────────────────────────────
+      await session.start()
+    } catch (e) {
+      setSettleError(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -187,7 +287,7 @@ export const DiceScreen = ({
               {session.status === 'playing' ? 'Rolling…' : 'Roll'}
             </button>
           ) : (
-            <button onClick={() => void session.start()} disabled={!canOpen}>
+            <button onClick={() => void openAndStart()} disabled={!canOpen}>
               {session.status === 'opening' ? 'Opening…' : 'Open table'}
             </button>
           )}

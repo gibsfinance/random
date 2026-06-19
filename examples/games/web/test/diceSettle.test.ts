@@ -27,7 +27,7 @@ import {
   type RoundProof,
   type CoSignTransport,
 } from '@gibs/msgboard-games'
-import { EscrowedSettlement } from '@gibs/msgboard-settle'
+import { EscrowedSettlement, signOpenTerms, type OpenTerms } from '@gibs/msgboard-settle'
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -171,6 +171,37 @@ async function runCoSignRound(): Promise<{ transcriptJson: string; roundState: S
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
+describe('Mode mismatch regression guard — useSession must co-sign at settlementMode 1', () => {
+  it('buildSettle rejects a transcript co-signed at mode 0 when EscrowedSettlement is mode 1', async () => {
+    // Simulate the pre-fix bug: both sides co-sign at mode 0
+    let acceptedRound: SessionState | undefined
+    const { houseT, playerT } = buildCoSignPair((state) => {
+      if (state.nonce > 0n) acceptedRound = state
+    })
+    const brokenHouseCfg = { ...houseCfg, settlementMode: 0 }
+    const [transcriptJson] = await Promise.all([
+      runHouseSide(brokenHouseCfg, houseT, { stake, params, clientSeed }),
+      runPlayerSide(
+        { domain, tableId, game: dice, player: playerSigner, houseRemote: true as const,
+          clientSeed, seedTip: `0x${'00'.repeat(32)}` as Hex, chainLength, openBalances,
+          settlementMode: 0 },
+        playerT,
+      ),
+    ])
+    void acceptedRound
+    // EscrowedSettlement requires mode 1; buildSettle must throw mismatch
+    const esc = new EscrowedSettlement<{ targetX100: bigint }>({
+      parties: { player: playerAccount.address, house: houseAccount.address },
+      commit: buildSeedChain(seedTip, chainLength).commit,
+      game: dice,
+      domain,
+      settlementMode: SETTLEMENT_MODE,
+      channel: HOUSE_CHANNEL,
+    })
+    await expect(esc.buildSettle(transcriptJson)).rejects.toThrow(/settlementMode mismatch/)
+  })
+})
+
 describe('EscrowedSettlement.buildSettle', () => {
   it('1. yields a settle TxRequest with nonce 1 and correct player balance from the co-signed transcript', async () => {
     const { transcriptJson, roundState } = await runCoSignRound()
@@ -257,5 +288,96 @@ describe('Refusal: house-substituted clientSeed is rejected (anti-house-bias)', 
     const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult
     expect(rejected.reason).toBeInstanceOf(Error)
     expect((rejected.reason as Error).message).toMatch(/clientSeed/)
+  })
+})
+
+describe('Through-useSession settle path — mode-1 end-to-end regression guard (FIX 1+2)', () => {
+  it('injected in-memory driver at mode 1 produces a transcript buildSettle accepts with finalState.settlementMode === 1', async () => {
+    // This test simulates EXACTLY what useSession does after FIX 1 + FIX 2:
+    //   start() → runPlayerSide(settlementMode: 1)
+    //   play()  → houseDriver(input) → runHouseSide(settlementMode: 1) via makeInMemoryHouseDriver
+    // If either side regresses to mode 0, replaySession throws "settlementMode mismatch".
+    let acceptedRound: SessionState | undefined
+    const { houseT, playerT } = buildCoSignPair((state) => {
+      if (state.nonce > 0n) acceptedRound = state
+    })
+
+    // The injected driver calls runHouseSide at settlementMode: 1 (same as makeInMemoryHouseDriver)
+    const [transcriptJson] = await Promise.all([
+      runHouseSide(houseCfg, houseT, { stake, params, clientSeed }),
+      // start() runs runPlayerSide at settlementMode: 1 (the fixed value)
+      runPlayerSide(
+        { domain, tableId, game: dice, player: playerSigner, houseRemote: true as const,
+          clientSeed, seedTip: `0x${'00'.repeat(32)}` as Hex, chainLength, openBalances,
+          settlementMode: SETTLEMENT_MODE },
+        playerT,
+      ),
+    ])
+
+    if (!acceptedRound) throw new Error('test: no accepted ROUND state')
+
+    // The transcript OPEN entry must record settlementMode: 1
+    const parsed = JSON.parse(transcriptJson) as {
+      entries: Array<{ kind: string; body: { settlementMode?: number } }>
+    }
+    const openEntry = parsed.entries.find((e) => e.kind === 'OPEN')
+    expect(openEntry?.body?.settlementMode).toBe(SETTLEMENT_MODE)
+
+    // buildSettle must succeed (not throw "settlementMode mismatch")
+    const esc = new EscrowedSettlement<{ targetX100: bigint }>({
+      parties: { player: playerAccount.address, house: houseAccount.address },
+      commit: buildSeedChain(seedTip, chainLength).commit,
+      game: dice,
+      domain,
+      settlementMode: SETTLEMENT_MODE,
+      channel: HOUSE_CHANNEL,
+    })
+    const tx = await esc.buildSettle(transcriptJson)
+    expect(tx.functionName).toBe('settle')
+    const [finalState] = tx.args as [SessionState, ...unknown[]]
+    expect(finalState.nonce).toBe(1n)
+    expect(finalState.settlementMode).toBe(SETTLEMENT_MODE)
+    expect(finalState.balancePlayer).toBe(acceptedRound.balancePlayer)
+    expect(finalState.balanceHouse).toBe(acceptedRound.balanceHouse)
+  })
+})
+
+describe('EscrowedSettlement.buildOpen — TxRequest shape (FIX 3)', () => {
+  it('yields an open TxRequest targeting HouseChannel with args [terms, houseSig]', async () => {
+    const esc = new EscrowedSettlement<{ targetX100: bigint }>({
+      parties: { player: playerAccount.address, house: houseAccount.address },
+      commit: buildSeedChain(seedTip, chainLength).commit,
+      game: dice,
+      domain,
+      settlementMode: SETTLEMENT_MODE,
+      channel: HOUSE_CHANNEL,
+    })
+
+    const terms: OpenTerms = {
+      tableId,
+      player: playerAccount.address,
+      playerKey: playerAccount.address,
+      escrowPlayer: openBalances.player,
+      escrowHouse: openBalances.house,
+      gameId: dice.gameId,
+      rngCommit: buildSeedChain(seedTip, chainLength).commit,
+      clockBlocks: 100n,
+      expiry: BigInt(Math.floor(Date.now() / 1000) + 3600),
+    }
+
+    // In production the house signs remotely. Test-only: sign with the house key directly.
+    const houseSig = await signOpenTerms(houseSigner, domain, terms)
+
+    const tx = esc.buildOpen(terms, houseSig)
+
+    expect(tx.functionName).toBe('open')
+    expect(tx.address.toLowerCase()).toBe(HOUSE_CHANNEL.toLowerCase())
+    expect(tx.args[0]).toMatchObject({
+      tableId,
+      player: playerAccount.address,
+      escrowPlayer: openBalances.player,
+      escrowHouse: openBalances.house,
+    })
+    expect(tx.args[1]).toBe(houseSig)
   })
 })
