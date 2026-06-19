@@ -27,6 +27,12 @@ export type GameDeployment = {
   /** GraphQL URL of the games Ponder indexer (@gibs/games-indexer). When set, the frontend reads
    *  rounds from it instead of scraping eth_getLogs. Unset → incremental/chunked getLogs fallback. */
   gamesIndexer?: string
+  /** Chips ERC-20 token address — the currency used by the session-game escrow. */
+  chips?: viem.Hex
+  /** HouseChannel contract address — the EIP-712 `verifyingContract` for session-state co-signatures.
+   *  Sessions use `makeDomain(chainId, houseChannel)` so co-signed states bind to the on-chain
+   *  settlement contract (the player's worst case is always "reclaim my stake" via disputeFromOpen). */
+  houseChannel?: viem.Hex
 }
 
 /**
@@ -72,6 +78,10 @@ export const deployments: GameDeployment[] = [
     // GraphQL under the already-resolving games host, so the lobby/round views read from one indexed
     // query per poll instead of scanning the chain (was hammering the RPC into 429s). Full GraphQL URL.
     gamesIndexer: 'https://games.msgboard.xyz/games-indexer/graphql',
+    // Chips ERC-20 token (deployed 2026-06-10 gate run).
+    chips: '0xA5276259e544C86438566cB28cc87daCce060910',
+    // ⚠️ pending: replace with the redeployed PATCHED HouseChannel (gameId-binding + disputeFromOpen) before mainnet/real funds
+    houseChannel: '0x57876609E4fEDDEeB83e46A1b3A20140998f0e46',
   },
   // Deployed by the 2026-06-11 mainnet bring-up (gate run + ink-pools; e2e/scripts/369-deployment.json).
   // deployBlock = the web pools' ink block so the site and the cast watcher count heats

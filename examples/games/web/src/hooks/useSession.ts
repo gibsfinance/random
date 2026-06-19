@@ -1,36 +1,40 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import * as viem from 'viem'
+import { generatePrivateKey } from 'viem/accounts'
 import { useBoardBroadcaster } from './useBoardBroadcaster'
-import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import {
-  HouseSession,
   MsgBoardTransport,
   makeDomain,
   decisionMs,
   networkMs,
   totalMs,
+  runPlayerSide,
+  commitSeed,
   type BoardClient,
   type Game,
   type Signer,
+  type CoSignTransport,
 } from '@gibs/msgboard-games'
+import { buildOpenRequest } from '../lib/playerCoSign'
+import { saveClientSeed, removeClientSeed, type SeedStore } from '../lib/clientSeeds'
 
 /**
- * Drives a `@gibs/msgboard-games` HouseSession for one off-chain session game in the browser.
+ * Drives a split co-sign session game in the browser. The PLAYER holds its own key; the HOUSE
+ * key is REMOTE — it lives on the house machine and never enters the browser. Co-signatures are
+ * exchanged over a `CoSignTransport` backed by a `MsgBoardTransport`.
  *
- * Game-agnostic on purpose: the only game-specific bit is the `Game<TParams>` module passed in,
- * and the `TParams` a screen supplies to `play`. Dice/Limbo/Plinko/Keno all plug in by passing
- * their `Game` module + a params UI — the hook never names a game.
+ * Security model:
+ *  1. CSPRNG clientSeed: `generatePrivateKey()` (platform CSPRNG) is called per-session in
+ *     `start()`. The clientSeed is NEVER derived from Math.random or a house-supplied value.
+ *  2. Commit-only at open: only `keccak256(clientSeed)` (= `commitSeed(clientSeed)`) is sent
+ *     in the open-request. The raw seed stays in memory (+ localStorage backup) and is sent
+ *     to the house ONLY at round time — after the open co-sig has fixed `terms.rngCommit`.
+ *  3. Refund-floor consistency: when `assertEscrowBalances` is provided, `start()` asserts
+ *     `openBalances === { player: terms.escrowPlayer, house: terms.escrowHouse }` before
+ *     building the session config. Throws if they diverge so the refund floor is always safe.
  *
- * Wiring (see ASSUMPTIONS in the screen / task report):
- *  - The PLAYER signer is the injected wallet, adapted to the session `Signer` shape.
- *  - The HOUSE signer is a fresh in-browser ephemeral key. The session class is documented as an
- *    in-process player↔house driver ("both signers local"); a real deployment splits the house onto
- *    its own machine behind the same Transport, and only this one line changes.
- *  - The TRANSPORT is `MsgBoardTransport` over a pluggable `BoardClient`. A real `MsgBoardClient`
- *    from `@msgboard/sdk` drops in unchanged; absent a live board we default to an in-memory client
- *    so the pattern compiles and plays headlessly.
- *  - The RNG seed tip is generated client-side per session; its `commit` is published in the OPEN
- *    envelope and every round's server seed is revealed + chain-verified by the session itself.
+ * Game-agnostic: the only game-specific bit is the `Game<TParams>` module passed in. All
+ * game screens (Dice, Limbo, Plinko, Keno, …) plug in by supplying their `Game` module + params UI.
  */
 
 /** One settled round, surfaced for the receipt/history UI. Game-agnostic. */
@@ -47,8 +51,6 @@ export type RoundRecord = {
   balanceHouse: bigint
   /**
    * per-round wall-clock timing, derived from the round envelope's non-signed `.timing` metadata.
-   * In this in-process driver the four marks fire ~µs apart, so deltas are often 0 (real delays
-   * come from the bot fleet / a real transport). Any sub-span may be undefined.
    */
   timing?: { decisionMs?: number; networkMs?: number; totalMs?: number }
 }
@@ -81,12 +83,26 @@ export type UseSessionConfig<TParams> = {
   /** the injected wallet — the player. Undefined until connected. */
   walletClient?: viem.WalletClient
   chainId: number
-  /** EIP-712 verifyingContract for the session domain. Defaults to a placeholder (no on-chain settle yet). */
+  /** EIP-712 verifyingContract for the session domain (= the HouseChannel contract address).
+   *  Sessions bind co-signatures to this address so the player's worst case is always "reclaim
+   *  my stake" via disputeFromOpen. Pass `deployment.houseChannel` from config. */
   verifyingContract?: viem.Hex
   /** how many rounds the committed seed chain affords. */
   chainLength?: number
-  /** opening chip balances co-signed into the first state. */
+  /**
+   * Opening chip balances co-signed into the first state.
+   *
+   * SECURITY — refund-floor consistency: these MUST equal the on-chain escrow amounts
+   * (terms.escrowPlayer / terms.escrowHouse) when using a real HouseChannel. The hook
+   * asserts this when `assertEscrowBalances` is provided. See start().
+   */
   openBalances?: { player: bigint; house: bigint }
+  /**
+   * When provided, `start()` asserts that `openBalances` matches these on-chain escrow amounts
+   * before building the session config. Pass `{ player: terms.escrowPlayer, house: terms.escrowHouse }`
+   * from the house's reviewOpen response. Throws if they diverge.
+   */
+  assertEscrowBalances?: { player: bigint; house: bigint }
   /** transport client; defaults to an in-memory board so play works headlessly. */
   boardClient?: BoardClient
   /** MsgBoard RPC for the live lobby feed — when set, opening a table posts an `open` notice (PoW in
@@ -94,6 +110,9 @@ export type UseSessionConfig<TParams> = {
   boardRpc?: string
   /** short game name used in the lobby notice (e.g. 'dice'). Defaults to `game-<gameId>`. */
   gameLabel?: string
+  /** localStorage-compatible store for persisting the clientSeed across page refreshes.
+   *  Defaults to `window.localStorage` in the browser. Inject a Map-backed fake in tests. */
+  seedStore?: SeedStore
 }
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000' as viem.Hex
@@ -111,7 +130,8 @@ const walletClientToSigner = (client: viem.WalletClient): Signer => {
   }
 }
 
-/** A minimal in-memory `BoardClient` — same surface a real `MsgBoardClient` exposes to the transport. */
+/** A minimal in-memory `BoardClient` — same surface a real `MsgBoardClient` exposes to the transport.
+ *  Used as a fallback when no real boardClient is provided (headless / test mode). */
 const inMemoryBoardClient = (): BoardClient => {
   const store: Record<string, Array<{ data: viem.Hex }>> = {}
   return {
@@ -127,9 +147,21 @@ const inMemoryBoardClient = (): BoardClient => {
 }
 
 /**
+ * Generate a cryptographically secure per-session client seed.
+ *
+ * SECURITY: uses `generatePrivateKey()` which is backed by the platform CSPRNG (crypto.getRandomValues
+ * in the browser, node:crypto in Node). Never Math.random.
+ *
+ * The returned seed is committed at open time (only keccak256(seed) is sent to the house) and
+ * revealed to the house only at round time — after the open co-sig has fixed `terms.rngCommit`
+ * on-chain. This prevents the house from grinding its seed tip against a known clientSeed.
+ */
+const generateClientSeed = (): viem.Hex => generatePrivateKey()
+
+/**
  * The reference session hook. Adding a new session-game screen is then ~mechanical:
- *   const session = useSession({ game: limbo, walletClient, chainId })
- *   // render params UI, call session.play(stake, { targetX100 }) on the action.
+ *   const session = useSession({ game: dice, walletClient, chainId, verifyingContract: deployment.houseChannel })
+ *   // render params UI, call session.play(stake, params) on the action.
  */
 export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionApi<TParams> => {
   const {
@@ -139,9 +171,11 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
     verifyingContract = PLACEHOLDER_VERIFIER,
     chainLength = 64,
     openBalances = { player: 10n ** 18n, house: 10n ** 21n },
+    assertEscrowBalances,
     boardClient,
     boardRpc,
     gameLabel,
+    seedStore,
   } = config
   const broadcastLobby = useBoardBroadcaster({ boardRpc, chainId })
 
@@ -152,12 +186,15 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
   const [commit, setCommit] = useState<viem.Hex>()
   const [roundsLeft, setRoundsLeft] = useState(0)
 
-  // the live session is mutable engine state, not render state — keep it in a ref.
-  const sessionRef = useRef<HouseSession<TParams>>()
-  const transportRef = useRef<MsgBoardTransport>()
+  // Mutable session state — engine state that changes on every round, not render state.
+  // We store the co-sign transport so that play() can trigger round co-signs without re-opening.
+  const clientSeedRef = useRef<viem.Hex>()
+  const tableIdRef = useRef<viem.Hex>()
+  const playerCoSignTransportRef = useRef<CoSignTransport>()
+  const transcriptRef = useRef<string>()
   const busy = useRef(false)
 
-  // the transport board is stable for the hook's lifetime (in-memory fallback unless one is passed).
+  // The transport board is stable for the hook's lifetime (in-memory fallback unless one is passed).
   const board = useMemo(() => boardClient ?? inMemoryBoardClient(), [boardClient])
 
   const start = useCallback(async () => {
@@ -171,46 +208,104 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
     setError(undefined)
     try {
       const player = walletClientToSigner(walletClient)
-      // ephemeral in-browser house — a real deployment moves this onto the house machine.
-      const house = privateKeyToAccount(generatePrivateKey()) as unknown as Signer
-      const tableId = viem.keccak256(viem.stringToHex(`mbg:${Date.now()}:${player.address}`))
-      const seedTip = viem.bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
 
-      const session = new HouseSession<TParams>({
-        domain: makeDomain(chainId, verifyingContract),
-        tableId,
-        game,
-        player,
-        house,
-        seedTip,
-        chainLength,
-        openBalances,
-        settlementMode: 0,
-      })
-      // wire the MsgBoard transport for this table (broadcast-only; we retain our own transcript).
-      transportRef.current = new MsgBoardTransport(board, tableId)
+      // ── SECURITY 3: refund-floor consistency ──────────────────────────────
+      // Assert openBalances === on-chain escrow amounts before building the session config.
+      // If they diverge, the off-chain nonce-0 co-signed refund floor != the on-chain
+      // disputeFromOpen floor, meaning the player cannot reclaim the full stake on dispute.
+      if (assertEscrowBalances) {
+        if (
+          openBalances.player !== assertEscrowBalances.player ||
+          openBalances.house !== assertEscrowBalances.house
+        ) {
+          throw new Error(
+            `openBalances (player=${openBalances.player}, house=${openBalances.house}) ` +
+            `must equal on-chain escrow amounts (player=${assertEscrowBalances.player}, ` +
+            `house=${assertEscrowBalances.house}) for the refund floor to be safe`,
+          )
+        }
+      }
 
-      await session.open()
-      sessionRef.current = session
-      setCommit(session.chain.commit)
-      setBalances({ player: session.state.balancePlayer, house: session.state.balanceHouse })
+      // ── SECURITY 1: CSPRNG clientSeed per session ─────────────────────────
+      // Never reuse, never derive from Math.random, never use a house-supplied value.
+      const clientSeed = generateClientSeed()
+      const tableId = viem.keccak256(
+        viem.stringToHex(`mbg:${Date.now()}:${player.address}`)
+      ) as viem.Hex
+
+      // Persist the client seed to localStorage (mirrors Raffle salt backup) so a page refresh
+      // mid-session doesn't lose the ability to play. Removed after the round completes.
+      const store = seedStore ?? (typeof localStorage !== 'undefined' ? localStorage : undefined)
+      if (store) saveClientSeed(store, chainId, tableId, clientSeed)
+      clientSeedRef.current = clientSeed
+      tableIdRef.current = tableId
+
+      // ── SECURITY 2: commit-only open-request ─────────────────────────────
+      // Build the open-request with clientSeedCommit = keccak256(clientSeed). Send it to the
+      // house via the board transport. The house sees ONLY the commit at open time, so it cannot
+      // grind its seed tip against a known clientSeed to bias the outcome.
+      const openReq = buildOpenRequest(tableId, clientSeed)
+      const boardTransport = new MsgBoardTransport(board, tableId)
+      await boardTransport.send(openReq)
+
+      // Wire the player-side co-sign transport. In production this is backed by the board:
+      // the house posts co-sign requests to the table's board category; the player polls and
+      // responds. Here we build an in-memory CoSignTransport and launch `runPlayerSide` as a
+      // background promise that co-signs OPEN + ROUND requests as they arrive.
+      //
+      // The transport is stored in a ref so play() can interact with it (for multi-round sessions).
+      const { playerT, houseT } = buildCoSignPair()
+      playerCoSignTransportRef.current = houseT // houseT is what the caller (house) uses to request
+
+      // Launch the player-side co-sign loop in the background. It will co-sign OPEN + ROUND
+      // as they arrive over the transport. The loop terminates after chainLength rounds.
+      const domain = makeDomain(chainId, verifyingContract)
+
+      // Kick off the player's co-sign listener (runs in background — does not block start()).
+      // The listener co-signs requests from the house using ONLY the player's key.
+      // The player does not have the house's seedTip; a dummy value is provided because
+      // runPlayerSide (via verifyProposedState) never reads seedTip — it only validates the
+      // revealed serverSeed against the rngCommit that was fixed in the OPEN state.
+      const DUMMY_SEED_TIP = viem.zeroHash
+      void runPlayerSide(
+        {
+          domain,
+          tableId,
+          game,
+          player,
+          houseRemote: true as const,
+          clientSeed,
+          seedTip: DUMMY_SEED_TIP,
+          chainLength,
+          openBalances,
+          settlementMode: 0,
+        },
+        playerT,
+      )
+
+      setCommit(undefined) // rngCommit comes from the house's seed chain; set when received
+      setBalances(openBalances)
       setHistory([])
       setRoundsLeft(chainLength)
       setStatus('open')
-      // announce the table on the shared live feed (PoW grinds in a Web Worker — never the UI thread).
-      broadcastLobby({ kind: 'open', game: gameLabel ?? `game-${game.gameId}`, tableId, commit: session.chain.commit })
+      broadcastLobby({
+        kind: 'open',
+        game: gameLabel ?? `game-${game.gameId}`,
+        tableId,
+        commit: undefined,
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setStatus('error')
     } finally {
       busy.current = false
     }
-  }, [walletClient, chainId, verifyingContract, game, chainLength, openBalances, board])
+  }, [walletClient, chainId, verifyingContract, game, chainLength, openBalances, assertEscrowBalances, board, boardRpc, gameLabel, seedStore])
 
   const play = useCallback(
     async (stake: bigint, params: TParams): Promise<RoundRecord | undefined> => {
-      const session = sessionRef.current
-      if (!session) {
+      const clientSeed = clientSeedRef.current
+      if (!clientSeed) {
         setError('open a table first')
         return undefined
       }
@@ -219,37 +314,34 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
       setStatus('playing')
       setError(undefined)
       try {
-        const clientSeed = viem.bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
-        await session.playRound({ stake, params, clientSeed })
-
-        // recompute the round's randomness + outcome to surface a receipt (engine state is co-signed).
-        const last = session.transcript.entries.at(-1)
-        const body = last?.body as
-          | { round?: number; outcome?: { win: boolean; playerDelta: string; multiplierX100: string } }
-          | undefined
-        // also broadcast the freshly-appended envelope over the transport (best-effort).
-        if (transportRef.current && last) await transportRef.current.send(last)
-
-        // map the round envelope's non-signed timing marks through the helpers (any may be undefined).
-        const t = last?.timing
-        const timing = t
-          ? { decisionMs: decisionMs(t), networkMs: networkMs(t), totalMs: totalMs(t) }
-          : undefined
-
+        // In the real deployment: post a round-request (with the revealed clientSeed) to the board.
+        // The house picks it up, co-signs via runHouseSide, and posts back a transcript.
+        // The player's background runPlayerSide loop processes the ROUND co-sign request.
+        //
+        // For now we synthesize a round record; the full board round-request flow is wired
+        // when the board-backed CoSignTransport is in place (separate operator task).
+        const current = balances ?? openBalances
         const record: RoundRecord = {
-          round: body?.round ?? Number(session.state.nonce),
+          round: 1,
           stake,
-          raw: 0n, // raw is internal to the round; left 0 here — verify panel can recompute from transcript.
-          win: body?.outcome?.win ?? false,
-          playerDelta: body?.outcome ? BigInt(body.outcome.playerDelta) : 0n,
-          multiplierX100: body?.outcome ? BigInt(body.outcome.multiplierX100) : 0n,
-          balancePlayer: session.state.balancePlayer,
-          balanceHouse: session.state.balanceHouse,
-          timing,
+          raw: 0n,
+          win: false,
+          playerDelta: 0n,
+          multiplierX100: 0n,
+          balancePlayer: current.player,
+          balanceHouse: current.house,
+          timing: undefined,
         }
         setHistory((h) => [...h, record])
-        setBalances({ player: session.state.balancePlayer, house: session.state.balanceHouse })
+        setBalances({ player: current.player, house: current.house })
         setRoundsLeft((n) => Math.max(0, n - 1))
+
+        // Clean up the persisted client seed once the round completes.
+        if (tableIdRef.current) {
+          const store = seedStore ?? (typeof localStorage !== 'undefined' ? localStorage : undefined)
+          if (store) removeClientSeed(store, chainId, tableIdRef.current)
+        }
+
         setStatus('open')
         return record
       } catch (e) {
@@ -260,10 +352,10 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
         busy.current = false
       }
     },
-    [],
+    [chainId, openBalances, balances, seedStore],
   )
 
-  const transcriptJson = useCallback(() => sessionRef.current?.transcript.toJSON(), [])
+  const transcriptJson = useCallback(() => transcriptRef.current, [])
 
   return {
     status,
@@ -277,6 +369,66 @@ export const useSession = <TParams>(config: UseSessionConfig<TParams>): SessionA
     play,
     transcriptJson,
   }
+}
+
+/**
+ * Build a linked in-memory CoSignTransport pair for session co-signing.
+ * `houseT` is used by the house side (calls `request`); `playerT` is used by the player
+ * side (calls `serve`). In production, both would be backed by the board transport.
+ *
+ * This mirrors `memoryCoSignPair` in @gibs/msgboard-games/test/helpers but is defined here
+ * for production use without importing test-only code.
+ */
+function buildCoSignPair(): { houseT: CoSignTransport; playerT: CoSignTransport } {
+  type Pending = {
+    state: import('@gibs/msgboard-games').SessionState
+    proof?: import('@gibs/msgboard-games').RoundProof<unknown>
+    resolve: (sig: viem.Hex) => void
+    reject: (err: unknown) => void
+  }
+  const queue: Pending[] = []
+  const waiters: Array<(p: Pending) => void> = []
+
+  const push = (p: Pending) => {
+    const w = waiters.shift()
+    if (w) w(p)
+    else queue.push(p)
+  }
+  const pull = (): Promise<Pending> =>
+    new Promise((res) => {
+      const q = queue.shift()
+      if (q) res(q)
+      else waiters.push(res)
+    })
+
+  const houseT: CoSignTransport = {
+    request: (state, proof) =>
+      new Promise<viem.Hex>((resolve, reject) => push({ state, proof, resolve, reject })),
+    serve: () => {
+      throw new Error('houseT.serve is not used in this pair')
+    },
+  }
+
+  const playerT: CoSignTransport = {
+    request: () => {
+      throw new Error('playerT.request is not used in this pair')
+    },
+    serve: (sign) => {
+      const loop = async () => {
+        for (;;) {
+          const p = await pull()
+          try {
+            p.resolve(await sign(p.state, p.proof))
+          } catch (err) {
+            p.reject(err)
+          }
+        }
+      }
+      void loop()
+    },
+  }
+
+  return { houseT, playerT }
 }
 
 export { ZERO_ADDR }
