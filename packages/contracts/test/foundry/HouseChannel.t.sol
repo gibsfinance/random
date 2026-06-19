@@ -78,6 +78,18 @@ contract HouseChannelTest is Test {
         sh = abi.encodePacked(r2, ss2, v2);
     }
 
+    event Opened(bytes32 indexed tableId, address indexed player, address playerKey, uint8 gameId, uint256 escrowPlayer, uint256 escrowHouse);
+
+    // the indexer joins settlement rows by gameId, so Opened must carry it
+    function test_openedEmitsGameId() public {
+        OpenTerms memory t = _terms(); // gameId 1
+        bytes memory sig = _signHouseTerms(t);
+        vm.expectEmit(true, true, false, true, address(ch));
+        emit Opened(t.tableId, playerWallet, t.playerKey, t.gameId, t.escrowPlayer, t.escrowHouse);
+        vm.prank(playerWallet);
+        ch.open(t, sig);
+    }
+
     function test_openEscrowsAndReserves() public {
         _open();
         assertEq(chips.balanceOf(address(ch)), 10_200); // pool 10k + player escrow 200

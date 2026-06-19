@@ -88,7 +88,7 @@ contract HouseChannel is SessionStateEIP712, Ownable {
     event HouseFunded(uint256 amount);
     event HouseWithdrawn(uint256 amount);
     event HouseKeySet(address indexed key);
-    event Opened(bytes32 indexed tableId, address indexed player, address playerKey, uint256 escrowPlayer, uint256 escrowHouse);
+    event Opened(bytes32 indexed tableId, address indexed player, address playerKey, uint8 gameId, uint256 escrowPlayer, uint256 escrowHouse);
     event Settled(bytes32 indexed tableId, uint256 payoutPlayer, uint256 payoutHouse);
     event DisputeOpened(bytes32 indexed tableId, uint8 disputant, uint64 nonce, uint64 deadline);
     event DisputeAnsweredWithState(bytes32 indexed tableId, uint64 nonce);
@@ -144,7 +144,7 @@ contract HouseChannel is SessionStateEIP712, Ownable {
         t.status = Status.Live;
 
         chips.safeTransferFrom(msg.sender, address(this), terms.escrowPlayer);
-        emit Opened(terms.tableId, msg.sender, terms.playerKey, terms.escrowPlayer, terms.escrowHouse);
+        emit Opened(terms.tableId, msg.sender, terms.playerKey, terms.gameId, terms.escrowPlayer, terms.escrowHouse);
     }
 
     /// Cooperative settle: anyone submits the final both-signed state. Pays from locked escrow.
