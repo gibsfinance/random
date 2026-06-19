@@ -42,6 +42,7 @@ export async function faucetMint(opts: {
   cap: bigint
 }): Promise<Hex> {
   const { walletClient, chips, to, amount, cap } = opts
+  if (amount < 0n) throw new Error('faucetMint: amount must not be negative')
   const mintAmount = amount < cap ? amount : cap
   return walletClient.writeContract({
     address: chips,

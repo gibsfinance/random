@@ -5,15 +5,16 @@
  *  1. handleOpenRequest builds the house seed chain BLIND: the tip is generated independently of
  *     the request — req only carries `clientSeedCommit`, never a plaintext clientSeed. The house
  *     cannot grind its tip against a known client seed. (line ~45)
- *  2. handleRoundRequest calls verifyReveal(clientSeedCommit, clientSeed) and returns { ok: false }
+ *  2. coSignRound calls verifyReveal(clientSeedCommit, clientSeed) and returns { ok: false }
  *     on mismatch BEFORE invoking runHouseSide, preventing player-grind attacks. (line ~100)
  *  3. The tip is injected via ctx.seedTip in tests (deterministic); production passes `undefined`
  *     and receives a fresh `randomBytes(32)` — mirroring how the codebase injects clocks/seeds. (line ~40)
  */
 import { randomBytes } from 'node:crypto'
 import type { Hex } from 'viem'
-import type { GameDomain, StateSigner, SeedChain } from '@gibs/msgboard-games'
+import type { GameDomain, StateSigner, SeedChain, Game } from '@gibs/msgboard-games'
 import { buildSeedChain, verifyReveal } from '@gibs/msgboard-games'
+import { runHouseSide, type CoSignTransport } from '@gibs/msgboard-games'
 import type { OpenTerms } from '@gibs/msgboard-settle'
 import { reviewOpen } from './openReview'
 import type { OpenRequest, Limits } from './openReview'
@@ -86,47 +87,94 @@ export async function handleOpenRequest(req: OpenRequest, ctx: OpenCtx): Promise
   }
 }
 
-// ── handleRoundRequest ──────────────────────────────────────────────────────
+// ── coSignRound ─────────────────────────────────────────────────────────────
 
 export interface RoundReq {
   /** Plaintext clientSeed revealed by the player at round time. */
   clientSeed: Hex
+  /** Stake for this round. */
+  stake: bigint
+  /** Game params (typed as unknown here; callers supply the concrete TParams). */
+  params: unknown
 }
 
-export interface RoundCtx {
+export interface RoundCtx<TParams> {
   /** The player's clientSeedCommit stored at open time (keccak256(clientSeed)). */
   clientSeedCommit: Hex
-  /** The house seed chain retained from the open grant. */
+  /** The house seed chain retained from the open grant (seedChain.seeds[1] = serverSeed). */
   seedChain: SeedChain
+  /** Session config needed by runHouseSide: table, game, balances, domain, keys.
+   *  MUST use the SAME seedTip that was used for the open grant so terms.rngCommit matches. */
+  sessionCfg: Parameters<typeof runHouseSide<TParams>>[0]
+  /** The transport linking house and player for co-signing. */
+  transport: CoSignTransport
 }
 
-export type RoundResult =
-  | { ok: true; serverSeed: Hex }
+export type CoSignResult =
+  | { ok: true; transcriptJson: string }
   | { ok: false; reason: string }
 
 /**
- * Verifies the player's revealed clientSeed against the stored commit BEFORE co-signing.
+ * Verifies the player's revealed clientSeed against the stored commit, then drives the full
+ * house-side co-sign via runHouseSide, producing a verified transcript.
  *
- * SECURITY REQUIREMENT 2: if verifyReveal(clientSeedCommit, clientSeed) fails, the round is
- * refused immediately — the house will not reveal its serverSeed and will not call runHouseSide.
+ * SECURITY REQUIREMENT 2: verifyReveal(clientSeedCommit, clientSeed) is checked FIRST.
+ * On mismatch the house refuses and returns { ok: false } — runHouseSide is NEVER called.
  * This closes the player-grind attack where a player tries many clientSeeds against a fixed
  * serverSeed commitment to find a favorable draw.
  *
- * `verifyReveal(priorLink, revealed)` checks keccak256(revealed) === priorLink. Here the
- * "priorLink" is clientSeedCommit = keccak256(clientSeed), so it matches the same API shape.
+ * KEY CONSISTENCY: ctx.sessionCfg.seedTip MUST equal the tip used at open time. The
+ * runHouseSide call rebuilds buildSeedChain(seedTip, chainLength) so its chain.commit
+ * (= rngCommit in the OPEN state) equals the terms.rngCommit the player already co-signed.
  */
-export async function handleRoundRequest(req: RoundReq, ctx: RoundCtx): Promise<RoundResult> {
+export async function coSignRound<TParams>(req: RoundReq, ctx: RoundCtx<TParams>): Promise<CoSignResult> {
   // SECURITY: verify the player's seed reveal against the commit BEFORE anything else.
   if (!verifyReveal(ctx.clientSeedCommit, req.clientSeed)) {
     return { ok: false, reason: 'clientSeed does not match clientSeedCommit — round refused' }
   }
 
-  // Round 1 (nonce 1) uses seeds[1] from the chain.
+  // Verify seed chain is not exhausted (defensive; buildSeedChain ensures seeds[1] exists for length=1).
+  if (!ctx.seedChain.seeds[1]) {
+    return { ok: false, reason: 'seed chain exhausted' }
+  }
+
+  try {
+    const transcriptJson = await runHouseSide(
+      ctx.sessionCfg,
+      ctx.transport,
+      { stake: req.stake, params: req.params as TParams, clientSeed: req.clientSeed },
+    )
+    return { ok: true, transcriptJson }
+  } catch (err) {
+    return { ok: false, reason: String(err) }
+  }
+}
+
+// ── handleRoundRequest (legacy thin wrapper — use coSignRound for real co-signing) ──
+
+/** @deprecated Use coSignRound for real co-signing. Kept for backward compat during migration. */
+export interface RoundCtxLegacy {
+  clientSeedCommit: Hex
+  seedChain: SeedChain
+}
+
+/** @deprecated Use coSignRound instead. */
+export type RoundResult =
+  | { ok: true; serverSeed: Hex }
+  | { ok: false; reason: string }
+
+/**
+ * @deprecated Replaced by coSignRound (which calls runHouseSide for real co-signing).
+ * Left in place so existing callers that only need the verify gate compile without changes.
+ */
+export async function handleRoundRequest(req: { clientSeed: Hex }, ctx: RoundCtxLegacy): Promise<RoundResult> {
+  if (!verifyReveal(ctx.clientSeedCommit, req.clientSeed)) {
+    return { ok: false, reason: 'clientSeed does not match clientSeedCommit — round refused' }
+  }
   const serverSeed = ctx.seedChain.seeds[1]
   if (!serverSeed) {
     return { ok: false, reason: 'seed chain exhausted' }
   }
-
   return { ok: true, serverSeed }
 }
 
@@ -138,21 +186,182 @@ export interface HouseCfg {
   houseChannel: Hex
   houseKey: OpenCtx['houseKey']
   limits: Limits
+  /** EIP-712 domain for session state co-signing. */
+  domain: GameDomain
+  /** The game being hosted — used to build the SessionConfig for runHouseSide. */
+  game: Game<unknown>
+  /** Opening balances for each session. */
+  openBalances: { player: bigint; house: bigint }
+  /** Session settlement mode (0 = optimistic). */
+  settlementMode?: number
+  /**
+   * Injectable seed tip for test determinism. In production (undefined), each open request
+   * generates a fresh randomBytes(32) tip. Tests inject a fixed tip so the rngCommit is
+   * predictable and the verifyCtx.commit can be precomputed.
+   */
+  seedTip?: Hex
 }
 
 /**
- * Thin wiring function: opens a MsgBoardTransport per-table category, polls for open-requests,
- * calls handleOpenRequest, posts the grant, then handles the player's round reveal with
- * handleRoundRequest before co-signing via runHouseSide.
- *
- * For unit tests, inject an in-memory transport; for production, pass a live BoardClient.
- * This function is a thin orchestrator — the funds-safety logic lives in the pure units above.
+ * Per-table state persisted between open and round steps.
+ * The tip MUST be the same between open and round so runHouseSide rebuilds the
+ * same seed chain (and therefore the same rngCommit) that was signed at open time.
  */
-export function startHouse(_cfg: HouseCfg): { stop(): void } {
+interface TableState {
+  clientSeedCommit: Hex
+  seedChain: SeedChain
+  /** The SAME tip used at open-time (stored so coSignRound's sessionCfg.seedTip matches). */
+  seedTip: Hex
+}
+
+export interface HouseDeps {
+  /**
+   * Async iterator / feed of inbound board messages. Each yielded value is a raw message object.
+   * In tests, supply an async generator; in production, wrap a polled MsgBoardTransport.
+   */
+  messages: AsyncIterable<unknown>
+  /**
+   * Post a message to the board (grant, transcript, etc.).
+   */
+  postMessage(msg: unknown): Promise<void>
+  /**
+   * Factory: given the tableId, return a linked {houseT, playerT} CoSignTransport pair.
+   * In tests, return a memoryCoSignPair(); in production, build MsgBoard-backed transports.
+   */
+  makeTransport(tableId: Hex): { houseT: CoSignTransport; playerT: CoSignTransport }
+  /**
+   * Return the current chain head block number for computing grant expiry.
+   * Called once per open-request so expiry is always fresh.
+   */
+  getHeadBlock(): Promise<bigint>
+}
+
+/**
+ * Wiring function: drives the house side of a board-watched table.
+ * Handles open-request and round-request messages, calling the pure units
+ * handleOpenRequest / coSignRound for each. Uses INJECTABLE deps so unit tests
+ * can run without a live board.
+ *
+ * Design principles:
+ *  - Each message is handled in its OWN try/catch: one malformed message cannot crash the watcher.
+ *  - stop() actually halts the loop (sets a flag checked between every iteration).
+ *  - Deps are supplied by the caller; production creates real board clients, tests inject fakes.
+ */
+export function startHouse(cfg: HouseCfg, deps: HouseDeps): { stop(): void } {
   let running = true
   const stop = () => { running = false }
-  // Production loop would poll the board here. Kept as a thin stub since the pure units
-  // (handleOpenRequest, handleRoundRequest, faucetMint) carry all the testable logic.
-  void running // suppress unused warning in this thin wiring stub
+
+  // Per-table state: keyed by tableId (lowercase hex).
+  const tables = new Map<Hex, TableState>()
+  // Per-table CoSignTransport pairs: keyed by tableId.
+  const transports = new Map<Hex, { houseT: CoSignTransport; playerT: CoSignTransport }>()
+
+  const loop = async () => {
+    for await (const raw of deps.messages) {
+      if (!running) break
+      try {
+        const msg = raw as Record<string, unknown>
+        const kind = msg['kind']
+
+        if (kind === 'open-request') {
+          // ── open-request ────────────────────────────────────────────
+          try {
+            const req = msg as unknown as OpenRequest
+            const headBlock = await deps.getHeadBlock()
+            const grant = await handleOpenRequest(req, {
+              houseKey: cfg.houseKey,
+              domain: cfg.domain,
+              headBlock,
+              limits: cfg.limits,
+              // Production: undefined → fresh randomBytes per request. Tests inject a fixed tip.
+              seedTip: cfg.seedTip,
+            })
+
+            if (grant.kind === 'open-grant') {
+              // Persist the tip and clientSeedCommit for the round step.
+              const tableId = req.tableId.toLowerCase() as Hex
+              tables.set(tableId, {
+                clientSeedCommit: req.clientSeedCommit,
+                seedChain: grant.seedChain,
+                // The tip: either the production random one or re-derived from seedChain.
+                // We use seeds[chainLength] === tip (seeds[1] for length=1) as the stored tip,
+                // because handleOpenRequest may have generated it via randomBytes internally.
+                // However, since handleOpenRequest does NOT expose the tip it used, we must
+                // re-read it from the seedChain: seeds[seeds.length - 1] is the raw tip.
+                seedTip: grant.seedChain.seeds[grant.seedChain.seeds.length - 1] as Hex,
+              })
+              if (!transports.has(tableId)) {
+                transports.set(tableId, deps.makeTransport(req.tableId))
+              }
+            }
+
+            await deps.postMessage({ ...grant, tableId: req.tableId })
+          } catch (err) {
+            console.error('[house] open-request error:', err)
+          }
+
+        } else if (kind === 'round-request') {
+          // ── round-request ───────────────────────────────────────────
+          try {
+            const roundMsg = msg as {
+              tableId: Hex; clientSeed: Hex; stake: string; params: unknown
+              playerAddress: Hex; playerKey: Hex
+            }
+            const tableId = roundMsg.tableId.toLowerCase() as Hex
+            const state = tables.get(tableId)
+            if (!state) {
+              await deps.postMessage({ kind: 'round-decline', tableId: roundMsg.tableId, reason: 'no open grant for table' })
+              continue
+            }
+            const transportPair = transports.get(tableId)
+            if (!transportPair) {
+              await deps.postMessage({ kind: 'round-decline', tableId: roundMsg.tableId, reason: 'no transport for table' })
+              continue
+            }
+
+            const sessionCfg: Parameters<typeof runHouseSide<unknown>>[0] = {
+              domain: cfg.domain,
+              tableId: roundMsg.tableId,
+              game: cfg.game,
+              // In the transport-backed flow the player signs over the CoSignTransport, not locally.
+              // runHouseSide only reads player.address (for co-sig verification); it never calls
+              // player.signTypedData or player.signMessage directly — those go over the transport.
+              player: {
+                address: roundMsg.playerKey,
+                signTypedData: async () => { throw new Error('player signs over transport') },
+                signMessage: async () => { throw new Error('player signs over transport') },
+              },
+              house: cfg.houseKey as Parameters<typeof runHouseSide<unknown>>[0]['house'],
+              seedTip: state.seedTip,
+              chainLength: 1,
+              openBalances: cfg.openBalances,
+              settlementMode: cfg.settlementMode ?? 0,
+            }
+
+            const result = await coSignRound(
+              { clientSeed: roundMsg.clientSeed, stake: BigInt(roundMsg.stake), params: roundMsg.params },
+              { clientSeedCommit: state.clientSeedCommit, seedChain: state.seedChain, sessionCfg, transport: transportPair.houseT },
+            )
+
+            if (result.ok) {
+              // Clean up table state after a completed round.
+              tables.delete(tableId)
+              await deps.postMessage({ kind: 'round-transcript', tableId: roundMsg.tableId, transcriptJson: result.transcriptJson })
+            } else {
+              await deps.postMessage({ kind: 'round-decline', tableId: roundMsg.tableId, reason: result.reason })
+            }
+          } catch (err) {
+            console.error('[house] round-request error:', err)
+          }
+        }
+        // Unknown message kinds are silently ignored (future-proofing).
+      } catch (err) {
+        // Outer catch: malformed message that couldn't even be read as an object.
+        console.error('[house] message dispatch error:', err)
+      }
+    }
+  }
+
+  void loop()
   return { stop }
 }

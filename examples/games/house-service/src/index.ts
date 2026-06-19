@@ -1,12 +1,13 @@
 /**
  * @gibs/games-house-service — public surface.
  *
- * Re-exports the public API: startHouse, handleOpenRequest, handleRoundRequest (pure units),
+ * Re-exports the public API: startHouse, handleOpenRequest, coSignRound, handleRoundRequest (pure units),
  * faucetMint, and relevant types.
  */
 export {
   handleOpenRequest,
   handleRoundRequest,
+  coSignRound,
   startHouse,
   type OpenRequest,
   type Limits,
@@ -16,8 +17,10 @@ export {
   type OpenDeclineEnvelope,
   type RoundReq,
   type RoundCtx,
+  type CoSignResult,
   type RoundResult,
   type HouseCfg,
+  type HouseDeps,
 } from './houseLoop'
 
 export { faucetMint, type FaucetWalletClient } from './faucet'
