@@ -26,10 +26,20 @@ interface SigPair { player: Hex; house: Hex }
 interface OpenBody { rngCommit?: Hex; settlementMode?: number; gameId?: number; balances?: { player?: string; house?: string }; sigs?: SigPair }
 interface RoundBody { round: number; stake: string; clientSeed: Hex; serverSeed: Hex; params: Record<string, string>; outcome: { win: boolean; playerDelta: string; multiplierX100: string }; sigs?: SigPair }
 
+/**
+ * Inverse of coSignTransport's serializeParams — restores each field to its original type.
+ * Tags: `b:<n>` → BigInt; `j:<json>` → JSON.parse. Matches the encoding in session.ts's
+ * serializeParams/deserializeParams so EscrowedSettlement.buildSettle can round-trip any
+ * param shape (bigint targets, string risk, number rows, number[] keno picks).
+ */
 function deserializeParams<TParams>(raw: Record<string, string>): TParams {
-  const out: Record<string, bigint> = {}
-  for (const [k, v] of Object.entries(raw)) out[k] = BigInt(v)
-  return out as unknown as TParams
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(raw)) {
+    if (v.startsWith('b:')) out[k] = BigInt(v.slice(2))
+    else if (v.startsWith('j:')) out[k] = JSON.parse(v.slice(2))
+    else out[k] = BigInt(v) // legacy: bare bigint string (no prefix)
+  }
+  return out as TParams
 }
 
 /** Re-derive the open (nonce 0) and final co-signed SessionStates from the retained transcript,

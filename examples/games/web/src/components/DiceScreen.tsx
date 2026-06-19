@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import * as viem from 'viem'
-import { dice, diceMultiplierX100, type DiceParams } from '@gibs/msgboard-games'
+import { dice, diceMultiplierX100, buildSeedChain, type DiceParams } from '@gibs/msgboard-games'
+import { EscrowedSettlement } from '@gibs/msgboard-settle'
+import { makeDomain } from '@gibs/msgboard-games'
 import type { GameDeployment } from '../config'
-import { useSession, type RoundRecord } from '../hooks/useSession'
+import { useSession, type RoundRecord, DEMO_HOUSE_ADDRESS } from '../hooks/useSession'
 import { StakeInput, parseStake } from './StakeInput'
 import { TurnTiming } from './TurnTiming'
 import { InfoDot } from './Meta'
@@ -15,6 +17,9 @@ const MAX_TARGET_PCT = 98.99
 
 const pctToTargetX100 = (pct: number): bigint => BigInt(Math.round(pct * 100))
 const fmtMult = (x100: bigint): string => `${(Number(x100) / 100).toFixed(2)}x`
+
+/** Per-table settle status: after the round is co-signed, the player can settle on-chain. */
+type TableStatus = 'idle' | 'playing' | 'settle-pending' | 'settling' | 'landed'
 
 /**
  * Reference OFF-CHAIN session-game screen (Dice). The template the other session games follow:
@@ -64,6 +69,8 @@ export const DiceScreen = ({
 }) => {
   const [amount, setAmount] = useState('0.1')
   const [targetPct, setTargetPct] = useState('50')
+  const [tableStatus, setTableStatus] = useState<TableStatus>('idle')
+  const [settleError, setSettleError] = useState<string>()
 
   const session = useSession<DiceParams>({
     game: dice,
@@ -71,6 +78,7 @@ export const DiceScreen = ({
     chainId: deployment.chainId,
     boardRpc: deployment.boardRpc,
     gameLabel: 'dice',
+    houseChannel: deployment.houseChannel,
   })
 
   const stake = parseStake(amount)
@@ -87,9 +95,62 @@ export const DiceScreen = ({
   const canOpen = walletClient !== undefined && trustAcknowledged && !busy
   const canRoll = session.ready && !busy && stake !== undefined && targetX100 !== undefined
 
-  const roll = () => {
+  const roll = async () => {
     if (stake === undefined || targetX100 === undefined) return
-    void session.play(stake, { targetX100 })
+    setTableStatus('playing')
+    const record = await session.play(stake, { targetX100 })
+    if (record) {
+      setTableStatus('settle-pending')
+    } else {
+      setTableStatus('idle')
+    }
+  }
+
+  /** Build and submit the on-chain settle transaction from the retained co-signed transcript. */
+  const settle = async () => {
+    const transcriptJson = session.transcriptJson()
+    if (!transcriptJson) { setSettleError('no transcript to settle'); return }
+    if (!walletClient?.account) { setSettleError('connect a wallet to settle'); return }
+    if (!deployment.houseChannel) { setSettleError('no houseChannel in deployment config'); return }
+
+    setTableStatus('settling')
+    setSettleError(undefined)
+    try {
+      const domain = makeDomain(deployment.chainId, deployment.houseChannel)
+      // The DEMO house address is derived from DEMO_HOUSE_KEY — the same key that signed the
+      // round in play(). In production this would be the real house's address from the deployment.
+      const houseAddress = DEMO_HOUSE_ADDRESS
+      // The seed commit must match what runHouseSide put in the OPEN state.
+      // buildSeedChain(DEMO_SEED_TIP, chainLength).commit == the rngCommit in the transcript.
+      // We read it from the transcript at replay time (EscrowedSettlement.buildSettle → replaySession).
+      // We just need to supply the parties so replaySession can verify both co-sigs.
+      const esc = new EscrowedSettlement<DiceParams>({
+        parties: { player: walletClient.account.address, house: houseAddress },
+        // The commit is verified inside replaySession against the transcript's OPEN rngCommit.
+        // We provide a placeholder here; replaySession reads it from the transcript directly.
+        // (EscrowedSettlement calls replaySession which checks ctx.commit === ob.rngCommit —
+        //  so we must provide the real commit from the transcript's OPEN entry.)
+        commit: await extractCommitFromTranscript(transcriptJson),
+        game: dice,
+        domain,
+        settlementMode: 1,
+        channel: deployment.houseChannel,
+      })
+      const tx = await esc.buildSettle(transcriptJson)
+      // Simulate + send the settle tx via the wallet.
+      await walletClient.writeContract({
+        address: tx.address,
+        abi: tx.abi as viem.Abi,
+        functionName: tx.functionName,
+        args: tx.args,
+        account: walletClient.account,
+        chain: walletClient.chain,
+      })
+      setTableStatus('landed')
+    } catch (e) {
+      setSettleError(e instanceof Error ? e.message : String(e))
+      setTableStatus('settle-pending')
+    }
   }
 
   const wins = session.history.filter((r) => r.win).length
@@ -122,7 +183,7 @@ export const DiceScreen = ({
             />
           </label>
           {session.ready ? (
-            <button onClick={roll} disabled={!canRoll}>
+            <button onClick={() => void roll()} disabled={!canRoll}>
               {session.status === 'playing' ? 'Rolling…' : 'Roll'}
             </button>
           ) : (
@@ -158,6 +219,23 @@ export const DiceScreen = ({
           </p>
         )}
         {session.error && <p className="bad">{session.error}</p>}
+
+        {/* Settle button — shown after a round completes (co-signed off-chain) */}
+        {tableStatus === 'settle-pending' && deployment.houseChannel && (
+          <div className="row" style={{ marginTop: '0.5rem' }}>
+            <button onClick={() => void settle()}>
+              Settle on-chain
+            </button>
+            <span className="muted">posts the co-signed final state to the HouseChannel contract</span>
+          </div>
+        )}
+        {tableStatus === 'settling' && (
+          <p className="muted">Settling…</p>
+        )}
+        {tableStatus === 'landed' && (
+          <p className="ok">Settled on-chain.</p>
+        )}
+        {settleError && <p className="bad">{settleError}</p>}
       </div>
 
       <h2>This table</h2>
@@ -187,4 +265,17 @@ export const DiceScreen = ({
       )}
     </div>
   )
+}
+
+/**
+ * Extract the rngCommit from a finished transcript's OPEN entry.
+ * Needed to supply the correct `commit` to EscrowedSettlement so replaySession can verify it.
+ */
+async function extractCommitFromTranscript(transcriptJson: string): Promise<viem.Hex> {
+  const parsed = JSON.parse(transcriptJson) as {
+    entries: Array<{ kind: string; body: { rngCommit?: string } }>
+  }
+  const openEntry = parsed.entries.find((e) => e.kind === 'OPEN')
+  if (!openEntry?.body?.rngCommit) throw new Error('settle: transcript missing OPEN rngCommit')
+  return openEntry.body.rngCommit as viem.Hex
 }

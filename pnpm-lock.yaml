@@ -111,6 +111,28 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.20)
 
+  examples/games/house-service:
+    dependencies:
+      '@gibs/msgboard-games':
+        specifier: workspace:*
+        version: link:../msgboard-games
+      '@gibs/msgboard-settle':
+        specifier: workspace:*
+        version: link:../msgboard-settle
+      viem:
+        specifier: ^2.25.0
+        version: 2.52.2(typescript@5.8.3)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.20
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.20)
+
   examples/games/indexer:
     dependencies:
       '@gibs/games-core':
@@ -236,6 +258,9 @@ importers:
       '@gibs/msgboard-games':
         specifier: workspace:*
         version: link:../msgboard-games
+      '@gibs/msgboard-settle':
+        specifier: workspace:*
+        version: link:../msgboard-settle
       '@gibs/pow-grinder':
         specifier: workspace:*
         version: link:../pow-grinder
