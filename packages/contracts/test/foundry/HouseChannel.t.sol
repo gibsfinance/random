@@ -178,6 +178,17 @@ contract HouseChannelTest is Test {
         ch.settle(f, sp, sh);
     }
 
+    // the same guard lives in _checkCoSigned, so it also protects the dispute path, not just settle
+    function test_disputeRejectsWrongGameId() public {
+        _open();
+        SessionState memory s = _state(3, 240, 160);
+        s.gameId = 2;
+        (bytes memory sp, bytes memory sh) = _coSign(s);
+        vm.prank(playerWallet);
+        vm.expectRevert(HouseChannel.WrongGame.selector);
+        ch.dispute(s, sp, sh);
+    }
+
     // ---- audit finding B: opened-but-never-co-signed table can always be refunded ----
     function test_disputeFromOpenRefundsOpeningSplit() public {
         _open(); // player escrowed 200, house reserved 200; NO state ever co-signed

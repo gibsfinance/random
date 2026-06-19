@@ -25,8 +25,10 @@ describe('dice escrow sizing', () => {
     for (const targetX100 of targets) {
       const mult = diceMaxMultiplierX100({ targetX100 })
       for (const stake of stakes) {
-        // a raw that lands strictly under the target is a guaranteed win (roll = raw % 10000)
-        const winningRaw = targetX100 - 1n
+        // Dice pays a FIXED multiplier per target, so every win pays identically — one winning raw
+        // per (stake,target) fully characterizes the max payout. A variable-payout game reusing
+        // escrowFor would need escrowHouse sized to its MAX win, not a single sampled win.
+        const winningRaw = targetX100 - 1n // strictly under target ⇒ guaranteed win (roll = raw % 10000)
         const outcome = dice.settleRound(stake, { targetX100 }, winningRaw)
         expect(outcome.win).toBe(true)
         const { escrowHouse } = escrowFor(stake, mult)
