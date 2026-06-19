@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { type Hex } from 'viem'
 import { verifyFinishedSession } from '../src/session'
 import { runHouseSide, runPlayerSide } from '../src/coSignTransport'
 import { fixedDiceConfig } from './helpers'
@@ -44,6 +45,22 @@ describe('co-sign over transport', () => {
     }
     const results = await Promise.allSettled([
       runHouseSide(houseCfg, corruptHouseT, play),
+      runPlayerSide(playerCfg, playerT),
+    ])
+    expect(results.some((r) => r.status === 'rejected')).toBe(true)
+  })
+
+  it('the player REFUSES a round whose clientSeed is not the one it committed (anti-house-bias binding)', async () => {
+    const { houseCfg, playerCfg, houseT, playerT, play } = fixedDiceConfig()
+    // The attack: the house drives the round with a DIFFERENT clientSeed than the player committed —
+    // i.e. a seed it could have ground (alongside its own committed serverSeed) to force a loss. The
+    // house builds a fully self-consistent state for ITS seed, so balance/gameStateHash recompute
+    // cleanly; the ONLY thing that stops the theft is the binding to the player's own committed seed.
+    const houseSeed = `0x${'44'.repeat(32)}` as Hex
+    expect(houseSeed).not.toBe(playerCfg.clientSeed)
+    const biasedPlay = { ...play, clientSeed: houseSeed }
+    const results = await Promise.allSettled([
+      runHouseSide(houseCfg, houseT, biasedPlay),
       runPlayerSide(playerCfg, playerT),
     ])
     expect(results.some((r) => r.status === 'rejected')).toBe(true)

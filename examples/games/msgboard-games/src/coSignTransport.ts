@@ -155,7 +155,7 @@ export async function runHouseSide<TParams>(
  * `cfg.houseRemote` marks that the house key lives across the transport (Omit<'house'>).
  */
 export async function runPlayerSide<TParams>(
-  cfg: Omit<SessionConfig<TParams>, 'house'> & { houseRemote: true },
+  cfg: Omit<SessionConfig<TParams>, 'house'> & { houseRemote: true; clientSeed: Hex },
   transport: CoSignTransport,
 ): Promise<void> {
   const player: Signer = cfg.player
@@ -191,7 +191,7 @@ export async function runPlayerSide<TParams>(
  * Throws on any mismatch so the player signs nothing it cannot independently reconstruct.
  */
 function verifyProposedState<TParams>(
-  cfg: Omit<SessionConfig<TParams>, 'house'>,
+  cfg: Omit<SessionConfig<TParams>, 'house'> & { clientSeed: Hex },
   prior: SessionState | undefined,
   s: SessionState,
   proof: RoundProof<TParams> | undefined,
@@ -212,6 +212,15 @@ function verifyProposedState<TParams>(
   if (!prior || prior.nonce !== 0n) throw new Error('player: ROUND before OPEN')
   if (s.rngCommit !== prior.rngCommit) throw new Error('player: rngCommit changed mid-session')
   if (!proof) throw new Error('player: ROUND request missing reveal proof')
+
+  // ANTI-HOUSE-BIAS (the funds-safety linchpin): the round entropy is roundRandom(serverSeed,
+  // clientSeed, nonce). The house already controls serverSeed (its committed chain), so if it could
+  // also choose clientSeed it would control BOTH inputs and could grind a player-losing outcome that
+  // still recomputes cleanly below. The player therefore signs ONLY when the round used the exact
+  // clientSeed IT committed — never a house-substituted one. Combined with serverSeed being fixed by
+  // the open-time rngCommit (verifyReveal) and the player's seed being unknown to the house at commit
+  // time, neither party can bias the draw. (chainLength 1 ⇒ a single committed clientSeed.)
+  if (proof.clientSeed !== cfg.clientSeed) throw new Error('player: clientSeed is not the one the player committed')
 
   // Seed reveal: the revealed seed must hash to the published commit (no tip needed).
   if (!verifyReveal(prior.rngCommit, proof.serverSeed)) throw new Error('player: bad seed reveal')

@@ -73,7 +73,7 @@ export function memoryCoSignPair(): { houseT: CoSignTransport; playerT: CoSignTr
 
 export function fixedDiceConfig(): {
   houseCfg: SessionConfig<DiceParams>
-  playerCfg: Omit<SessionConfig<DiceParams>, 'house'> & { houseRemote: true }
+  playerCfg: Omit<SessionConfig<DiceParams>, 'house'> & { houseRemote: true; clientSeed: Hex }
   houseT: CoSignTransport
   playerT: CoSignTransport
   play: PlayInput<DiceParams>
@@ -91,13 +91,17 @@ export function fixedDiceConfig(): {
     settlementMode: 0,
   }
 
+  const clientSeed = `0x${'33'.repeat(32)}` as Hex
+
   const houseCfg: SessionConfig<DiceParams> = { ...base, player, house }
-  const playerCfg = { ...base, player, houseRemote: true as const }
+  // The player side carries its OWN committed clientSeed; it co-signs a round only if the house used
+  // exactly this seed (anti-house-bias binding in verifyProposedState).
+  const playerCfg = { ...base, player, houseRemote: true as const, clientSeed }
 
   const play: PlayInput<DiceParams> = {
     stake: 100n,
     params: { targetX100: 5000n },
-    clientSeed: `0x${'33'.repeat(32)}` as Hex,
+    clientSeed,
   }
 
   const ctx: VerifyContext<DiceParams> = {
