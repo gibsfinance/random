@@ -80,8 +80,8 @@ export const deployments: GameDeployment[] = [
     gamesIndexer: 'https://games.msgboard.xyz/games-indexer/graphql',
     // Chips ERC-20 token (deployed 2026-06-10 gate run).
     chips: '0xA5276259e544C86438566cB28cc87daCce060910',
-    // ⚠️ pending: replace with the redeployed PATCHED HouseChannel (gameId-binding + disputeFromOpen) before mainnet/real funds
-    houseChannel: '0x57876609E4fEDDEeB83e46A1b3A20140998f0e46',
+    // patched HouseChannel (gameId-binding + disputeFromOpen + gameId-in-Opened), deployed 943 @ block 24708662
+    houseChannel: '0x74bbc31e77c02593c0a7aad0cadadb5b6bff3948',
   },
   // Deployed by the 2026-06-11 mainnet bring-up (gate run + ink-pools; e2e/scripts/369-deployment.json).
   // deployBlock = the web pools' ink block so the site and the cast watcher count heats
