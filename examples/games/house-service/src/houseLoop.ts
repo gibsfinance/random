@@ -190,8 +190,6 @@ export interface HouseCfg {
   domain: GameDomain
   /** The game being hosted — used to build the SessionConfig for runHouseSide. */
   game: Game<unknown>
-  /** Opening balances for each session. */
-  openBalances: { player: bigint; house: bigint }
   /** Session settlement mode (0 = optimistic). */
   settlementMode?: number
   /**
@@ -212,6 +210,14 @@ interface TableState {
   seedChain: SeedChain
   /** The SAME tip used at open-time (stored so coSignRound's sessionCfg.seedTip matches). */
   seedTip: Hex
+  /**
+   * Per-table escrow from the signed OpenTerms. The round MUST co-sign nonce-0 balances equal to
+   * these on-chain escrow amounts, or the off-chain refund floor diverges from disputeFromOpen's
+   * on-chain floor (a funds-safety break). Escrow is sized per stake/odds, so it is per-table —
+   * never a fixed config default.
+   */
+  escrowPlayer: bigint
+  escrowHouse: bigint
 }
 
 export interface HouseDeps {
@@ -278,7 +284,7 @@ export function startHouse(cfg: HouseCfg, deps: HouseDeps): { stop(): void } {
             })
 
             if (grant.kind === 'open-grant') {
-              // Persist the tip and clientSeedCommit for the round step.
+              // Persist the tip, clientSeedCommit, and per-table escrow for the round step.
               const tableId = req.tableId.toLowerCase() as Hex
               tables.set(tableId, {
                 clientSeedCommit: req.clientSeedCommit,
@@ -289,13 +295,24 @@ export function startHouse(cfg: HouseCfg, deps: HouseDeps): { stop(): void } {
                 // However, since handleOpenRequest does NOT expose the tip it used, we must
                 // re-read it from the seedChain: seeds[seeds.length - 1] is the raw tip.
                 seedTip: grant.seedChain.seeds[grant.seedChain.seeds.length - 1] as Hex,
+                // Carry the signed escrow so the round co-signs a nonce-0 floor equal to the
+                // on-chain escrow (refund-floor consistency — see TableState).
+                escrowPlayer: grant.terms.escrowPlayer,
+                escrowHouse: grant.terms.escrowHouse,
               })
               if (!transports.has(tableId)) {
                 transports.set(tableId, deps.makeTransport(req.tableId))
               }
             }
 
-            await deps.postMessage({ ...grant, tableId: req.tableId })
+            // SECURITY (funds): post ONLY {terms, houseSig} (or the decline reason) — NEVER the seed
+            // chain. Revealing the server seed before the player reveals its clientSeed would let the
+            // player grind clientSeed against a known serverSeed to bias the roll. The server seed
+            // surfaces only inside the co-signed ROUND envelope, after rngCommit is fixed on-chain.
+            const posted = grant.kind === 'open-grant'
+              ? { kind: 'open-grant' as const, tableId: req.tableId, terms: grant.terms, houseSig: grant.houseSig }
+              : { kind: 'open-decline' as const, tableId: req.tableId, reason: grant.reason }
+            await deps.postMessage(posted)
           } catch (err) {
             console.error('[house] open-request error:', err)
           }
@@ -303,8 +320,10 @@ export function startHouse(cfg: HouseCfg, deps: HouseDeps): { stop(): void } {
         } else if (kind === 'round-request') {
           // ── round-request ───────────────────────────────────────────
           try {
+            // stake arrives as a bigint over the board (fromWire-restored) or a string from an
+            // in-memory feed; BigInt(...) below normalizes both. params is fromWire-restored too.
             const roundMsg = msg as {
-              tableId: Hex; clientSeed: Hex; stake: string; params: unknown
+              tableId: Hex; clientSeed: Hex; stake: bigint | string; params: unknown
               playerAddress: Hex; playerKey: Hex
             }
             const tableId = roundMsg.tableId.toLowerCase() as Hex
@@ -334,7 +353,9 @@ export function startHouse(cfg: HouseCfg, deps: HouseDeps): { stop(): void } {
               house: cfg.houseKey as Parameters<typeof runHouseSide<unknown>>[0]['house'],
               seedTip: state.seedTip,
               chainLength: 1,
-              openBalances: cfg.openBalances,
+              // SECURITY: per-table escrow from the signed OpenTerms (stored at open) — NOT a fixed
+              // config default — so the co-signed nonce-0 floor equals the on-chain escrow.
+              openBalances: { player: state.escrowPlayer, house: state.escrowHouse },
               settlementMode: cfg.settlementMode ?? 0,
             }
 
@@ -344,9 +365,13 @@ export function startHouse(cfg: HouseCfg, deps: HouseDeps): { stop(): void } {
             )
 
             if (result.ok) {
-              // Clean up table state after a completed round.
-              tables.delete(tableId)
+              // Post the transcript BEFORE discarding state: if postMessage throws, the table stays
+              // open so the player can retry and the house keeps its audit trail. (The player is also
+              // protected — it captured the co-signed final state via onAccept — but the house must
+              // not silently lose the transcript it just co-signed.)
               await deps.postMessage({ kind: 'round-transcript', tableId: roundMsg.tableId, transcriptJson: result.transcriptJson })
+              tables.delete(tableId)
+              transports.delete(tableId) // drop the per-table co-sign transport reference (one roll per table)
             } else {
               await deps.postMessage({ kind: 'round-decline', tableId: roundMsg.tableId, reason: result.reason })
             }

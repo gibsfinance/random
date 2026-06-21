@@ -313,9 +313,12 @@ describe('startHouse — injected in-memory deps, full table flow', () => {
     const { houseT, playerT } = memoryCoSignPair()
     const posted: unknown[] = []
     const tip = deterministicTip
-    const openBalances = { player: 1000n, house: 1000n }
     const stake = 100n
     const params = { targetX100: 5000n }
+    // The player must co-sign the SAME nonce-0 floor the house derives from the signed escrow.
+    // startHouse now sizes escrow per-table from the open-request: escrowFor(stake=100, mult=198) =
+    // { player: 100, house: (100*(198-100))/100 = 98 }. Both sides open with exactly that.
+    const openBalances = { player: 100n, house: 98n }
 
     // Prepare the player side to respond concurrently
     const playerCfg = {
@@ -383,7 +386,6 @@ describe('startHouse — injected in-memory deps, full table flow', () => {
       limits,
       domain: TEST_DOMAIN,
       game: dice,
-      openBalances,
       settlementMode: 0,
       // Inject deterministic tip so verifyCtx.commit is predictable
       seedTip: tip,

@@ -24,7 +24,10 @@ interface CoSignRepMsg { kind: 'cosign-rep'; reqId: string; sig: Hex }
 // A real board JSON-encodes messages, and JSON.stringify throws on bigint — so we deep-tag bigints
 // as {$b:"<dec>"} before send and restore them on receive. Restoration is exact, so the reconstructed
 // SessionState hashes/recovers identically to the original (the EIP-712 signature stays valid).
-function toWire(v: unknown): unknown {
+//
+// Exported so the wider board session protocol (open/round messages, which also carry bigint
+// escrow/stake/params) reuses the SAME codec — one encoder for every message that crosses the wire.
+export function toWire(v: unknown): unknown {
   if (typeof v === 'bigint') return { $b: v.toString() }
   if (Array.isArray(v)) return v.map(toWire)
   if (v && typeof v === 'object') {
@@ -34,7 +37,7 @@ function toWire(v: unknown): unknown {
   }
   return v
 }
-function fromWire(v: unknown): unknown {
+export function fromWire(v: unknown): unknown {
   if (v && typeof v === 'object' && !Array.isArray(v) && typeof (v as { $b?: unknown }).$b === 'string') {
     return BigInt((v as { $b: string }).$b)
   }
@@ -63,6 +66,18 @@ export interface BoardCoSignOpts {
   /** Poll cadence + request timeout (ms). */
   pollMs?: number
   timeoutMs?: number
+  /**
+   * Player-end only: when set, ignore any `cosign-req` whose reqId is not for this table.
+   * A real board category is SHARED across tables; without this filter a player would try to
+   * co-sign another table's request. reqId is `${tableId}:${nonce}`, so we match the prefix.
+   */
+  tableId?: Hex
+  /**
+   * Player-end only: invoked AFTER the player signs a state, BEFORE the reply is posted — the same
+   * contract as the in-memory pair's onAccept. Lets the caller capture the co-signed ROUND state
+   * (nonce > 0) so it can derive a receipt from the state both parties actually signed.
+   */
+  onAccept?: (state: SessionState, proof?: RoundProof<unknown>) => void
 }
 
 /**
@@ -120,16 +135,25 @@ export interface BoardPlayerCoSign extends CoSignTransport {
  */
 export function makeBoardPlayerCoSign(transport: Transport, opts: BoardCoSignOpts = {}): BoardPlayerCoSign {
   const pollMs = opts.pollMs ?? 1000
+  const tableFilter = opts.tableId?.toLowerCase()
   let signer: ((s: SessionState, proof?: RoundProof<unknown>) => Promise<Hex>) | undefined
   const answered = new Set<string>()
   const buffered: CoSignReqMsg[] = [] // cosign-reqs that arrived before serve() registered a signer
 
+  /** reqId is `${tableId}:${nonce}`; on a shared board category, only handle this table's reqs. */
+  const forThisTable = (reqId: string) =>
+    !tableFilter || reqId.toLowerCase().startsWith(`${tableFilter}:`)
+
   const handle = (req: CoSignReqMsg) => {
+    if (!forThisTable(req.reqId)) return // a different table's request on the shared category — not ours
     if (answered.has(req.reqId)) return // idempotent: never double-answer a reqId
     answered.add(req.reqId)
     void (async () => {
       try {
         const sig = await signer!(req.state, req.proof)
+        // Notify the caller of the accepted state BEFORE posting the reply, so a ROUND-state capture
+        // races ahead of the house seeing the signature (mirrors the in-memory pair's onAccept).
+        opts.onAccept?.(req.state, req.proof)
         await transport.send({ kind: 'cosign-rep', reqId: req.reqId, sig } satisfies CoSignRepMsg)
       } catch {
         // A refusal (bad state / wrong clientSeed) means the player signs nothing; the house side

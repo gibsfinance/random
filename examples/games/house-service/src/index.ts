@@ -24,3 +24,5 @@ export {
 } from './houseLoop'
 
 export { faucetMint, type FaucetWalletClient } from './faucet'
+
+export { makeBoardHouseDeps, type BoardHouseDepsOpts } from './boardDeps'
