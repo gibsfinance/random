@@ -12,6 +12,7 @@
     "demo": "tsx scripts/demo.ts"
   },
   "dependencies": {
+    "@gibs/pow-grinder": "workspace:*",
     "@msgboard/sdk": "^0.0.31",
     "viem": "^2.25.0"
   },

@@ -1,6 +1,7 @@
 import { createPublicClient, http, stringToHex, type Hex } from 'viem'
 import { MsgBoardClient, categoryHash } from '@msgboard/sdk'
 import type { BoardClient } from './msgboardTransport'
+import { loadDefaultStamper } from './stamper'
 
 /**
  * Bridges a real `@msgboard/sdk` MsgBoardClient to the `BoardClient` surface `MsgBoardTransport`
@@ -30,10 +31,46 @@ function assertOffMainThread(): void {
   }
 }
 
-export function msgBoardClientAdapter(board: MsgBoardClient): BoardClient {
+export function msgBoardClientAdapter(board: MsgBoardClient, opts?: { stamp?: Stamper }): BoardClient {
+  // Resolve the default stamper cascade (native → WASM) ONCE, lazily, and reuse it across messages.
+  // `undefined` until first probed; `null` once probed if no native/WASM engine is available.
+  let defaultStamper: Stamper | null | undefined
   return {
     async addMessage(seed: { category: Hex; data: Hex }) {
       assertOffMainThread()
+      // Pick a stamper: an explicitly injected one, else the cached default cascade (native → WASM).
+      const stamp = opts?.stamp ?? (defaultStamper ??= await loadDefaultStamper())
+      if (stamp) {
+        try {
+          // Post-style path (mirrors `post()` below): read the board's live difficulty + head block,
+          // mint the PoW stamp with the fast engine, and submit the full message. The node recomputes
+          // the hash, so only the nonce travels on the wire.
+          const status = await board.status()
+          const { hash: blockHash } = await board.lastestBlock()
+          const workMultiplier = BigInt(status.workMultiplier)
+          const workDivisor = BigInt(status.workDivisor)
+          const { nonce } = await stamp({
+            category: seed.category,
+            data: seed.data,
+            workMultiplier,
+            workDivisor,
+            blockHash,
+          })
+          return await board.addMessage({
+            version: 1,
+            blockHash,
+            category: seed.category,
+            data: seed.data,
+            nonce,
+            workMultiplier,
+            workDivisor,
+          })
+        } catch {
+          // Any failure in the fast path (engine exhausted maxIters, status/block read failed, etc.)
+          // falls through to the JS grind below — never drop the message.
+        }
+      }
+      // JS FALLBACK: the SDK's own `doPoW` grind (used when no fast stamper loaded or the fast path threw).
       const work = await board.doPoW(seed.category, seed.data)
       return board.addMessage(work.message)
     },

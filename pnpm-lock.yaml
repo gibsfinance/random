@@ -154,6 +154,9 @@ importers:
 
   examples/games/msgboard-games:
     dependencies:
+      '@gibs/pow-grinder':
+        specifier: workspace:*
+        version: link:../pow-grinder
       '@msgboard/sdk':
         specifier: ^0.0.31
         version: 0.0.31(typescript@5.8.3)
