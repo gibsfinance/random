@@ -25,9 +25,9 @@ import {
 } from 'viem'
 import { mnemonicToAccount, generatePrivateKey } from 'viem/accounts'
 import {
-  dice, makeDomain, createBoardClient, runPlayerSide, verifyFinishedSession,
-  commitSeed, escrowFor, diceMultiplierX100,
-  type DiceParams, type Signer, type VerifyContext,
+  dice, limbo, plinko, keno, makeDomain, createBoardClient, runPlayerSide, verifyFinishedSession,
+  commitSeed, escrowFor,
+  type Game, type Signer, type VerifyContext,
 } from '@gibs/msgboard-games'
 import { makeBoardPlayerSession, EscrowedSettlement } from '@gibs/msgboard-settle'
 import { runBoardHouse } from '../src/runHouse'
@@ -37,6 +37,18 @@ import {
 
 const EXECUTE = process.env.LIVE_EXECUTE === '1'
 const D = DEPLOYMENT_943
+
+/** Pick the game with GAME=dice|limbo|plinko|keno (default dice). Each carries a representative bet. */
+const GAME_CONFIGS: Record<string, { game: Game<unknown>; params: unknown; label: string }> = {
+  dice: { game: dice as Game<unknown>, params: { targetX100: 5000n }, label: 'dice · 50% roll-under' },
+  limbo: { game: limbo as Game<unknown>, params: { targetX100: 200n }, label: 'limbo · 2.00x target' },
+  plinko: { game: plinko as Game<unknown>, params: { rows: 8, risk: 'low' }, label: 'plinko · low risk, 8 rows' },
+  keno: { game: keno as Game<unknown>, params: { picks: [1, 2, 3] }, label: 'keno · 3 picks' },
+}
+const GAME = (process.env.GAME ?? 'dice').toLowerCase()
+// Poll cadence for the board co-sign. Higher = fewer RPC calls (more headroom under a rate-limited
+// key for the final settle tx), at the cost of a slower round. Override with POLL_MS.
+const POLL_MS = Number(process.env.POLL_MS ?? 1500)
 
 const erc20ApproveAbi = [
   { name: 'approve', type: 'function', stateMutability: 'nonpayable',
@@ -73,21 +85,22 @@ async function main(): Promise<void> {
   const limits = { ...DEFAULT_LIMITS, clockBlocks: clamp(DEFAULT_LIMITS.clockBlocks, minClock, maxClock) }
   console.log(`clockBlocks=${limits.clockBlocks} (contract window ${minClock}..${maxClock})`)
 
-  // Round parameters.
+  // Round parameters (game-routed).
+  const cfg = GAME_CONFIGS[GAME]
+  if (!cfg) throw new Error(`unknown GAME=${GAME}; pick one of ${Object.keys(GAME_CONFIGS).join(', ')}`)
+  const { game, params } = cfg
   const stake = parseEther('0.1') // 0.1 chip
-  const targetX100 = 5000n // 50.00% win chance
-  const params: DiceParams = { targetX100 }
-  const mult = diceMultiplierX100(targetX100)
+  const mult = game.maxMultiplierX100(params) // the escrow ceiling for these params
   const escrow = escrowFor(stake, mult)
   const clientSeed = generatePrivateKey()
   const tableId = keccak256(stringToHex(`live:${Date.now()}:${playerAcct.address}`))
   const domain = makeDomain(D.chainId, D.houseChannel)
-  console.log(`stake=${formatUnits(stake, 18)} target=${Number(targetX100) / 100}% → escrowPlayer=${formatUnits(escrow.escrowPlayer, 18)} escrowHouse=${formatUnits(escrow.escrowHouse, 18)}`)
+  console.log(`game=${cfg.label} (id ${game.gameId})  stake=${formatUnits(stake, 18)} → escrowPlayer=${formatUnits(escrow.escrowPlayer, 18)} escrowHouse=${formatUnits(escrow.escrowHouse, 18)}`)
 
   // ── start the house in-process (off-chain: co-signs + posts board messages) ──
   const house = runBoardHouse({
     rpcUrl: D.rpcUrl, boardRpc: D.boardRpc, chainId: D.chainId,
-    houseChannel: D.houseChannel, houseSigner, limits, pollMs: 1500, timeoutMs: 180_000,
+    houseChannel: D.houseChannel, houseSigner, limits, pollMs: POLL_MS, timeoutMs: 240_000,
   })
   console.log('[house] started, watching the board')
 
@@ -95,7 +108,7 @@ async function main(): Promise<void> {
   const playerBoard = createBoardClient(D.boardRpc)
   const accepted: Array<{ nonce: bigint }> = []
   const session = makeBoardPlayerSession({
-    board: playerBoard, chainId: D.chainId, tableId, pollMs: 1500, timeoutMs: 180_000,
+    board: playerBoard, chainId: D.chainId, tableId, pollMs: POLL_MS, timeoutMs: 240_000,
     onAccept: (s) => accepted.push(s as { nonce: bigint }),
   })
 
@@ -105,7 +118,7 @@ async function main(): Promise<void> {
     console.log('[1/5] requestOpen → awaiting house grant (PoW posts, may take ~10-30s)…')
     const { terms, houseSig } = await session.requestOpen({
       tableId, player: playerAcct.address, playerKey: playerAcct.address,
-      gameId: dice.gameId, targetX100, stake, clientSeedCommit: commitSeed(clientSeed),
+      gameId: game.gameId, params, stake, clientSeedCommit: commitSeed(clientSeed),
     })
     if (terms.escrowPlayer !== escrow.escrowPlayer || terms.escrowHouse !== escrow.escrowHouse) {
       throw new Error(`grant escrow ${terms.escrowPlayer}/${terms.escrowHouse} != expected ${escrow.escrowPlayer}/${escrow.escrowHouse}`)
@@ -113,9 +126,9 @@ async function main(): Promise<void> {
     console.log(`[1/5] grant OK: rngCommit=${terms.rngCommit.slice(0, 12)}… expiry=${terms.expiry} houseSig=${houseSig.slice(0, 12)}…`)
 
     // 2. ON-CHAIN OPEN (escrow funds) — LIVE only.
-    const esc = new EscrowedSettlement<DiceParams>({
+    const esc = new EscrowedSettlement<unknown>({
       parties: { player: playerAcct.address, house: houseSigner.address },
-      commit: terms.rngCommit, game: dice, domain, settlementMode: 1, channel: D.houseChannel,
+      commit: terms.rngCommit, game, domain, settlementMode: 1, channel: D.houseChannel,
     })
     if (EXECUTE) {
       await send(publicClient, walletClient, '[2/5] approve',
@@ -134,19 +147,19 @@ async function main(): Promise<void> {
       signMessage: (a: { message: { raw: Hex } }) => playerAcct.signMessage(a),
     }
     runPlayerSide(
-      { domain, tableId, game: dice, player: playerSigner, houseRemote: true as const,
+      { domain, tableId, game, player: playerSigner, houseRemote: true as const,
         clientSeed, seedTip: `0x${'00'.repeat(32)}` as Hex, chainLength: 1 as const,
         openBalances: { player: terms.escrowPlayer, house: terms.escrowHouse }, settlementMode: 1 },
       session.playerT,
     ).catch((e) => console.error('[player] runPlayerSide rejected:', e instanceof Error ? e.message : e))
     const stopServing = session.startServing()
     console.log('[3/5] houseDriver → co-signing OPEN(0)+ROUND(1) over the board…')
-    const transcriptJson = await session.houseDriver<DiceParams>({ stake, params, clientSeed, playerAddress: playerAcct.address })
+    const transcriptJson = await session.houseDriver<unknown>({ stake, params, clientSeed, playerAddress: playerAcct.address })
     stopServing()
     console.log(`[3/5] round co-signed; accepted nonces=[${accepted.map((s) => s.nonce).join(',')}]`)
 
     // 4. VERIFY + BUILD SETTLE (off-chain, always).
-    const ctx: VerifyContext<DiceParams> = { parties: { player: playerAcct.address, house: houseSigner.address }, commit: terms.rngCommit, game: dice, domain }
+    const ctx: VerifyContext<unknown> = { parties: { player: playerAcct.address, house: houseSigner.address }, commit: terms.rngCommit, game, domain }
     const ok = await verifyFinishedSession(transcriptJson, ctx)
     if (!ok) throw new Error('verifyFinishedSession returned false')
     const settleTx = await esc.buildSettle(transcriptJson)
