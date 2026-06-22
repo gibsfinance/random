@@ -16,10 +16,11 @@ import type { Limits } from './openReview'
 /** 943 deployment (mirrors examples/games/web/src/config.ts). */
 export const DEPLOYMENT_943 = {
   chainId: 943,
-  // vk_demo is read-only (reads + the msgboard_ board module) and REJECTS tx submission, so chain
-  // writes go through a public write-capable RPC while board traffic stays on vk_demo.
+  // Reads + the msgboard_ board module + tx submission all run through the valve.city vk_demo
+  // endpoint. Its method allowlist permits eth_sendRawTransaction (web3_clientVersion stays blocked
+  // by design). txRpcUrl is kept as a seam in case chain writes ever need a separate endpoint.
   rpcUrl: 'https://one.valve.city/rpc/vk_demo/evm/943',
-  txRpcUrl: 'https://rpc.v4.testnet.pulsechain.com',
+  txRpcUrl: 'https://one.valve.city/rpc/vk_demo/evm/943',
   boardRpc: 'https://one.valve.city/rpc/vk_demo/evm/943',
   houseChannel: '0x74bbc31e77c02593c0a7aad0cadadb5b6bff3948' as Hex,
   chips: '0xA5276259e544C86438566cB28cc87daCce060910' as Hex,

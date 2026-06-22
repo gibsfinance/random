@@ -56,8 +56,8 @@ async function main(): Promise<void> {
   const mnemonic = readMnemonic()
   const playerAcct = mnemonicToAccount(mnemonic, { addressIndex: 0 })
   const houseSigner = houseSignerFromMnemonic(mnemonic, 1)
-  // Chain reads + writes go through the write-capable public RPC (vk_demo rejects tx submission);
-  // board traffic stays on vk_demo (createBoardClient / runBoardHouse below).
+  // Reads + writes + board all run through the valve.city vk_demo endpoint (its allowlist now permits
+  // eth_sendRawTransaction).
   const publicClient = createPublicClient({ chain: pulsechainV4, transport: http(D.txRpcUrl) })
   const walletClient = createWalletClient({ account: playerAcct, chain: pulsechainV4, transport: http(D.txRpcUrl) })
 
