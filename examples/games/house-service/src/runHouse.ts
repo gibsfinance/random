@@ -10,7 +10,7 @@
  * Used by `main.ts` (the long-running deployable process) and by the `live-round` proof script.
  */
 import { createPublicClient, http, type Hex } from 'viem'
-import { createBoardClient, makeDomain, dice, type Game, type StateSigner } from '@gibs/msgboard-games'
+import { createBoardClient, makeDomain, dice, limbo, plinko, keno, type Game, type StateSigner } from '@gibs/msgboard-games'
 import { startHouse } from './houseLoop'
 import { makeBoardHouseDeps } from './boardDeps'
 import type { Limits } from './openReview'
@@ -29,8 +29,8 @@ export interface RunHouseOpts {
   houseSigner: HouseSigner
   /** Open-review limits (escrow cap, min odds, clock + expiry windows). */
   limits: Limits
-  /** The hosted game. Defaults to dice (the only session game wired so far). */
-  game?: Game<unknown>
+  /** The hosted games registry, routed by gameId. Defaults to the four single-outcome games. */
+  games?: Game<unknown>[]
   /** Poll cadence + co-sign timeout (ms). Production defaults (1000 / 120000) if omitted. */
   pollMs?: number
   timeoutMs?: number
@@ -66,7 +66,7 @@ export function runBoardHouse(opts: RunHouseOpts): { stop(): void } {
       houseKey: opts.houseSigner,
       limits: opts.limits,
       domain,
-      game: opts.game ?? (dice as Game<unknown>),
+      games: opts.games ?? ([dice, limbo, plinko, keno] as Game<unknown>[]),
       settlementMode: 1,
     },
     deps,

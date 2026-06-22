@@ -18,9 +18,9 @@ import { describe, it, expect } from 'vitest'
 import { privateKeyToAccount } from 'viem/accounts'
 import type { Hex } from 'viem'
 import {
-  commitSeed, buildSeedChain, makeDomain, dice,
+  commitSeed, buildSeedChain, makeDomain, dice, limbo,
   runPlayerSide, verifyFinishedSession,
-  type BoardClient, type VerifyContext, type DiceParams,
+  type BoardClient, type VerifyContext, type DiceParams, type LimboParams,
 } from '@gibs/msgboard-games'
 import { makeBoardPlayerSession, EscrowedSettlement } from '@gibs/msgboard-settle'
 import { startHouse, makeBoardHouseDeps } from '../src/index'
@@ -70,8 +70,8 @@ describe('board E2E — real startHouse ↔ real board player session', () => {
     const houseCtl = startHouse(
       {
         boardRpc: 'mem://board', chainId, houseChannel: channel, houseKey,
-        limits: { maxEscrowHouse: 10n ** 24n, minTargetX100: 100n, clockBlocks: 120n, expiryBlocks: 300n },
-        domain, game: dice, settlementMode: 1, seedTip: tip,
+        limits: { maxEscrowHouse: 10n ** 24n, clockBlocks: 120n, expiryBlocks: 300n },
+        domain, games: [dice, limbo], settlementMode: 1, seedTip: tip,
       },
       deps,
     )
@@ -88,7 +88,7 @@ describe('board E2E — real startHouse ↔ real board player session', () => {
     // 1. open handshake: post clientSeedCommit only, receive house-signed OpenTerms.
     const { terms, houseSig } = await session.requestOpen({
       tableId, player: playerAccount.address, playerKey: playerAccount.address,
-      gameId: dice.gameId, targetX100: params.targetX100, stake, clientSeedCommit: commitSeed(clientSeed),
+      gameId: dice.gameId, params, stake, clientSeedCommit: commitSeed(clientSeed),
     })
 
     // The grant is sized from the player's odds (escrowFor(100, 198) = {100, 98}) and its rngCommit
@@ -135,6 +135,88 @@ describe('board E2E — real startHouse ↔ real board player session', () => {
 
     // onAccept observed the player co-signing both the OPEN (nonce 0) and ROUND (nonce 1) states —
     // the capture path the web receipt relies on.
+    expect(accepted.map((s) => s.nonce)).toEqual([0n, 1n])
+
+    stopServing()
+    houseCtl.stop()
+    stopDeps()
+  }, 25_000)
+
+  it('routes a LIMBO round (gameId 2) end to end over the SAME shared board — multi-game routing', async () => {
+    // Same end-to-end flow as the dice case, but for limbo (gameId 2). The shared startHouse registry
+    // is [dice, limbo]: it must size escrow with limbo.maxMultiplierX100 at OPEN and co-sign the ROUND
+    // with limbo (NOT dice) — proving the table settles under the game it opened with (funds safety).
+    const board = fakeBoard()
+    const chainId = 943
+    const channel = ('0x' + '00'.repeat(20)) as Hex
+    const domain = makeDomain(chainId, channel)
+    const tip = ('0x' + '88'.repeat(32)) as Hex
+    const clientSeed = ('0x' + 'bb'.repeat(32)) as Hex
+    const tableId = ('0x' + 'cd'.repeat(32)) as Hex
+    const stake = 100n
+    const params: LimboParams = { targetX100: 200n } // 2.00x target
+
+    const { deps, stop: stopDeps } = makeBoardHouseDeps({
+      board, chainId, getHeadBlock: async () => 1000n, pollMs: 2, timeoutMs: 15_000,
+    })
+    const houseCtl = startHouse(
+      {
+        boardRpc: 'mem://board', chainId, houseChannel: channel, houseKey,
+        limits: { maxEscrowHouse: 10n ** 24n, clockBlocks: 120n, expiryBlocks: 300n },
+        domain, games: [dice, limbo], settlementMode: 1, seedTip: tip,
+      },
+      deps,
+    )
+
+    const accepted: Array<{ nonce: bigint }> = []
+    const session = makeBoardPlayerSession({
+      board, chainId, tableId, pollMs: 2, timeoutMs: 15_000,
+      onAccept: (s) => accepted.push(s as { nonce: bigint }),
+    })
+
+    // OPEN: escrow sized by limbo.maxMultiplierX100({targetX100:200}) = 200 → escrowFor(100, 200).
+    const { terms, houseSig } = await session.requestOpen({
+      tableId, player: playerAccount.address, playerKey: playerAccount.address,
+      gameId: limbo.gameId, params, stake, clientSeedCommit: commitSeed(clientSeed),
+    })
+    expect(terms.gameId).toBe(limbo.gameId)
+    expect(terms.escrowPlayer).toBe(100n)
+    expect(terms.escrowHouse).toBe(100n) // stake*(200-100)/100 = stake
+    expect(terms.rngCommit).toBe(buildSeedChain(tip, 1).commit)
+    expect(houseSig).toMatch(/^0x[0-9a-f]{130}$/i)
+
+    const openBalances = { player: terms.escrowPlayer, house: terms.escrowHouse }
+    runPlayerSide(
+      {
+        domain, tableId, game: limbo, player: playerSigner, houseRemote: true as const,
+        clientSeed, seedTip: ('0x' + '00'.repeat(32)) as Hex, chainLength: 1 as const,
+        openBalances, settlementMode: 1,
+      },
+      session.playerT,
+    ).catch(() => { /* a refusal would surface as a houseDriver timeout below */ })
+    const stopServing = session.startServing()
+
+    const transcriptJson = await session.houseDriver<LimboParams>({
+      stake, params, clientSeed, playerAddress: playerAccount.address,
+    })
+
+    // The transcript co-signed under LIMBO is cryptographically whole.
+    const ctx: VerifyContext<LimboParams> = {
+      parties: { player: playerAccount.address, house: houseAccount.address },
+      commit: terms.rngCommit, game: limbo, domain,
+    }
+    expect(await verifyFinishedSession(transcriptJson, ctx)).toBe(true)
+
+    // EscrowedSettlement (under limbo) yields the nonce-1 final state — the bytes the contract pays.
+    const esc = new EscrowedSettlement<LimboParams>({
+      parties: { player: playerAccount.address, house: houseAccount.address },
+      commit: terms.rngCommit, game: limbo, domain, settlementMode: 1, channel,
+    })
+    const settleTx = await esc.buildSettle(transcriptJson)
+    expect(settleTx.functionName).toBe('settle')
+    const finalState = settleTx.args[0] as { nonce: bigint; balancePlayer: bigint; balanceHouse: bigint }
+    expect(finalState.nonce).toBe(1n)
+    expect(finalState.balancePlayer + finalState.balanceHouse).toBe(terms.escrowPlayer + terms.escrowHouse)
     expect(accepted.map((s) => s.nonce)).toEqual([0n, 1n])
 
     stopServing()

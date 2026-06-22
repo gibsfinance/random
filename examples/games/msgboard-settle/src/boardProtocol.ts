@@ -39,8 +39,9 @@ export interface OpenRequestMsg {
   player: Hex
   playerKey: Hex
   gameId: number
-  /** bigints — sized by the player's chosen odds/stake; the house re-derives escrow from these. */
-  targetX100: bigint
+  /** Raw game params for `gameId` (bigints survive the board codec). The house routes by gameId and
+   *  re-derives escrow via that game's maxMultiplierX100(params) — never trusting a player-sent cap. */
+  params: unknown
   stake: bigint
   /** keccak256(clientSeed). The plaintext seed is revealed only at round time. */
   clientSeedCommit: Hex

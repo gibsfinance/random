@@ -28,6 +28,9 @@ export interface OpenCtx {
   domain: GameDomain
   headBlock: bigint
   limits: Limits
+  /** The routed game for this open-request's gameId — its maxMultiplierX100 sizes escrow, and the
+   *  table's round MUST later co-sign with this SAME game (funds safety). */
+  game: Game<unknown>
   /**
    * Injectable house seed tip for test determinism. In production (undefined), a fresh
    * 32-byte random value is generated so the tip is unpredictable and NOT derived from the request.
@@ -188,8 +191,13 @@ export interface HouseCfg {
   limits: Limits
   /** EIP-712 domain for session state co-signing. */
   domain: GameDomain
-  /** The game being hosted — used to build the SessionConfig for runHouseSide. */
-  game: Game<unknown>
+  /**
+   * The registry of hosted games. Each open-request is routed to the game whose `gameId` matches
+   * `req.gameId`; the table's later round MUST co-sign with the SAME game it opened under (funds
+   * safety — a mismatched game would compute the wrong outcome/payout). startHouse keys these into a
+   * `Map<number, Game<unknown>>` by `game.gameId`.
+   */
+  games: Game<unknown>[]
   /** Session settlement mode (0 = optimistic). */
   settlementMode?: number
   /**
@@ -208,6 +216,12 @@ export interface HouseCfg {
 interface TableState {
   clientSeedCommit: Hex
   seedChain: SeedChain
+  /**
+   * The gameId the table OPENED under. The round resolves the registry by THIS id and co-signs with
+   * the same game — funds-safety-critical: opening under one game and settling under another would
+   * mis-compute the outcome/payout.
+   */
+  gameId: number
   /** The SAME tip used at open-time (stored so coSignRound's sessionCfg.seedTip matches). */
   seedTip: Hex
   /**
@@ -261,6 +275,9 @@ export function startHouse(cfg: HouseCfg, deps: HouseDeps): { stop(): void } {
   const tables = new Map<Hex, TableState>()
   // Per-table CoSignTransport pairs: keyed by tableId.
   const transports = new Map<Hex, { houseT: CoSignTransport; playerT: CoSignTransport }>()
+  // Game registry keyed by gameId. An open-request resolves its game here; the table's round
+  // re-resolves the SAME gameId so it co-signs under the game it opened with (funds safety).
+  const registry = new Map<number, Game<unknown>>(cfg.games.map((g) => [g.gameId, g]))
 
   const loop = async () => {
     for await (const raw of deps.messages) {
@@ -273,12 +290,20 @@ export function startHouse(cfg: HouseCfg, deps: HouseDeps): { stop(): void } {
           // ── open-request ────────────────────────────────────────────
           try {
             const req = msg as unknown as OpenRequest
+            // Route by gameId. An unknown game is declined here — we never call handleOpenRequest
+            // (and thus never size escrow) for a game we cannot also co-sign the round under.
+            const game = registry.get(req.gameId)
+            if (!game) {
+              await deps.postMessage({ kind: 'open-decline', tableId: req.tableId, reason: 'unknown gameId' })
+              continue
+            }
             const headBlock = await deps.getHeadBlock()
             const grant = await handleOpenRequest(req, {
               houseKey: cfg.houseKey,
               domain: cfg.domain,
               headBlock,
               limits: cfg.limits,
+              game,
               // Production: undefined → fresh randomBytes per request. Tests inject a fixed tip.
               seedTip: cfg.seedTip,
             })
@@ -289,6 +314,9 @@ export function startHouse(cfg: HouseCfg, deps: HouseDeps): { stop(): void } {
               tables.set(tableId, {
                 clientSeedCommit: req.clientSeedCommit,
                 seedChain: grant.seedChain,
+                // The game the table opened under — re-resolved at round time so the round co-signs
+                // with the SAME game (funds safety).
+                gameId: req.gameId,
                 // The tip: either the production random one or re-derived from seedChain.
                 // We use seeds[chainLength] === tip (seeds[1] for length=1) as the stored tip,
                 // because handleOpenRequest may have generated it via randomBytes internally.
@@ -337,11 +365,19 @@ export function startHouse(cfg: HouseCfg, deps: HouseDeps): { stop(): void } {
               await deps.postMessage({ kind: 'round-decline', tableId: roundMsg.tableId, reason: 'no transport for table' })
               continue
             }
+            // FUNDS-SAFETY-CRITICAL: re-resolve the game the table OPENED under. The round MUST
+            // co-sign with the SAME game (its outcome/encoding/escrow), or the payout diverges from
+            // the signed OpenTerms. If the registry no longer has it, decline rather than co-sign blind.
+            const game = registry.get(state.gameId)
+            if (!game) {
+              await deps.postMessage({ kind: 'round-decline', tableId: roundMsg.tableId, reason: 'unknown gameId for open table' })
+              continue
+            }
 
             const sessionCfg: Parameters<typeof runHouseSide<unknown>>[0] = {
               domain: cfg.domain,
               tableId: roundMsg.tableId,
-              game: cfg.game,
+              game,
               // In the transport-backed flow the player signs over the CoSignTransport, not locally.
               // runHouseSide only reads player.address (for co-sig verification); it never calls
               // player.signTypedData or player.signMessage directly — those go over the transport.

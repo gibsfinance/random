@@ -51,7 +51,6 @@ const playerSigner = {
 const domain = makeSettleDomain(943, '0x57876609E4fEDDEeB83e46A1b3A20140998f0e46')
 const limits = {
   maxEscrowHouse: 10n ** 24n,
-  minTargetX100: 100n,
   clockBlocks: 120n,
   expiryBlocks: 300n,
 }
@@ -64,8 +63,9 @@ const baseReq = {
   tableId,
   player: '0x000000000000000000000000000000000000dEaD' as Hex,
   playerKey: PLAYER_ACCOUNT.address,
-  gameId: 0,
-  targetX100: 5000n,
+  gameId: dice.gameId,
+  // Raw game params (the board codec transports the bigint); reviewOpen routes these to dice.
+  params: { targetX100: 5000n },
   stake: 1_000n,
   // SECURITY: only the commit is sent; plaintext seed stays with the player
   clientSeedCommit,
@@ -131,6 +131,7 @@ describe('handleOpenRequest', () => {
       domain,
       headBlock: 1000n,
       limits,
+      game: dice,
       seedTip: deterministicTip,
     })
 
@@ -152,12 +153,15 @@ describe('handleOpenRequest', () => {
     expect(env.houseSig.length).toBe(132) // 65-byte ECDSA sig
   })
 
-  it('declines a target below the minimum', async () => {
+  it('declines params the routed game rejects (maxMultiplierX100 throws → invalid params)', async () => {
+    // 99999n is outside dice's valid target range [1, 9899], so dice.maxMultiplierX100 throws and
+    // reviewOpen surfaces it as a decline instead of crashing.
     const env = await handleOpenRequest(
-      { ...baseReq, targetX100: 50n },
-      { houseKey, domain, headBlock: 1000n, limits, seedTip: deterministicTip },
+      { ...baseReq, params: { targetX100: 99_999n } },
+      { houseKey, domain, headBlock: 1000n, limits, game: dice, seedTip: deterministicTip },
     )
     expect(env.kind).toBe('open-decline')
+    if (env.kind === 'open-decline') expect(env.reason).toMatch(/invalid params/i)
   })
 
   it('builds rngCommit from ctx seedTip, not from the request (BLIND tip)', async () => {
@@ -165,8 +169,8 @@ describe('handleOpenRequest', () => {
     // rngCommit in the grant is derived from the injected ctx.seedTip and NOT from any
     // request field: even if we pass a different tip the result changes accordingly.
     const otherTip = ('0x' + 'ff'.repeat(32)) as Hex
-    const envA = await handleOpenRequest(baseReq, { houseKey, domain, headBlock: 1000n, limits, seedTip: deterministicTip })
-    const envB = await handleOpenRequest(baseReq, { houseKey, domain, headBlock: 1000n, limits, seedTip: otherTip })
+    const envA = await handleOpenRequest(baseReq, { houseKey, domain, headBlock: 1000n, limits, game: dice, seedTip: deterministicTip })
+    const envB = await handleOpenRequest(baseReq, { houseKey, domain, headBlock: 1000n, limits, game: dice, seedTip: otherTip })
 
     // Both must be grants with distinct rngCommit (tip-driven, not req-driven)
     expect(envA.kind).toBe('open-grant')
@@ -200,6 +204,7 @@ describe('coSignRound — end-to-end co-sign', () => {
       domain,
       headBlock: 1000n,
       limits,
+      game: dice,
       seedTip: tip,
     })
     expect(grantEnv.kind).toBe('open-grant')
@@ -276,6 +281,7 @@ describe('coSignRound — end-to-end co-sign', () => {
       domain,
       headBlock: 1000n,
       limits,
+      game: dice,
       seedTip: deterministicTip,
     })
     if (grantEnv.kind !== 'open-grant') throw new Error('expected grant')
@@ -346,8 +352,8 @@ describe('startHouse — injected in-memory deps, full table flow', () => {
         tableId,
         player: '0x000000000000000000000000000000000000dEaD' as Hex,
         playerKey: PLAYER_ACCOUNT.address,
-        gameId: 0,
-        targetX100: 5000n,
+        gameId: dice.gameId,
+        params: { targetX100: 5000n },
         stake,
         clientSeedCommit,
       }
@@ -385,7 +391,7 @@ describe('startHouse — injected in-memory deps, full table flow', () => {
       houseKey,
       limits,
       domain: TEST_DOMAIN,
-      game: dice,
+      games: [dice],
       settlementMode: 0,
       // Inject deterministic tip so verifyCtx.commit is predictable
       seedTip: tip,

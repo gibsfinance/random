@@ -68,7 +68,7 @@ export function makeBoardHouseDeps(opts: BoardHouseDepsOpts): { deps: HouseDeps;
     })
 
   feed.onMessage((raw) => {
-    const msg = fromWire(raw) // restore bigints (open-request stake/targetX100, round-request stake/params)
+    const msg = fromWire(raw) // restore bigints (open-request stake/params, round-request stake/params)
     if (isOpenRequest(msg) || isRoundRequest(msg)) push(msg)
   })
 

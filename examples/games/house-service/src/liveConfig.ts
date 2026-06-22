@@ -47,7 +47,6 @@ export const pulsechainV4: Chain = {
  */
 export const DEFAULT_LIMITS: Limits = {
   maxEscrowHouse: 10n ** 24n, // 1,000,000 chips cap per table (housePool is 500,000)
-  minTargetX100: 100n, // 1.00% min win chance
   clockBlocks: 100n,
   expiryBlocks: 3_600n, // seconds (1 hour) — NOT blocks; see note above
 }
