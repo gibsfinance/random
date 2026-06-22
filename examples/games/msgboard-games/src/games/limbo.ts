@@ -28,6 +28,11 @@ export function limboWinChanceX100(targetX100: bigint): bigint {
 
 export const limbo: Game<LimboParams> = {
   gameId: 2,
+  maxMultiplierX100(params): bigint {
+    // Every win pays the player's chosen target multiplier exactly — that IS the ceiling.
+    if (params.targetX100 < MIN_TARGET || params.targetX100 > MAX_TARGET) throw new Error('limbo: target out of range')
+    return params.targetX100
+  },
   settleRound(stake, params, raw): RoundOutcome {
     if (params.targetX100 < MIN_TARGET) throw new Error('limbo: target below 1.00x')
     if (params.targetX100 > MAX_TARGET) throw new Error('limbo: target above max (990000.00x)')

@@ -22,6 +22,11 @@ export function diceMultiplierX100(targetX100: bigint): bigint {
 
 export const dice: Game<DiceParams> = {
   gameId: 1,
+  maxMultiplierX100(params): bigint {
+    // No payout variance — every win pays exactly this, so it is also the escrow ceiling.
+    if (params.targetX100 < MIN_TARGET || params.targetX100 > MAX_TARGET) throw new Error('dice: target out of range')
+    return diceMultiplierX100(params.targetX100)
+  },
   settleRound(stake, params, raw): RoundOutcome {
     if (params.targetX100 < MIN_TARGET || params.targetX100 > MAX_TARGET) throw new Error('dice: target out of range')
     const roll = diceRoll(raw)

@@ -77,6 +77,13 @@ export function plinkoMultiplierX100(risk: PlinkoRisk, rows: number, bucket: num
 
 export const plinko: Game<PlinkoParams> = {
   gameId: 3,
+  maxMultiplierX100(params): bigint {
+    // The bucket is random over [0, rows]; the house must cover the highest-paying bucket.
+    const table = plinkoFairTableX100(params.risk, params.rows) // validates risk + rows
+    let maxFair = 0n
+    for (const fair of table) if (fair > maxFair) maxFair = fair
+    return plinkoEdgedX100(maxFair)
+  },
   settleRound(stake, params, raw): RoundOutcome {
     if (params.rows < MIN_ROWS || params.rows > MAX_ROWS) throw new Error('plinko: rows out of range')
     const table = plinkoFairTableX100(params.risk, params.rows) // validates risk+rows+length

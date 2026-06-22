@@ -91,6 +91,14 @@ export const keno: Game<KenoParams> = {
   // NOTE: gameId 4 chosen to avoid colliding with Plinko, which is expected to take 3
   // (dice=1, limbo=2). Reconcile with the Plinko module's id before release.
   gameId: 4,
+  maxMultiplierX100(params): bigint {
+    // Payout depends on how many picks hit (random); the house must cover the best row entry, edged.
+    validatePicks(params.picks)
+    const row = BASE_PAYTABLE_X100[params.picks.length] ?? []
+    let maxFair = 0n
+    for (const fair of row) if (fair > maxFair) maxFair = fair
+    return applyEdgeX100(maxFair)
+  },
   settleRound(stake, params, raw): RoundOutcome {
     validatePicks(params.picks)
     const drawn = params.drawn ?? DEFAULT_DRAWN
