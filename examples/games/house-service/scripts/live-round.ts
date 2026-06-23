@@ -42,7 +42,7 @@ const D = DEPLOYMENT_943
 const GAME_CONFIGS: Record<string, { game: Game<unknown>; params: unknown; label: string }> = {
   dice: { game: dice as Game<unknown>, params: { targetX100: 5000n }, label: 'dice · 50% roll-under' },
   limbo: { game: limbo as Game<unknown>, params: { targetX100: 200n }, label: 'limbo · 2.00x target' },
-  plinko: { game: plinko as Game<unknown>, params: { rows: 8, risk: 'low' }, label: 'plinko · low risk, 8 rows' },
+  plinko: { game: plinko as Game<unknown>, params: { rows: 16, risk: 'low' }, label: 'plinko · low risk, 16 rows' },
   keno: { game: keno as Game<unknown>, params: { picks: [1, 2, 3] }, label: 'keno · 3 picks' },
 }
 const GAME = (process.env.GAME ?? 'dice').toLowerCase()
