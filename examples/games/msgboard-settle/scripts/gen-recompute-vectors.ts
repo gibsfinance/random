@@ -3,7 +3,9 @@
  * The numbers it prints are hardcoded into packages/contracts/test/foundry/GamePayouts.t.sol so the
  * Solidity port is checked against the canonical math (not a re-derivation).
  *
- *   pnpm --filter @gibs/msgboard-settle exec tsx scripts/gen-recompute-vectors.ts
+ * Run with a tsx that actually resolves (tsx is NOT a dep of @gibs/msgboard-settle; borrow the
+ * house-service binary):
+ *   cd examples/games/msgboard-settle && ../house-service/node_modules/.bin/tsx scripts/gen-recompute-vectors.ts
  */
 import { dice, limbo, roundRandom } from '@gibs/msgboard-games'
 
@@ -29,5 +31,8 @@ const s = (n: number) => (`0x${n.toString(16).padStart(64, '0')}`) as `0x${strin
 show('dice-win',  s(1), s(2), 1n, dice, 5000n)
 show('dice-loss', s(3), s(4), 1n, dice, 5000n)
 // limbo (gameId 2), target 200 (2.00x)
-show('limbo-win',  s(5), s(6), 1n, limbo, 200n)
-show('limbo-loss', s(7), s(8), 1n, limbo, 200n)
+// NOTE (Task 2 review fix): at target 200 / nonce 1, the s(5)/s(6) pair LOSES and s(7)/s(8) WINS.
+// The labels were originally swapped; the seeds below are picked so each label matches its real
+// outcome at nonce 1 (verified by running this script).
+show('limbo-win',  s(7), s(8), 1n, limbo, 200n)
+show('limbo-loss', s(5), s(6), 1n, limbo, 200n)
