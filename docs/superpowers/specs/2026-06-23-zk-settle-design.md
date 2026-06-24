@@ -1,12 +1,17 @@
-# ZK Settlement — Track 1: Trust-Minimized Settle (Design)
+# ZK Settlement — Trust-Minimized Settle (Design)
 
-**Status:** design / awaiting approval before writing-plans
+> **⚠️ RESCOPED 2026-06-23.** This was the original *Track 1*. We then realized trust-minimized settle
+> needs no ZK — on-chain Solidity recompute does it more simply, cheaply, and decentrally (see
+> `2026-06-23-recompute-settle-design.md`, now Track 1). **ZK moved to Track 2 (privacy)**, where it
+> is actually required. Retained as the *starting design for Track 2* — the statement (bind both
+> seeds → derive `r` → payout → conservation), the Noir stack choice, and the per-game circuit math
+> below carry over; the privacy spec will add hidden amounts on top.
+
+**Status:** superseded for Track 1; seed material for Track 2 (privacy)
 **Date:** 2026-06-23
 **Decided with the user:** stack = **Noir** (CPU/browser proving via `bb.js`, no GPU, no prover
-service, self-hosted Solidity verifier); depth = **off-chain-proof-first**; program order =
-**Settle → Privacy → Cards**. Deciding factor for the stack was *decentralization*: any house
-operator (or a browser) must be able to produce a settle-able proof on commodity hardware with no
-external service.
+service, self-hosted Solidity verifier). Deciding factor was *decentralization*: any operator (or a
+browser) must be able to produce a proof on commodity hardware with no external service.
 
 ---
 
