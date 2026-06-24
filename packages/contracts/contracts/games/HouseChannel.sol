@@ -5,6 +5,7 @@ import {ECDSA} from "solady/src/utils/ECDSA.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 import {Ownable} from "solady/src/auth/Ownable.sol";
 import {SessionState, SessionStateLib, SessionStateEIP712} from "./SessionState.sol";
+import {GamePayouts} from "./GamePayouts.sol";
 
 /// House-signed authorization for a single escrowed table open (spec 4.3 / 6.2). The player
 /// presents this with the house's signature; the contract reserves escrowHouse from the pool.
@@ -61,6 +62,8 @@ contract HouseChannel is SessionStateEIP712, Ownable {
     error StaleNonce();
     error InsufficientPool();
     error ClockNotExpired();
+    error BadReveal();
+    error BadParams();
 
     enum Status { None, Live, Disputed, Settled }
 
@@ -171,6 +174,35 @@ contract HouseChannel is SessionStateEIP712, Ownable {
         _checkCoSigned(t, s, sigPlayer, sigHouse);
         if (t.hasCheckpoint && s.nonce <= t.checkpointNonce) revert StaleNonce();
         _payout(t, s.tableId, s.balancePlayer, s.balanceHouse);
+    }
+
+    /// Permissionless trustless settle: anyone submits the two revealed seeds + the round params. The
+    /// seeds must match the commits the house signed at open (rngCommit, clientSeedCommit) and the
+    /// params must match paramsHash. The contract recomputes the round randomness and the payout itself
+    /// via GamePayouts — NO signature from either party is consulted. The winner (the party motivated to
+    /// settle) calls it; the house cannot withhold a payout.
+    ///
+    /// SECURITY: the round nonce is HARDCODED to 1 (the single-draw round) and is NOT a caller input. If
+    /// it were, a settler could grind the nonce to choose the outcome — the commit-bound seeds do not
+    /// constrain the nonce, so `r` would be attacker-selectable. A future multi-round design must bind a
+    /// per-round nonce/roundId in the house-signed OpenTerms at open, never accept it loose here.
+    function settleWithSeeds(
+        bytes32 tableId,
+        bytes32 serverSeed,
+        bytes32 clientSeed,
+        bytes calldata params
+    ) external {
+        Table storage t = tables[tableId];
+        if (t.status != Status.Live) revert BadStatus();
+        if (keccak256(abi.encodePacked(serverSeed)) != t.rngCommit) revert BadReveal();
+        if (keccak256(abi.encodePacked(clientSeed)) != t.clientSeedCommit) revert BadReveal();
+        if (keccak256(params) != t.paramsHash) revert BadParams();
+
+        uint256 r = uint256(keccak256(abi.encode(serverSeed, clientSeed, uint64(1))));
+        (uint256 balancePlayer, uint256 balanceHouse) =
+            GamePayouts.settle(t.gameId, r, params, t.escrowPlayer, t.escrowHouse);
+
+        _payout(t, tableId, balancePlayer, balanceHouse);
     }
 
     /// Post your latest both-signed state and start the chess clock. Because Plan-1 open()
