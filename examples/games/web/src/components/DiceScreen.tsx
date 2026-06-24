@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import * as viem from 'viem'
-import { dice, diceMultiplierX100, buildSeedChain, makeDomain, type DiceParams } from '@gibs/msgboard-games'
-import { EscrowedSettlement, signOpenTerms, type OpenTerms } from '@gibs/msgboard-settle'
+import { dice, diceMultiplierX100, buildSeedChain, commitSeed, makeDomain, type DiceParams } from '@gibs/msgboard-games'
+import { EscrowedSettlement, signOpenTerms, paramsHashOf, type OpenTerms } from '@gibs/msgboard-settle'
 import type { GameDeployment } from '../config'
 import { useSession, makeInMemoryHouseDriver, PLACEHOLDER_VERIFIER, type RoundRecord, DEMO_HOUSE_ADDRESS } from '../hooks/useSession'
 import { StakeInput, parseStake } from './StakeInput'
@@ -139,11 +139,19 @@ export const DiceScreen = ({
       const escrowPlayer = 10n ** 18n   // 1 Chip (matches useSession openBalances default)
 
       // ── Build open terms (demo: use DEMO_HOUSE_KEY to sign; production: receive from house) ──
-      const { privateKeyToAccount: pkToAccount } = await import('viem/accounts')
+      const { privateKeyToAccount: pkToAccount, generatePrivateKey } = await import('viem/accounts')
       const DEMO_HOUSE_KEY_LOCAL = `0x${'de'.repeat(32)}` as viem.Hex
       const DEMO_SEED_TIP_LOCAL = `0x${'55'.repeat(32)}` as viem.Hex
       const demoHouseAcct = pkToAccount(DEMO_HOUSE_KEY_LOCAL)
       const chain = buildSeedChain(DEMO_SEED_TIP_LOCAL, 64)
+
+      // The OPEN handshake commits the player's CSPRNG clientSeed (only keccak256(clientSeed) is
+      // bound into OpenTerms — never the raw seed) so the house can't grind its tip against it.
+      // Mirrors useSession.start()/buildOpenRequest; signed into the EIP-712 OpenTerms the contract
+      // verifies, so the digest matches the house signature.
+      const clientSeed = generatePrivateKey()
+      // paramsHash binds the table's dice params; matches reviewOpen's paramsHashOf(targetX100).
+      const tableTargetX100 = targetX100 ?? pctToTargetX100(50)
 
       const tableId = viem.keccak256(
         viem.stringToHex(`mbg:open:${Date.now()}:${playerAddress}`)
@@ -159,6 +167,8 @@ export const DiceScreen = ({
         rngCommit: chain.commit,
         clockBlocks: 100n,
         expiry: BigInt(Math.floor(Date.now() / 1000) + 3600),
+        clientSeedCommit: commitSeed(clientSeed),
+        paramsHash: paramsHashOf(tableTargetX100),
       }
 
       // TODO(Task 9/live): fetch house-signed OpenTerms from the house service instead.

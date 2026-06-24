@@ -129,3 +129,56 @@ tx URL.
   contract's hardcoded `uint64(1)`; `settleWithSeeds` takes NO nonce argument, so there is nothing for
   the driver to grind. The script header documents this.
 ```
+
+## Final-review fix
+
+A merge-blocking regression (TS2739) was found by the final review: Task 1 widened
+`OpenTerms` with two NEW REQUIRED fields (`clientSeedCommit`, `paramsHash`) and updated the
+house-signing side (`reviewOpen`), but the WEB co-sign app still constructed `OpenTerms`
+object literals with the old 9-field shape, so `tsc --noEmit` failed.
+
+### Files changed (consumers updated to the 11-field shape)
+
+- `examples/games/web/src/components/DiceScreen.tsx`
+  - Import: added `commitSeed` from `@gibs/msgboard-games` and `paramsHashOf` from
+    `@gibs/msgboard-settle`; added `generatePrivateKey` to the dynamic `viem/accounts` import.
+  - `openAndStart()` demo open path now generates a CSPRNG `clientSeed` via
+    `generatePrivateKey()` (matching `useSession.start()`'s `generateClientSeed`), and the
+    `OpenTerms` literal now sets `clientSeedCommit: commitSeed(clientSeed)` and
+    `paramsHash: paramsHashOf(tableTargetX100)` where `tableTargetX100 = targetX100 ?? pctToTargetX100(50)`
+    (the screen's current dice target, falling back to 50% if odds aren't set yet).
+- `examples/games/web/test/diceSettle.test.ts`
+  - Import: added `commitSeed` (`@gibs/msgboard-games`) and `paramsHashOf` (`@gibs/msgboard-settle`).
+  - The `buildOpen` test's `OpenTerms` literal now sets `clientSeedCommit: commitSeed(clientSeed)`
+    and `paramsHash: paramsHashOf(params.targetX100)`, using the test fixture's existing
+    `clientSeed` (`0x33..`) and `params.targetX100` (`5000n`).
+
+### clientSeed source wired
+
+- Web (DiceScreen demo open): CSPRNG `generatePrivateKey()` per open — the same source
+  `useSession.start()` uses for the live co-sign flow. Only `commitSeed(clientSeed)` (keccak256)
+  is bound into `OpenTerms`; the raw seed is never put on-chain.
+- Test: the existing `clientSeed` fixture (`0x33..repeat`).
+
+Both derivations are exactly what the house signs in `reviewOpen`:
+`clientSeedCommit = req.clientSeedCommit` (= `commitSeed(clientSeed)`) and
+`paramsHash = paramsHashOf(targetX100)` — so the web `open()` digest matches the house signature
+and the redeployed contract.
+
+No other web `OpenTerms` literals exist: `useSession.ts` and `playerCoSign.ts` only reference
+`terms.escrowPlayer`/`escrowHouse` in comments and property accesses, never constructing the type.
+The contract and `openTerms.ts` were NOT changed.
+
+### Verify (commands + output)
+
+```
+$ cd examples/games/web && pnpm exec tsc --noEmit
+# (no output) EXIT: 0
+```
+
+```
+$ cd examples/games/web && pnpm exec vitest run test/diceSettle.test.ts
+ ✓ test/diceSettle.test.ts (6 tests) 73ms
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+```

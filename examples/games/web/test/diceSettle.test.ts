@@ -18,6 +18,7 @@ import {
   dice,
   makeDomain,
   buildSeedChain,
+  commitSeed,
   runPlayerSide,
   runHouseSide,
   verifyFinishedSession,
@@ -27,7 +28,7 @@ import {
   type RoundProof,
   type CoSignTransport,
 } from '@gibs/msgboard-games'
-import { EscrowedSettlement, signOpenTerms, type OpenTerms } from '@gibs/msgboard-settle'
+import { EscrowedSettlement, signOpenTerms, paramsHashOf, type OpenTerms } from '@gibs/msgboard-settle'
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -363,6 +364,8 @@ describe('EscrowedSettlement.buildOpen — TxRequest shape (FIX 3)', () => {
       rngCommit: buildSeedChain(seedTip, chainLength).commit,
       clockBlocks: 100n,
       expiry: BigInt(Math.floor(Date.now() / 1000) + 3600),
+      clientSeedCommit: commitSeed(clientSeed),
+      paramsHash: paramsHashOf(params.targetX100),
     }
 
     // In production the house signs remotely. Test-only: sign with the house key directly.
