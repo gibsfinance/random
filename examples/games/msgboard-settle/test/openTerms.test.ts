@@ -17,6 +17,8 @@ const terms: OpenTerms = {
   rngCommit: `0x${'cd'.repeat(32)}`,
   clockBlocks: 30n,
   expiry: 9_999_999_999n,
+  clientSeedCommit: `0x${'ef'.repeat(32)}`,
+  paramsHash: `0x${'12'.repeat(32)}`,
 }
 
 describe('OpenTerms signing', () => {

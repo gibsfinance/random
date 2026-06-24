@@ -18,24 +18,26 @@ struct OpenTerms {
     bytes32 rngCommit;
     uint64 clockBlocks;
     uint64 expiry;
+    bytes32 clientSeedCommit;
+    bytes32 paramsHash;
 }
 
 library OpenTermsLib {
     bytes32 internal constant TYPEHASH = keccak256(
-        "OpenTerms(bytes32 tableId,address player,address playerKey,uint256 escrowPlayer,uint256 escrowHouse,uint8 gameId,bytes32 rngCommit,uint64 clockBlocks,uint64 expiry)"
+        "OpenTerms(bytes32 tableId,address player,address playerKey,uint256 escrowPlayer,uint256 escrowHouse,uint8 gameId,bytes32 rngCommit,uint64 clockBlocks,uint64 expiry,bytes32 clientSeedCommit,bytes32 paramsHash)"
     );
 
     function structHash(OpenTerms calldata t) internal pure returns (bytes32) {
         return keccak256(abi.encode(
             TYPEHASH, t.tableId, t.player, t.playerKey, t.escrowPlayer, t.escrowHouse,
-            t.gameId, t.rngCommit, t.clockBlocks, t.expiry
+            t.gameId, t.rngCommit, t.clockBlocks, t.expiry, t.clientSeedCommit, t.paramsHash
         ));
     }
 
     function structHashMem(OpenTerms memory t) internal pure returns (bytes32) {
         return keccak256(abi.encode(
             TYPEHASH, t.tableId, t.player, t.playerKey, t.escrowPlayer, t.escrowHouse,
-            t.gameId, t.rngCommit, t.clockBlocks, t.expiry
+            t.gameId, t.rngCommit, t.clockBlocks, t.expiry, t.clientSeedCommit, t.paramsHash
         ));
     }
 }
@@ -75,6 +77,9 @@ contract HouseChannel is SessionStateEIP712, Ownable {
         uint64 disputeDeadline;
         uint8 disputant;      // 1 player, 2 house
         SessionState disputeState;
+        bytes32 rngCommit;        // house-signed server-seed commit (for permissionless settleWithSeeds)
+        bytes32 clientSeedCommit; // house-signed player-seed commit
+        bytes32 paramsHash;       // house-signed round params hash
     }
 
     uint64 public constant MIN_CLOCK_BLOCKS = 30;     // ~5 min at 10s blocks
@@ -122,6 +127,15 @@ contract HouseChannel is SessionStateEIP712, Ownable {
         return _hashTypedData(terms.structHashMem());
     }
 
+    /// Read the three open-time commits a permissionless settle authorizes against.
+    /// (The auto-getter can't return the nested `disputeState`, so this explicit reader is needed.)
+    function tableCommits(bytes32 tableId)
+        external view returns (bytes32 rngCommit, bytes32 clientSeedCommit, bytes32 paramsHash)
+    {
+        Table storage t = tables[tableId];
+        return (t.rngCommit, t.clientSeedCommit, t.paramsHash);
+    }
+
     /// Player opens an escrowed table: escrows their own chips, reserves the house's escrow from
     /// the pool, authorized by the house's signature over `terms`. One player tx, no house tx.
     function open(OpenTerms calldata terms, bytes calldata houseSig) external {
@@ -141,6 +155,9 @@ contract HouseChannel is SessionStateEIP712, Ownable {
         t.escrowHouse = terms.escrowHouse;
         t.gameId = terms.gameId;
         t.clockBlocks = terms.clockBlocks;
+        t.rngCommit = terms.rngCommit;
+        t.clientSeedCommit = terms.clientSeedCommit;
+        t.paramsHash = terms.paramsHash;
         t.status = Status.Live;
 
         chips.safeTransferFrom(msg.sender, address(this), terms.escrowPlayer);

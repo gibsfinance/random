@@ -1,7 +1,7 @@
 import type { Hex } from 'viem'
 import type { GameDomain, StateSigner, Game } from '@gibs/msgboard-games'
 import { escrowFor } from '@gibs/msgboard-games'
-import { signOpenTerms, type OpenTerms } from '@gibs/msgboard-settle'
+import { signOpenTerms, paramsHashOf, type OpenTerms } from '@gibs/msgboard-settle'
 
 export type OpenRequest = {
   tableId: Hex; player: Hex; playerKey: Hex; gameId: number
@@ -41,6 +41,8 @@ export async function reviewOpen(
     tableId: req.tableId, player: req.player, playerKey: req.playerKey,
     escrowPlayer, escrowHouse, gameId: req.gameId, rngCommit: ctx.rngCommit,
     clockBlocks: ctx.limits.clockBlocks, expiry: ctx.headBlock + ctx.limits.expiryBlocks,
+    clientSeedCommit: req.clientSeedCommit,
+    paramsHash: paramsHashOf((req.params as { targetX100: bigint }).targetX100),
   }
   const houseSig = await signOpenTerms(ctx.houseKey, ctx.domain, terms)
   return { ok: true, terms, houseSig }

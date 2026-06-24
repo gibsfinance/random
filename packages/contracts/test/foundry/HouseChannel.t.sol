@@ -45,6 +45,19 @@ contract HouseChannelTest is Test {
         t.rngCommit = keccak256("commit");
         t.clockBlocks = CLOCK;
         t.expiry = uint64(block.timestamp + 1 hours);
+        t.clientSeedCommit = keccak256("client-commit");
+        t.paramsHash = keccak256(abi.encode(uint256(5000)));
+    }
+
+    function test_openPersistsCommits() public {
+        OpenTerms memory t = _terms();
+        bytes memory sig = _signHouseTerms(t);
+        vm.prank(playerWallet);
+        ch.open(t, sig);
+        (bytes32 rng, bytes32 csc, bytes32 ph) = ch.tableCommits(TID);
+        assertEq(rng, keccak256("commit"));
+        assertEq(csc, keccak256("client-commit"));
+        assertEq(ph, keccak256(abi.encode(uint256(5000))));
     }
 
     function _signHouseTerms(OpenTerms memory t) internal view returns (bytes memory) {

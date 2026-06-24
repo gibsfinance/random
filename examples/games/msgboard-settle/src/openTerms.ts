@@ -1,4 +1,4 @@
-import { recoverTypedDataAddress, type Hex } from 'viem'
+import { encodeAbiParameters, keccak256, recoverTypedDataAddress, type Hex } from 'viem'
 import { makeDomain, type GameDomain, type StateSigner } from '@gibs/msgboard-games'
 
 /** Mirrors HouseChannel.sol OpenTermsLib TYPEHASH field order exactly. */
@@ -12,6 +12,8 @@ export interface OpenTerms {
   rngCommit: Hex
   clockBlocks: bigint
   expiry: bigint
+  clientSeedCommit: Hex
+  paramsHash: Hex
 }
 
 export const OPEN_TERMS_TYPES = {
@@ -25,8 +27,17 @@ export const OPEN_TERMS_TYPES = {
     { name: 'rngCommit', type: 'bytes32' },
     { name: 'clockBlocks', type: 'uint64' },
     { name: 'expiry', type: 'uint64' },
+    { name: 'clientSeedCommit', type: 'bytes32' },
+    { name: 'paramsHash', type: 'bytes32' },
   ],
 } as const
+
+/** paramsHash for a single-uint256-target game (dice/limbo). MUST match Solidity
+ *  keccak256(abi.encode(uint256 targetX100)) — abi.encode (32-byte padded), NOT encodePacked. */
+export function paramsHashOf(targetX100: bigint): Hex {
+  const encoded = encodeAbiParameters([{ type: 'uint256' }], [targetX100])
+  return keccak256(encoded)
+}
 
 /** The EIP-712 domain for the settlement contracts (same name/version as SessionState).
  *  `verifyingContract` is the HouseBankroll or HouseChannel address. */
