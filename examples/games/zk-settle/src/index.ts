@@ -29,3 +29,18 @@ export {
   type LimboSettleWitness,
   type LimboSettleCommitments,
 } from './limboSettle'
+
+// Task 6 — the unified off-chain M1 E2E settle API (dice + limbo).
+export {
+  proveSettle,
+  verifySettle,
+  trackOneSettle,
+  settleAmounts,
+  settleGameId,
+  type SettleGame,
+  type SettleRound,
+  type SettleBlindings,
+  type SettleAmounts,
+  type SettleOutcome,
+  type SettleProof,
+} from './settle'
