@@ -1,3 +1,5 @@
 export * from './deckN'
 export * from './revealN'
 export * from './dealSeq'
+export * from './stateSigN'
+export * from './channelN'

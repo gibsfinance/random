@@ -2,6 +2,7 @@
   "name": "@gibs/random",
   "devDependencies": {
     "@gibs/hilo-war": "workspace:*",
+    "@gibs/holdem": "workspace:*",
     "@gibs/msgboard-games": "workspace:*",
     "@gibs/msgboard-settle": "workspace:*",
     "@gibs/zk-cards-core": "workspace:*",

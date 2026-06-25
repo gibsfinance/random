@@ -199,6 +199,51 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      // N-party Hold'em channel family — Shanghai like the ZkTable siblings.
+      'contracts/zk/ChannelStateN.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/zk/IGameRulesN.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/zk/HoldemTableN.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/test/MockGameRulesN.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
       // Test-only reentrancy probe in the ZkTable family — Shanghai like its siblings.
       'contracts/test/ReenteringReceiver.sol': {
         version: '0.8.25',

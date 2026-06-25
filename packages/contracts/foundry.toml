@@ -79,6 +79,8 @@ skip = [
   'test/foundry/HiLoWarRules.t.sol',
   'test/foundry/ZkTable.t.sol',
   'test/foundry/ZkTableInvariant.t.sol',
+  'test/foundry/HoldemTableN.t.sol',
+  'test/foundry/HoldemTableNInvariant.t.sol',
   'test/foundry/MockRandom.sol',
 ]
 
