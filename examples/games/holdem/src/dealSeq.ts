@@ -135,6 +135,16 @@ export interface RunDealArgs {
   tableId: Hex
   /** the POST-shuffle final deck (output of runShuffleChain) */
   deck: WireMasked[]
+  /**
+   * The REAL per-round shuffles from `runShuffleChain` (Task-1), in chain order
+   * (`rounds[i]` is seat i's shuffle of seat i-1's output). When provided, each SHUFFLE
+   * board post carries the genuine `WireShuffle` for that round — so the transcript is a
+   * VERIFIABLE shuffle record (`verifyShuffleChain` replays it against `initial`), not a
+   * placeholder re-posting of the final deck. Honors the Task-3 review carry-forward (M1).
+   * `rounds.length` must equal the seat count. Omitting it falls back to the legacy
+   * placeholder (final deck, `proof:'0x'`) — used only by older callers/tests.
+   */
+  rounds?: WireShuffle[]
   plan: DealPlan
   board: DealBoard
   /** must be true: verify shares before combining (the safety contract) */
@@ -205,16 +215,20 @@ async function maybeForge(
  * it is combined, with seat attribution on failure.
  */
 export async function runDeal(args: RunDealArgs): Promise<RunDealResult> {
-  const { provider, seats, tableId, deck, plan, board, forgeShare } = args
+  const { provider, seats, tableId, deck, plan, board, forgeShare, rounds } = args
   if (!args.verifyAllShares) throw new Error('runDeal: verifyAllShares must be true (safety contract)')
   const n = seats.length
+  if (rounds !== undefined && rounds.length !== n)
+    throw new Error(`runDeal: rounds length must be ${n} (one shuffle per seat), got ${rounds.length}`)
   const pubs = seats.map((s) => s.pub)
   let postCount = 0
 
-  // 1) Shuffle chain: one SHUFFLE post per seat. (The deck is already shuffled; here we
-  //    record the chain on the transcript so the board carries N shuffle posts.)
+  // 1) Shuffle chain: one SHUFFLE post per seat. Each post carries the REAL per-round
+  //    WireShuffle from runShuffleChain (verifiable shuffle record — M1 carry-forward),
+  //    falling back to the legacy placeholder (final deck) only when rounds is omitted.
   for (let i = 0; i < n; i++) {
-    await postStep(board.transcript, seats[i]!.signer, { kind: 'SHUFFLE', seat: i, round: { deck, proof: '0x' } }, board)
+    const round = rounds ? rounds[i]! : { deck, proof: '0x' as const }
+    await postStep(board.transcript, seats[i]!.signer, { kind: 'SHUFFLE', seat: i, round }, board)
     postCount++
   }
 

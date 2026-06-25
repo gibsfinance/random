@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { keccak256, concatHex, type Hex } from 'viem'
 import { AttestedElGamalDeck, Transcript, verifyEnvelope } from '@gibs/zk-cards-core'
-import { jointKey, runShuffleChain } from '../src/deckN'
+import { jointKey, runShuffleChain, verifyShuffleChain } from '../src/deckN'
 import { collectShares, revealCommunity, revealHole, ctxFor } from '../src/revealN'
 import {
   dealPlan,
@@ -56,8 +56,8 @@ async function setupTable(n: number) {
   const seats = await Promise.all(Array.from({ length: n }, () => mkSeat(p)))
   const agg = jointKey(p, seats.map((s) => s.pub))
   const tableId = randTableId()
-  const { finalDeck } = await runShuffleChain(p, agg, seats)
-  return { p, seats, agg, tableId, finalDeck }
+  const { initial, finalDeck, rounds } = await runShuffleChain(p, agg, seats)
+  return { p, seats, agg, tableId, initial, finalDeck, rounds }
 }
 
 // ---- tests -----------------------------------------------------------------
@@ -181,6 +181,66 @@ describe('full deal over the (fake) board', () => {
       }
     })
   }
+})
+
+describe('SHUFFLE posts carry the REAL per-round WireShuffles (M1 carry-forward)', () => {
+  it('N=3: the transcript SHUFFLE posts replay as a verifiable shuffle chain against the initial deck', async () => {
+    const { p, seats, agg, tableId, initial, finalDeck, rounds } = await setupTable(3)
+    const board = fakeBoard(tableId)
+    const plan = dealPlan(3)
+
+    await runDeal({
+      provider: p,
+      seats,
+      agg,
+      tableId,
+      deck: finalDeck,
+      rounds, // pass the real per-round shuffles
+      plan,
+      board,
+      verifyAllShares: true,
+    })
+
+    // Extract the WireShuffle from each SHUFFLE post body, in seat order.
+    const shufflePosts = board.transcript.entries
+      .filter((e) => e.kind === 'SHUFFLE')
+      .map((e) => e.body as { seat: number; round: { deck: typeof finalDeck; proof: unknown } })
+    expect(shufflePosts.length).toBe(3)
+
+    // They must NOT be the placeholder (final deck re-posted with proof '0x'): each round's
+    // deck differs from the next (a real re-encryption+permutation), and proofs are real sigs.
+    for (const sp of shufflePosts) {
+      expect(sp.round.proof).not.toBe('0x')
+      expect((sp.round.proof as string).length).toBeGreaterThan(2)
+    }
+
+    // The decisive assertion: the posted rounds replay as a valid shuffle chain over the
+    // initial deck — i.e. the board transcript is a VERIFIABLE shuffle record.
+    const postedRounds = shufflePosts.map((sp) => sp.round) as typeof rounds
+    const signerAddrs = seats.map((s) => s.addr)
+    expect(await verifyShuffleChain(p, agg, initial, postedRounds, signerAddrs)).toBe(true)
+
+    // and the last posted round's deck is exactly the final deck the deal dealt from.
+    expect(deckCommitment(postedRounds[postedRounds.length - 1]!.deck)).toBe(deckCommitment(finalDeck))
+  })
+
+  it('rejects a rounds list whose length != seat count', async () => {
+    const { p, seats, agg, tableId, finalDeck, rounds } = await setupTable(3)
+    const board = fakeBoard(tableId)
+    await expect(
+      runDeal({
+        provider: p,
+        seats,
+        agg,
+        tableId,
+        deck: finalDeck,
+        rounds: rounds.slice(0, 2), // wrong length
+        plan: dealPlan(3),
+        board,
+        verifyAllShares: true,
+      }),
+    ).rejects.toThrow(/rounds length must be 3/)
+  })
 })
 
 describe('bad share is caught with seat attribution', () => {
