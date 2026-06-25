@@ -9,3 +9,13 @@ export { execute, type AbiValue } from './execute'
 export { roundRandomPreimage } from './abiEncode'
 export { GAME_DICE, GAME_LIMBO } from './gameId'
 export { pedersenCommit, type PedersenPoint } from './pedersen'
+export {
+  diceOutcome,
+  diceSettleCommitments,
+  commitmentsToPublicInputs,
+  diceSettleInputs,
+  type DiceSettleAmounts,
+  type DiceSettleBlindings,
+  type DiceSettleWitness,
+  type DiceSettleCommitments,
+} from './diceSettle'
