@@ -305,16 +305,54 @@ contract HoldemTableNTest is Test {
         assertEq(vm.addr(_pk(2)).balance - b2, 50, "staller forfeited the pot");
     }
 
-    // ── share dispute deferred ──────────────────────────────────────────────────
+    // ── share dispute wiring (full crypto e2e lives in HoldemShareDispute.t.sol) ─────
 
-    function test_respondWithShareReverts() public {
+    /// respondWithShare on a table that is not in a SHARE dispute reverts on status, never
+    /// stranding funds. (The DLEQ-verified happy/forged paths are in HoldemShareDispute.t.sol,
+    /// which needs a real off-chain proof via ffi.)
+    function test_respondWithShareWrongStatus() public {
         uint256 n = 2;
         bytes32 tableId = _table(n, 1 ether);
         uint256[] memory deck = new uint256[](0);
-        uint256[2] memory reveal;
-        uint256[8] memory proof;
-        vm.expectRevert(HoldemTableN.ShareDisputeDeferred.selector);
-        zk.respondWithShare(tableId, deck, reveal, proof);
+        uint256[2] memory share;
+        uint256[5] memory proof;
+        vm.expectRevert(HoldemTableN.BadStatus.selector);
+        zk.respondWithShare(tableId, deck, share, proof);
+    }
+
+    /// registerDeckKey rejects an off-curve point and is locked once the table is Live.
+    function test_registerDeckKeyGuards() public {
+        uint256 n = 2;
+        uint256 buyIn = 1 ether;
+        address a0 = vm.addr(_pk(0));
+        vm.deal(a0, buyIn);
+        vm.prank(a0);
+        bytes32 tableId = zk.create{value: buyIn}(IGameRulesN(address(rules)), buyIn, n, 0, 0, CLOCK, a0);
+        // off-curve key rejected
+        vm.prank(a0);
+        vm.expectRevert(HoldemTableN.BadDeckKey.selector);
+        zk.registerDeckKey(tableId, [uint256(1), uint256(1)]);
+        // valid generator point accepted
+        vm.prank(a0);
+        zk.registerDeckKey(tableId, [
+            0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
+            0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8
+        ]);
+        uint256[2] memory got = zk.deckKeyOf(tableId, 0);
+        assertEq(got[0], 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798, "key x stored");
+        // join a second seat + start, then registration is locked
+        address a1 = vm.addr(_pk(1));
+        vm.deal(a1, buyIn);
+        vm.prank(a1);
+        zk.join{value: buyIn}(tableId, a1);
+        vm.prank(a0);
+        zk.start(tableId);
+        vm.prank(a0);
+        vm.expectRevert(HoldemTableN.BadStatus.selector);
+        zk.registerDeckKey(tableId, [
+            0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
+            0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8
+        ]);
     }
 
     // ── dispute resolved by a newer co-signed state ─────────────────────────────
