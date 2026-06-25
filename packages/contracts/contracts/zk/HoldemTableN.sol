@@ -4,8 +4,11 @@ pragma solidity ^0.8.24;
 import {EIP712} from "solady/src/utils/EIP712.sol";
 import {ECDSA} from "solady/src/utils/ECDSA.sol";
 import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
+import {LibString} from "solady/src/utils/LibString.sol";
 import {ChannelStateN, ChannelStateNLib, SidePot} from "./ChannelStateN.sol";
 import {IGameRulesN} from "./IGameRulesN.sol";
+import {RevealShareDLEQ} from "./lib/RevealShareDLEQ.sol";
+import {EllipticCurve} from "./lib/EllipticCurve.sol";
 
 /// @notice N-party state-channel card table (3–9 seats; supports N=2). Generalizes ZkTable:
 /// seats escrow buy-ins, play is off-chain N-of-N co-signed ChannelStateN, and the chain is
@@ -16,12 +19,19 @@ import {IGameRulesN} from "./IGameRulesN.sol";
 /// is enforced on every accepted state, so every settle / forced-fold / dispute-resolve pays
 /// out exactly Σ escrow.
 ///
-/// v1 SCOPE (spec Constraint 6): the Groth16 share-dispute path is DEFERRED — respondWithShare
-/// reverts ShareDisputeDeferred; SHARE demands resolve via respondWithState (a strictly-newer
-/// co-signed state) or run the clock to forced-fold. No deckKeys mapping in v1.
+/// SHARE-DISPUTE (real-money Gate 1, CLOSED): a contested decryption-SHARE demand is now
+/// answerable on-chain. A share's correctness is exactly a Chaum–Pedersen DLEQ statement
+/// (share d = c1·sk, deck pubkey pk = G·sk, SAME sk), verified by RevealShareDLEQ over
+/// secp256k1 — the SAME curve as the off-chain `zk-cards-core` deck (the vendored uzkge
+/// ChaumPedersenDL verifier is EdOnBN254, the wrong curve, so it cannot check our live
+/// shares). An honest seat can therefore ALWAYS satisfy a SHARE demand with its correct
+/// share + proof and can never be force-folded on the clock; a forged share reverts.
+/// Seats register their deck pubkey via registerDeckKey() while Forming (the same pubkeys
+/// that form the off-chain joint encryption key).
 contract HoldemTableN is EIP712 {
     using SafeTransferLib for address;
     using ChannelStateNLib for ChannelStateN;
+    using RevealShareDLEQ for RevealShareDLEQ.Statement;
 
     error WrongValue();
     error BadClock();
@@ -45,9 +55,12 @@ contract HoldemTableN is EIP712 {
     error TooManySeats();
     error NotEnoughSeats();
     error RakeTooHigh();
-    error ShareDisputeDeferred();
     error WrongSigCount();
     error SeatRange();
+    error BadDeckKey();
+    error DeckKeyNotSet();
+    error BadDeck();
+    error BadShareProof();
 
     uint8 internal constant DEMAND_MOVE = 1;
     uint8 internal constant DEMAND_SHARE = 2;
@@ -83,6 +96,10 @@ contract HoldemTableN is EIP712 {
     address public immutable treasury;
     uint256 internal _counter;
     mapping(bytes32 => Table) internal _tables;
+    /// tableId => seat index => secp256k1 deck pubkey (x,y). (0,0) == unset (not on-curve).
+    /// These are the SAME per-seat keys that aggregate into the off-chain joint deck key;
+    /// registered while Forming and read by respondWithShare to check a contested share.
+    mapping(bytes32 => mapping(uint256 => uint256[2])) internal _deckKey;
 
     event TableCreated(bytes32 indexed tableId, address indexed creator, address rules, uint256 buyIn, uint256 maxSeats, uint16 rakeBps, uint256 rakeCap, uint64 clockBlocks);
     event TableJoined(bytes32 indexed tableId, address indexed player, uint256 seat);
@@ -93,6 +110,9 @@ contract HoldemTableN is EIP712 {
     event DisputeOpened(bytes32 indexed tableId, uint8 demandSeat, uint8 demandKind, uint32 demandSlot, uint64 deadline);
     event DisputeAnsweredWithState(bytes32 indexed tableId, uint64 nonce);
     event DisputeAnsweredWithMove(bytes32 indexed tableId, bytes move, bytes32 newGameStateHash);
+    /// A contested decryption share was delivered + DLEQ-verified on-chain; dispute resolved.
+    event DisputeAnsweredWithShare(bytes32 indexed tableId, uint8 seat, uint32 slot);
+    event DeckKeyRegistered(bytes32 indexed tableId, uint8 seat);
     /// `forfeitedSeat` is the demandSeat that was force-folded on the chess clock — NOT a game winner.
     event ForcedFold(bytes32 indexed tableId, uint8 forfeitedSeat, uint256[] payouts, uint256 rake);
 
@@ -163,6 +183,19 @@ contract HoldemTableN is EIP712 {
         if (t.seats.length < 2) revert NotEnoughSeats();
         t.status = Status.Live;
         emit TableStarted(tableId, t.seats.length);
+    }
+
+    /// Register the caller's secp256k1 deck pubkey (the key it contributes to the off-chain
+    /// joint deck key). Only while Forming — so it is immutable across live play — and only
+    /// by a seat, for its OWN seat. Required to answer a SHARE dispute (respondWithShare).
+    /// NOTE: register after the roster is final; leaveBeforeStart re-indexes seats.
+    function registerDeckKey(bytes32 tableId, uint256[2] calldata pk) external {
+        Table storage t = _tables[tableId];
+        if (t.status != Status.Forming) revert BadStatus();
+        uint8 seat = _seatOf(t, msg.sender);
+        if (!EllipticCurve.isOnCurve(pk[0], pk[1])) revert BadDeckKey();
+        _deckKey[tableId][seat] = pk;
+        emit DeckKeyRegistered(tableId, seat);
     }
 
     /// A seat leaves before the table starts; refunds its escrow. If it was the last seat
@@ -290,14 +323,78 @@ contract HoldemTableN is EIP712 {
         emit DisputeAnsweredWithMove(tableId, move, t.rules.hashGameState(newState));
     }
 
-    /// DEFERRED in v1 (spec Constraint 6): the Groth16 share-dispute path belongs to the later
-    /// SNARK reveal spike. The selector is kept for ABI stability but always reverts; SHARE
-    /// demands resolve via respondWithState or run the clock to forced-fold.
-    function respondWithShare(bytes32, uint256[] calldata, uint256[2] calldata, uint256[8] calldata)
-        external
-        pure
-    {
-        revert ShareDisputeDeferred();
+    /// Answer a SHARE demand: the demanded seat delivers its decryption share for the
+    /// contested slot on-chain together with a Chaum–Pedersen DLEQ proof of correctness,
+    /// verified over secp256k1 (the deck's curve). This CLOSES real-money Gate 1: an honest
+    /// seat can always satisfy the demand and clear the dispute before the clock, so it can
+    /// never be force-folded for an action it actually performed; a forged/incorrect share
+    /// reverts (BadShareProof) and the clock keeps running toward forced-fold.
+    ///
+    /// `deck` is the full contested masked deck as affine secp256k1 coords, 4 words/card
+    ///   [c1.x, c1.y, c2.x, c2.y], in slot order — bound to disputeState.deckCommitment.
+    /// `share` is the claimed decryption share d = c1·sk (affine).
+    /// `proof` is [t1.x, t1.y, t2.x, t2.y, z] from the off-chain proveShare.
+    function respondWithShare(
+        bytes32 tableId,
+        uint256[] calldata deck,
+        uint256[2] calldata share,
+        uint256[5] calldata proof
+    ) external {
+        Table storage t = _tables[tableId];
+        if (t.status != Status.Disputed) revert BadStatus();
+        if (t.demandKind != DEMAND_SHARE) revert NotDemanded();
+        uint8 seat = _seatOf(t, msg.sender);
+        if (seat != t.demandSeat) revert NotYourDispute();
+        // The passed deck must be exactly the one committed in the contested state.
+        if (_deckHash(deck) != t.disputeState.deckCommitment) revert BadDeck();
+        uint32 slot = t.demandSlot;
+        uint256 base = uint256(slot) * 4;
+        if (base + 4 > deck.length) revert BadDemand();
+
+        uint256[2] storage pk = _deckKey[tableId][seat];
+        if (pk[0] == 0 && pk[1] == 0) revert DeckKeyNotSet();
+
+        RevealShareDLEQ.Statement memory s = RevealShareDLEQ.Statement({
+            pkX: pk[0], pkY: pk[1],
+            c1X: deck[base],     c1Y: deck[base + 1],
+            c2X: deck[base + 2], c2Y: deck[base + 3],
+            dX: share[0], dY: share[1],
+            t1X: proof[0], t1Y: proof[1],
+            t2X: proof[2], t2Y: proof[3],
+            z: proof[4]
+        });
+        if (!s.verify(_ctxFor(tableId, slot))) revert BadShareProof();
+
+        _clearDispute(t);
+        emit DisputeAnsweredWithShare(tableId, seat, slot);
+    }
+
+    /// keccak over the 33-byte COMPRESSED SEC1 encoding of every card's (c1, c2) in slot
+    /// order — the on-chain mirror of zk-core `deckCommitment(deck)` (which hashes the same
+    /// compressed wire points). Binds a passed affine deck to a co-signed bytes32 commitment.
+    function _deckHash(uint256[] calldata deck) internal pure returns (bytes32) {
+        if (deck.length % 4 != 0) revert BadDeck();
+        bytes memory acc;
+        for (uint256 i = 0; i < deck.length; i += 4) {
+            acc = abi.encodePacked(
+                acc,
+                bytes1(uint8(2 + (deck[i + 1] & 1))), bytes32(deck[i]),     // compress c1
+                bytes1(uint8(2 + (deck[i + 3] & 1))), bytes32(deck[i + 2])  // compress c2
+            );
+        }
+        return keccak256(acc);
+    }
+
+    /// Reconstruct the replay-binding ctx string exactly as zk-core `ctxFor(tableId, slot)`:
+    ///   "holdem/" ‖ 0x-prefixed 32-byte lowercase hex tableId ‖ "/slot/" ‖ decimal slot.
+    /// (Off-chain callers MUST use the on-chain bytes32 tableId as the ctx tableId.)
+    function _ctxFor(bytes32 tableId, uint32 slot) internal pure returns (string memory) {
+        return string.concat(
+            "holdem/",
+            LibString.toHexString(uint256(tableId), 32),
+            "/slot/",
+            LibString.toString(uint256(slot))
+        );
     }
 
     /// Clock expired unanswered: FORCE-FOLD the demandSeat. It keeps its co-signed
@@ -429,6 +526,7 @@ contract HoldemTableN is EIP712 {
     function seatCount(bytes32 tableId) external view returns (uint256) { return _tables[tableId].seats.length; }
     function escrowOf(bytes32 tableId, uint256 seat) external view returns (uint256) { return _tables[tableId].escrow[seat]; }
     function seatAt(bytes32 tableId, uint256 seat) external view returns (address) { return _tables[tableId].seats[seat]; }
+    function deckKeyOf(bytes32 tableId, uint256 seat) external view returns (uint256[2] memory) { return _deckKey[tableId][seat]; }
     function totalEscrow(bytes32 tableId) external view returns (uint256 sum) {
         Table storage t = _tables[tableId];
         for (uint256 i = 0; i < t.escrow.length; i++) sum += t.escrow[i];

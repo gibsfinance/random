@@ -26,7 +26,13 @@ remappings = [
 # `zk` profile (viaIR:false / runs:200, mirroring hardhat.config.ts). Exclude it here so
 # the default game-suite run is unaffected:
 #   FOUNDRY_PROFILE=zk forge test --match-path 'test/foundry/ShuffleVerifier52*'
-skip = ['test/foundry/ShuffleVerifier52.t.sol']
+skip = [
+  'test/foundry/ShuffleVerifier52.t.sol',
+  # SHARE-dispute e2e shells out (vm.ffi) to the real off-chain prover; it needs the
+  # dedicated `ffi` profile (FOUNDRY_PROFILE=ffi forge test ... --ffi). Excluded here so the
+  # default `forge test` (no --ffi) stays green.
+  'test/foundry/HoldemShareDispute.t.sol',
+]
 # Foundry 1.6's table-test feature collects any function whose name starts with `table`.
 # ZkTable's `mapping(bytes32 => Table) public tables` auto-generates a `tables(bytes32)`
 # getter that the runner misclassifies as a fixtureless table test ("should have fixtures
@@ -90,3 +96,26 @@ fs_permissions = [{ access = 'read', path = './test/fixtures' }]
 
 [profile.zk.fuzz]
 runs = 512
+
+# Dedicated profile for the SHARE-dispute end-to-end suite, which uses vm.ffi to invoke the
+# real off-chain secp256k1 prover (examples/games/zk-core/scripts/gen-share-dispute.mts).
+# Mirrors the default compiler settings (viaIR:true) but enables ffi and runs ONLY this file.
+# Run: FOUNDRY_PROFILE=ffi forge test --match-path 'test/foundry/HoldemShareDispute*' --ffi
+[profile.ffi]
+src = 'test/foundry'
+test = 'test/foundry'
+out = 'forge-out'
+cache_path = 'forge-cache'
+libs = ['../../lib', 'node_modules']
+solc = '0.8.25'
+via_ir = true
+optimizer = true
+optimizer_runs = 1000
+evm_version = 'shanghai'
+ffi = true
+remappings = [
+  'forge-std/=../../lib/forge-std/src/',
+  'solady/=node_modules/solady/',
+]
+no_match_contract = '^ZkTable$'
+skip = ['test/foundry/ShuffleVerifier52.t.sol']
