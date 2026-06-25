@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IGameRulesN} from "./IGameRulesN.sol";
+import {HoldemHandEval} from "./HoldemHandEval.sol";
 
 /// @notice Pure mirror of @gibs/holdem src/rules.ts applyMove (betting half) — consulted only
 /// by HoldemTableN's per-seat dispute machine. The TS module is normative; test/HoldemParity
@@ -14,7 +15,7 @@ import {IGameRulesN} from "./IGameRulesN.sol";
 /// 6/7) are NOT implemented: the only showdown handled here is an uncontested hand (single
 /// live seat), which the betting layer resolves by sweeping the pot to that seat (the same
 /// STUB as rules.ts `finishHand`). A multiway SHOWDOWN is terminal for this rules contract.
-contract HoldemRules is IGameRulesN {
+contract HoldemRules is IGameRulesN, HoldemHandEval {
     error WrongPhase();
     error NotYourTurn();
     error FoldedSeat();
@@ -52,6 +53,7 @@ contract HoldemRules is IGameRulesN {
     uint8 internal constant MOVE_BET = 4;
     uint8 internal constant MOVE_RAISE = 5;
     uint8 internal constant MOVE_DEAL_DONE = 6;
+    uint8 internal constant MOVE_SHOWDOWN = 7;
 
     struct SidePot {
         uint256 amount;
@@ -80,6 +82,7 @@ contract HoldemRules is IGameRulesN {
         uint16 rakeBps;
         uint256 rakeCap;
         uint8 stubWinner;
+        uint256 rakeAccrued;
     }
 
     function gameId() external pure returns (uint16) {
@@ -113,6 +116,12 @@ contract HoldemRules is IGameRulesN {
 
         if (kind == MOVE_DEAL_DONE) {
             return abi.encode(_dealDone(s));
+        }
+
+        if (kind == MOVE_SHOWDOWN) {
+            if (s.phase != SHOWDOWN) revert WrongPhase();
+            (uint8[2][] memory holes, uint8[5] memory board) = abi.decode(payload, (uint8[2][], uint8[5]));
+            return abi.encode(_showdown(s, holes, board));
         }
 
         if (s.phase != BET_PREFLOP && s.phase != BET_FLOP && s.phase != BET_TURN && s.phase != BET_RIVER) {
@@ -377,6 +386,151 @@ contract HoldemRules is IGameRulesN {
             s.stubWinner = lone;
         }
         // else multiway showdown: winner decided by the Task 6 evaluator; pots stay put.
+    }
+
+    // ----- showdown settlement (Task 7, mirrors rules.ts resolveShowdown/showdownPayouts) -----
+
+    /// Resolve a SHOWDOWN move: award each pot to its best eligible hand(s), apply rake, write
+    /// final balances into `stacks`, set rakeAccrued, zero the pots, reach SETTLED. For an
+    /// already-swept uncontested hand (stubWinner != NONE) the pots are empty; we still apply
+    /// rake to the swept winnings so the channel conservation holds with the rake populated.
+    function _showdown(Holdem memory s, uint8[2][] memory holes, uint8[5] memory board)
+        internal
+        pure
+        returns (Holdem memory)
+    {
+        if (s.stubWinner != NONE) {
+            // Uncontested: rake on the whole collected pot (== Σ totalContributed; uncalled
+            // already returned), deducted from the winner's swept stack.
+            uint256 potBase = 0;
+            for (uint256 i = 0; i < s.nSeats; i++) potBase += s.totalContributed[i];
+            uint256 rakeU = (uint256(s.rakeBps) * potBase) / 10000;
+            if (rakeU > s.rakeCap) rakeU = s.rakeCap;
+            s.stacks[s.stubWinner] -= rakeU;
+            s.rakeAccrued = rakeU;
+            s.phase = SETTLED;
+            s.toAct = NONE;
+            return s;
+        }
+
+        require(board.length == 5, "showdown: board");
+        require(holes.length == s.nSeats, "showdown: holes");
+
+        uint8 n = s.nSeats;
+
+        // Per-seat 7-card hand + memoized score (only eligible/non-folded seats are scored).
+        uint256[] memory scores = new uint256[](n);
+        bool[] memory scored = new bool[](n);
+
+        // Ordered pots: main first, then each side pot. Eligibility intersected with non-folded.
+        // pots: amounts[], and a per-pot eligible bitmask (live seats only).
+        uint256 nPots = 1 + s.sidePots.length;
+        uint256[] memory potAmt = new uint256[](nPots);
+        uint256[] memory potMask = new uint256[](nPots); // live-eligible mask per pot
+        // main pot: every non-folded seat is eligible.
+        potAmt[0] = s.pot;
+        {
+            uint256 mm = 0;
+            for (uint256 i = 0; i < n; i++) if (!s.folded[i]) mm |= (uint256(1) << i);
+            potMask[0] = mm;
+        }
+        for (uint256 k = 0; k < s.sidePots.length; k++) {
+            potAmt[k + 1] = s.sidePots[k].amount;
+            uint256 mm = 0;
+            uint256 src = s.sidePots[k].eligibleMask;
+            for (uint256 i = 0; i < n; i++) {
+                if (((src >> i) & 1) == 1 && !s.folded[i]) mm |= (uint256(1) << i);
+            }
+            potMask[k + 1] = mm;
+        }
+
+        // Rake base = Σ amounts of contested pots (≥2 eligible). Single-eligible = uncalled, no rake.
+        uint256 rakeBase = 0;
+        for (uint256 p = 0; p < nPots; p++) {
+            if (_popcount(potMask[p]) >= 2) rakeBase += potAmt[p];
+        }
+        uint256 rake = (uint256(s.rakeBps) * rakeBase) / 10000;
+        if (rake > s.rakeCap) rake = s.rakeCap;
+        uint256 rakeRemaining = rake;
+
+        uint256[] memory winnings = new uint256[](n);
+
+        for (uint256 p = 0; p < nPots; p++) {
+            uint256 amount = potAmt[p];
+            uint256 mask = potMask[p];
+            uint256 elig = _popcount(mask);
+            if (amount == 0 || elig == 0) continue;
+            uint256 distributable = amount;
+            if (elig >= 2 && rakeRemaining > 0) {
+                uint256 take = rakeRemaining < distributable ? rakeRemaining : distributable;
+                distributable -= take;
+                rakeRemaining -= take;
+            }
+            if (distributable == 0) continue;
+
+            // Find the best eligible score (scoring lazily, memoized).
+            uint256 best = 0;
+            bool haveBest = false;
+            for (uint256 i = 0; i < n; i++) {
+                if (((mask >> i) & 1) == 0) continue;
+                if (!scored[i]) {
+                    scores[i] = _evaluate7([holes[i][0], holes[i][1], board[0], board[1], board[2], board[3], board[4]]);
+                    scored[i] = true;
+                }
+                if (!haveBest || scores[i] > best) {
+                    best = scores[i];
+                    haveBest = true;
+                }
+            }
+            // Winners = eligible seats whose score == best (ascending seat order).
+            uint256 winMask = 0;
+            uint256 winCount = 0;
+            for (uint256 i = 0; i < n; i++) {
+                if (((mask >> i) & 1) == 1 && scores[i] == best) {
+                    winMask |= (uint256(1) << i);
+                    winCount++;
+                }
+            }
+            _splitInto(winnings, distributable, winMask, winCount, s.button, n);
+        }
+
+        for (uint256 i = 0; i < n; i++) s.stacks[i] += winnings[i];
+        s.rakeAccrued = rake;
+        s.pot = 0;
+        s.sidePots = new SidePot[](0);
+        s.phase = SETTLED;
+        s.toAct = NONE;
+        return s;
+    }
+
+    /// Split `amount` among the seats in `winMask`, odd chips to the earliest seat clockwise
+    /// from button+1 (mirrors sidePots.ts splitPot). Adds shares into `winnings` in place.
+    function _splitInto(
+        uint256[] memory winnings,
+        uint256 amount,
+        uint256 winMask,
+        uint256 winCount,
+        uint8 button,
+        uint8 n
+    ) internal pure {
+        uint256 base = amount / winCount;
+        uint256 remainder = amount - base * winCount; // 0..winCount-1
+        // Clockwise order from button+1; the first `remainder` winners each get +1.
+        uint256 idx = 0;
+        for (uint256 k = 1; k <= n; k++) {
+            uint8 seat = uint8((button + k) % n);
+            if (((winMask >> seat) & 1) == 1) {
+                winnings[seat] += base + (idx < remainder ? 1 : 0);
+                idx++;
+            }
+        }
+    }
+
+    function _popcount(uint256 mask) internal pure returns (uint256 c) {
+        while (mask != 0) {
+            c += mask & 1;
+            mask >>= 1;
+        }
     }
 
     /// Recompute pot (bottom layer) + sidePots (higher layers) from totalContributed+folded.

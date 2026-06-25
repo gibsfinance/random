@@ -1,4 +1,5 @@
-import { buildSidePots, type SidePotTS } from './sidePots'
+import { buildSidePots, splitPot, type SidePotTS } from './sidePots'
+import { evaluate7 } from './handEval'
 
 /// Game phases. SETUP→SHUFFLE→DEAL_HOLE are deal-layer (Task 3); the four BET_* streets are
 /// the betting rounds; SHOWDOWN/SETTLED are settled by the channel (showdown winner is Task 6/7
@@ -44,9 +45,15 @@ export interface HoldemState {
   bigBlind: bigint
   rakeBps: number
   rakeCap: bigint
-  /// STUB winner of an uncontested/showdown hand (Task 6/7 replaces with the hand evaluator).
-  /// Set only when the hand reaches SHOWDOWN; -1 until then.
+  /// Winner of an uncontested hand (everyone folded to one seat). Set by `finishHand` when the
+  /// hand collapses to a single live seat; -1 for a true multiway showdown (resolved by the
+  /// SHOWDOWN move / hand evaluator). Distinct from the showdown payout: the uncontested winner
+  /// is swept the whole pot during betting; the SHOWDOWN move then merely applies rake + SETTLES.
   stubWinner: number
+  /// Rake taken at settlement (Task 7). 0 until the SHOWDOWN move runs. Mirrors the channel's
+  /// ChannelStateN.rakeAccrued — included in conservation: Σ stacks + rakeAccrued == Σ escrow
+  /// once SETTLED (pot/sidePots both 0).
+  rakeAccrued: bigint
 }
 
 export type Move =
@@ -54,6 +61,10 @@ export type Move =
   | { kind: 'CHECK' | 'CALL' | 'FOLD'; seat: number }
   | { kind: 'BET' | 'RAISE'; seat: number; to: bigint } // `to` = total this-street commitment
   | { kind: 'DEAL_DONE'; phase: Phase } // session attests the reveal group completed
+  // Showdown reveal (Task 7): the session supplies every seat's 2 unmasked hole indices
+  // (`holes[seat]`) and the 5 community indices (`board`). The rules resolve each pot among
+  // its eligible seats, apply rake, and SETTLE. Folded seats' holes are ignored (any value).
+  | { kind: 'SHOWDOWN'; holes: number[][]; board: number[] }
 
 export type MoveResult = { state: HoldemState } | { error: string }
 
@@ -94,13 +105,14 @@ export function initHoldem(a: InitArgs): HoldemState {
     rakeBps: a.rakeBps ?? 0,
     rakeCap: a.rakeCap ?? 0n,
     stubWinner: -1,
+    rakeAccrued: 0n,
   }
 }
 
 /// Σ stacks + pot + Σ sidePots.amount (+ rake, which is 0 during betting). The channel's
 /// conservation target = total escrow. Asserted by tests after every accepted transition.
 export function conserved(s: HoldemState): bigint {
-  let sum = s.pot
+  let sum = s.pot + s.rakeAccrued
   for (const b of s.stacks) sum += b
   for (const sp of s.sidePots) sum += sp.amount
   return sum
@@ -274,6 +286,166 @@ function liveSeats(s: HoldemState): number[] {
   return out
 }
 
+// ----- showdown settlement (Task 7) -----
+
+/// One pot to award: its amount, the eligible (non-folded) seats contesting it, and whether
+/// it is rakeable (≥2 eligible seats — a single-eligible pot is an uncalled return, no rake).
+interface PotToAward {
+  amount: bigint
+  eligible: number[]
+}
+
+/// The ordered pots a showdown must award: main pot first, then each side pot (lowest layer
+/// to highest). Eligibility is intersected with non-folded seats. Mirrors the on-chain order.
+function potsToAward(s: HoldemState): PotToAward[] {
+  const pots: PotToAward[] = []
+  pots.push({ amount: s.pot, eligible: eligibleOf(s, allSeatsMask(s.nSeats)) })
+  for (const sp of s.sidePots) pots.push({ amount: sp.amount, eligible: eligibleOf(s, maskOf(sp.eligible)) })
+  return pots
+}
+
+function allSeatsMask(n: number): number[] {
+  const out: number[] = []
+  for (let i = 0; i < n; i++) out.push(i)
+  return out
+}
+function maskOf(eligible: number[]): number[] {
+  return [...eligible]
+}
+/// Intersect a candidate eligible set with the non-folded seats (an eligible seat that folded
+/// before showdown can never win — its chips stay in the pot for the live contestants).
+function eligibleOf(s: HoldemState, candidates: number[]): number[] {
+  return candidates.filter((i) => !s.folded[i])
+}
+
+/**
+ * Pure showdown distribution. Given the per-pot eligibility, the per-seat 7-card hands, the
+ * button (for the odd-chip rule) and rake parameters, returns the per-seat winnings vector and
+ * the total rake. The normative resolution — mirrored byte-for-byte by HoldemRules.sol.
+ *
+ * Rake rule (rake-in-conservation, plan Decision 4): rake is taken ONLY from contested pots
+ * (≥2 eligible seats); a single-eligible pot is an uncalled return and is paid back in full
+ * (no rake). `rake = min(rakeCap, rakeBps · Σ rakeable-pot-amounts / 10000)`, then deducted
+ * from the rakeable pots in order (main first) BEFORE each pot is split among its winners.
+ *
+ * Conservation: Σ winnings + rake == Σ pot amounts, exactly.
+ *
+ * `hands[seat]` is that seat's 7 card indices (2 hole ∪ 5 board); only consulted for seats
+ * that are eligible for some pot. `score(seat)` is memoized.
+ */
+export function showdownPayouts(args: {
+  nSeats: number
+  button: number
+  pots: PotToAward[]
+  hands: number[][]
+  rakeBps: number
+  rakeCap: bigint
+}): { winnings: bigint[]; rake: bigint } {
+  const { nSeats, button, pots, hands, rakeBps, rakeCap } = args
+  const winnings = Array(nSeats).fill(0n) as bigint[]
+
+  // Memoized hand score per seat (only computed for seats that contest a pot).
+  const scoreCache = new Map<number, bigint>()
+  const scoreOf = (seat: number): bigint => {
+    let v = scoreCache.get(seat)
+    if (v === undefined) {
+      v = evaluate7(hands[seat]!)
+      scoreCache.set(seat, v)
+    }
+    return v
+  }
+
+  // Rake base = Σ amounts of contested pots (≥2 eligible). Single-eligible pots are uncalled
+  // returns and never raked.
+  let rakeBase = 0n
+  for (const p of pots) if (p.eligible.length >= 2) rakeBase += p.amount
+  let rake = (BigInt(rakeBps) * rakeBase) / 10000n
+  if (rake > rakeCap) rake = rakeCap
+  let rakeRemaining = rake
+
+  for (const p of pots) {
+    if (p.amount === 0n || p.eligible.length === 0) continue
+    // Deduct the outstanding rake from this pot, but only from a contested (rakeable) pot.
+    let distributable = p.amount
+    if (p.eligible.length >= 2 && rakeRemaining > 0n) {
+      const take = rakeRemaining < distributable ? rakeRemaining : distributable
+      distributable -= take
+      rakeRemaining -= take
+    }
+    if (distributable === 0n) continue
+    // Find the max-scoring eligible seat(s).
+    let best = -1n
+    for (const seat of p.eligible) {
+      const sc = scoreOf(seat)
+      if (sc > best) best = sc
+    }
+    const winners = p.eligible.filter((seat) => scoreOf(seat) === best)
+    for (const { seat, amount } of splitPot(distributable, winners, button, nSeats)) {
+      winnings[seat] = winnings[seat]! + amount
+    }
+  }
+  return { winnings, rake }
+}
+
+/// Resolve the SHOWDOWN move: award pots, apply rake, write final balances into `stacks`,
+/// set `rakeAccrued`, zero the pots and reach SETTLED. For an already-swept uncontested hand
+/// (stubWinner ≥ 0) the pots are empty; we still apply rake to the swept winnings so the
+/// channel conservation (Σ stacks + rake == Σ escrow) holds with the rake field populated.
+function resolveShowdown(s0: HoldemState, holes: number[][], board: number[]): MoveResult {
+  const s = clone(s0)
+
+  if (s0.stubWinner >= 0) {
+    // Uncontested: `finishHand` already swept the whole pot into stubWinner's stack. Apply
+    // rake on that swept amount (a contested win — the lone seat called/was called). The
+    // amount won this hand = its totalContributed-minus-its-own-stake share is awkward to
+    // recover; instead rake the entire collected pot for this hand. The collected pot equals
+    // Σ totalContributed (uncalled already returned), so rake on that base.
+    let potBase = 0n
+    for (const c of s.totalContributed) potBase += c
+    let rake = (BigInt(s.rakeBps) * potBase) / 10000n
+    if (rake > s.rakeCap) rake = s.rakeCap
+    // Deduct rake from the winner's swept stack.
+    s.stacks[s0.stubWinner] = s.stacks[s0.stubWinner]! - rake
+    s.rakeAccrued = rake
+    s.phase = Phase.SETTLED
+    s.toAct = -1
+    return { state: s }
+  }
+
+  // Multiway showdown: validate inputs.
+  if (!Array.isArray(board) || board.length !== 5) return err('showdown: board must be 5 cards')
+  if (!Array.isArray(holes) || holes.length !== s.nSeats) return err('showdown: holes per seat required')
+
+  const pots = potsToAward(s)
+  // Build each contesting seat's 7-card hand (only the eligible/non-folded seats matter).
+  const hands: number[][] = []
+  for (let i = 0; i < s.nSeats; i++) {
+    if (s.folded[i]) {
+      hands.push([]) // never evaluated
+      continue
+    }
+    const h = holes[i]
+    if (!Array.isArray(h) || h.length !== 2) return err(`showdown: seat ${i} needs 2 hole cards`)
+    hands.push([h[0]!, h[1]!, ...board])
+  }
+
+  const { winnings, rake } = showdownPayouts({
+    nSeats: s.nSeats,
+    button: s.button,
+    pots,
+    hands,
+    rakeBps: s.rakeBps,
+    rakeCap: s.rakeCap,
+  })
+  for (let i = 0; i < s.nSeats; i++) s.stacks[i] = s.stacks[i]! + winnings[i]!
+  s.rakeAccrued = rake
+  s.pot = 0n
+  s.sidePots = []
+  s.phase = Phase.SETTLED
+  s.toAct = -1
+  return { state: s }
+}
+
 const err = (e: string): MoveResult => ({ error: `holdem: ${e}` })
 
 // ----- the betting transition -----
@@ -294,6 +466,13 @@ export function applyMove(s0: HoldemState, m: Move): MoveResult {
     // on this street — close it through to the next deal phase / showdown.
     if (actableCount(s) <= 1 && allMatchedOrAllIn(s)) closeStreet(s)
     return { state: s }
+  }
+
+  // SHOWDOWN resolution: only from the SHOWDOWN phase. Distributes every pot to its best
+  // eligible hand(s), applies rake, and reaches SETTLED.
+  if (m.kind === 'SHOWDOWN') {
+    if (s0.phase !== Phase.SHOWDOWN) return err(`SHOWDOWN in phase ${s0.phase}`)
+    return resolveShowdown(s0, m.holes, m.board)
   }
 
   if (

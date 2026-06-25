@@ -31,6 +31,14 @@ contract HoldemHandEval {
     /// @notice Evaluate the best 5-card hand out of 7 distinct deck indices (2 hole + 5 board).
     /// @return score the comparable packed score (== handEval.ts evaluate7).
     function evaluate7(uint8[7] calldata cards) external pure returns (uint256 score) {
+        uint8[7] memory mem = cards;
+        return _evaluate7(mem);
+    }
+
+    /// @dev Memory variant of evaluate7 — same algorithm, callable from an in-memory caller
+    /// (the showdown settlement in HoldemRules builds each seat's 7-card hand in memory).
+    /// Identical scoring to evaluate7, so parity to handEval.ts holds for both entry points.
+    function _evaluate7(uint8[7] memory cards) internal pure returns (uint256 score) {
         // Precompute rank (2..14) and suit (0..3) per card once.
         uint8[7] memory ranks;
         uint8[7] memory suits;

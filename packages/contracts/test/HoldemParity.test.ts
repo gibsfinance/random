@@ -26,6 +26,17 @@ function mulberry32(seed: number) {
 
 const pick = <T,>(rnd: () => number, xs: readonly T[]): T => xs[Math.floor(rnd() * xs.length)]!
 
+// Deal `count` DISTINCT card indices (0..51) from a seeded shuffle — used to supply each
+// seat's holes + the board for the showdown step.
+function dealDistinct(rnd: () => number, count: number): number[] {
+  const deck = Array.from({ length: 52 }, (_, i) => i)
+  for (let i = 51; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1))
+    ;[deck[i], deck[j]] = [deck[j]!, deck[i]!]
+  }
+  return deck.slice(0, count)
+}
+
 type RulesReader = { read: { applyMove: (args: [viem.Hex, viem.Hex]) => Promise<viem.Hex> } }
 
 // Blinds are still owed iff preflop and the big blind hasn't opened the action yet
@@ -113,6 +124,9 @@ type WalkStats = {
   folds: number
   multiwayPots: number // states reached with ≥1 side pot
   reachedShowdown: number
+  settledStates: number // SHOWDOWN moves that reached SETTLED with TS<->Sol agreement
+  contestedShowdowns: number // multiway showdowns (≥2 live seats — evaluator actually ran)
+  rakedShowdowns: number // settled states with rakeAccrued > 0
   shortBlinds: number // POST_BLIND moves where the poster was all-in for less than the blind
   failure: string | null
 }
@@ -123,16 +137,49 @@ async function runWalk(rules: RulesReader, nSeats: number, seed: number, stats: 
   // are generated and the short-all-in-blind path is actually exercised. Floor is 1 (not the
   // old 20) so seats can be too poor to cover their blind; ceiling still reaches ~100.
   const stacks = Array.from({ length: nSeats }, () => 1n + BigInt(Math.floor(rnd() * 100)))
+  // Exercise rake parity on ~half the walks: a non-trivial bps with a cap that bites sometimes.
+  const withRake = seed % 2 === 0
   let s: HoldemState = initHoldem({
     nSeats,
     stacks,
     button: Math.floor(rnd() * nSeats),
     sb: 1n,
     bb: 2n,
+    rakeBps: withRake ? 500 : 0, // 5%
+    rakeCap: withRake ? 3n : 0n, // low cap so the cap path is hit on bigger pots
   })
   for (let step = 0; step < 40; step++) {
-    if (s.phase === Phase.SHOWDOWN || s.phase === Phase.SETTLED) {
+    if (s.phase === Phase.SETTLED) return
+    if (s.phase === Phase.SHOWDOWN) {
       stats.reachedShowdown++
+      // Resolve the showdown and assert TS<->Solidity agree on the final SETTLED state
+      // (balances vector + rakeAccrued, captured by the encoded-state keccak).
+      const liveSeats = s.folded.reduce((acc, f, i) => (f ? acc : [...acc, i]), [] as number[])
+      const need = nSeats * 2 + 5
+      const cards = dealDistinct(rnd, need)
+      const holes: number[][] = []
+      for (let i = 0; i < nSeats; i++) holes.push([cards[i * 2]!, cards[i * 2 + 1]!])
+      const board = cards.slice(nSeats * 2, nSeats * 2 + 5)
+      const move: Move = { kind: 'SHOWDOWN', holes, board }
+      const tsOut = applyMove(s, move)
+      if ('error' in tsOut) {
+        if (!stats.failure) stats.failure = `N=${nSeats} seed ${seed}: TS rejected SHOWDOWN: ${tsOut.error}`
+        return
+      }
+      let solBytes: viem.Hex
+      try {
+        solBytes = await rules.read.applyMove([encodeGameState(s), encodeMove(move)])
+      } catch (e) {
+        if (!stats.failure) stats.failure = `N=${nSeats} seed ${seed}: contract reverted on SHOWDOWN (TS accepted): ${(e as Error).message}`
+        return
+      }
+      if (viem.keccak256(solBytes) !== hashGameState(tsOut.state)) {
+        if (!stats.failure) stats.failure = `N=${nSeats} seed ${seed}: SHOWDOWN state hash diverged (balances/rake mismatch)`
+        return
+      }
+      stats.settledStates++
+      if (liveSeats.length >= 2) stats.contestedShowdowns++
+      if (tsOut.state.rakeAccrued > 0n) stats.rakedShowdowns++
       return
     }
     // The deal phases between streets are advanced by a DEAL_DONE; mix it into the walk.
@@ -208,6 +255,9 @@ describe('Holdem TS<->Solidity parity', () => {
       folds: 0,
       multiwayPots: 0,
       reachedShowdown: 0,
+      settledStates: 0,
+      contestedShowdowns: 0,
+      rakedShowdowns: 0,
       shortBlinds: 0,
       failure: null,
     }
@@ -226,6 +276,10 @@ describe('Holdem TS<->Solidity parity', () => {
     expect(stats.folds, 'no walk ever produced a fold').to.be.greaterThan(0)
     expect(stats.multiwayPots, 'no walk ever produced a side pot').to.be.greaterThan(0)
     expect(stats.reachedShowdown, 'no walk ever reached showdown').to.be.greaterThan(0)
+    // Task 7: the SHOWDOWN move resolved to a SETTLED state and TS<->Sol agreed on balances+rake.
+    expect(stats.settledStates, 'no walk ever settled a showdown (Task 7 unexercised)').to.be.greaterThan(0)
+    expect(stats.contestedShowdowns, 'no MULTIWAY showdown (evaluator never ran in parity)').to.be.greaterThan(0)
+    expect(stats.rakedShowdowns, 'no settled state ever accrued rake (rake parity unexercised)').to.be.greaterThan(0)
     // C1: the fuzz must actually exercise the short-all-in-blind path (poster stack < blind),
     // and TS+Solidity agreed on it above (accept/reject + post-move state hash).
     expect(stats.shortBlinds, 'no walk ever produced a short all-in blind (C1 path unexercised)').to.be.greaterThan(0)

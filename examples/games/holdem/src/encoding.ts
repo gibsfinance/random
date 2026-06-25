@@ -1,5 +1,6 @@
 import { encodeAbiParameters, keccak256, type Hex } from 'viem'
 import { Phase, type HoldemState, type Move } from './rules'
+import type { ChannelStateN } from './stateSigN'
 
 /// Convert an ascending eligible-seat list to the uint256 bitmask the contract uses (bit i
 /// set => seat i eligible), and back. The channel's SidePot already speaks the mask form, so
@@ -13,6 +14,29 @@ export function maskToEligible(mask: bigint, nSeats: number): number[] {
   const out: number[] = []
   for (let i = 0; i < nSeats; i++) if ((mask >> BigInt(i)) & 1n) out.push(i)
   return out
+}
+
+/// Bridge a SETTLED HoldemState into the channel's ChannelStateN settle state the on-chain
+/// HoldemTableN.settle verifies. The carry-forward: HoldemState's per-seat `stacks` become the
+/// channel `balances` vector; the showdown zeroed `pot`/`sidePots` (settle requires both empty);
+/// `rakeAccrued` carries the rake. `eligible:number[]` → `eligibleMask:bigint` is handled here
+/// for any residual side pots (none after a showdown — empty by construction). The conservation
+/// invariant Σ balances + pot(0) + Σ sidePots(0) + rakeAccrued == Σ escrow holds by construction.
+export function toChannelSettleState(
+  s: HoldemState,
+  args: { tableId: Hex; nonce: bigint; deckCommitment: Hex },
+): ChannelStateN {
+  return {
+    tableId: args.tableId,
+    nonce: args.nonce,
+    balances: [...s.stacks],
+    pot: s.pot,
+    sidePots: s.sidePots.map((p) => ({ amount: p.amount, eligibleMask: eligibleToMask(p.eligible) })),
+    rakeAccrued: s.rakeAccrued,
+    deckCommitment: args.deckCommitment,
+    phase: s.phase,
+    gameStateHash: hashGameState(s),
+  }
 }
 
 /// Canonical game-state tuple — order is consensus, mirrored field-for-field by
@@ -44,6 +68,7 @@ export const GAME_STATE_TUPLE = {
     { type: 'uint16' }, // rakeBps
     { type: 'uint256' }, // rakeCap
     { type: 'uint8' }, // stubWinner (0xff = none / -1)
+    { type: 'uint256' }, // rakeAccrued (Task 7; 0 until SETTLED)
   ],
 } as const
 
@@ -72,6 +97,7 @@ export function encodeGameState(s: HoldemState): Hex {
       s.rakeBps,
       s.rakeCap,
       u8(s.stubWinner),
+      s.rakeAccrued,
     ],
   ])
 }
@@ -89,6 +115,7 @@ export const MOVE_KIND = {
   BET: 4,
   RAISE: 5,
   DEAL_DONE: 6,
+  SHOWDOWN: 7,
 } as const
 
 export function encodeMove(m: Move): Hex {
@@ -105,6 +132,12 @@ export function encodeMove(m: Move): Hex {
         return encodeAbiParameters([{ type: 'uint8' }, { type: 'uint256' }], [m.seat, m.to])
       case 'DEAL_DONE':
         return encodeAbiParameters([{ type: 'uint8' }], [m.phase])
+      case 'SHOWDOWN':
+        // holes: per-seat [hole0, hole1] (uint8[2][]); board: 5 community indices (uint8[5]).
+        return encodeAbiParameters(
+          [{ type: 'uint8[2][]' }, { type: 'uint8[5]' }],
+          [m.holes.map((h) => [h[0]!, h[1]!]) as any, m.board as any],
+        )
     }
   })()
   return encodeAbiParameters([{ type: 'uint8' }, { type: 'bytes' }], [MOVE_KIND[m.kind], payload])
