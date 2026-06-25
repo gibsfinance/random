@@ -167,6 +167,11 @@ skip = [
   'test/foundry/SessionStateDigest.t.sol',
   'test/foundry/SettleWithSeeds.t.sol',
   'test/foundry/SettleWithProof.t.sol',
+  # Holdem suites pull in HoldemRules.sol, which needs viaIR:true (stack-too-deep
+  # under this profile's legacy pipeline). They run in the default profile.
+  'test/foundry/HoldemTableN.t.sol',
+  'test/foundry/HoldemTableNShowdown.t.sol',
+  'test/foundry/HoldemTableNInvariant.t.sol',
 ]
 
 [profile.zkverify.fuzz]
@@ -221,6 +226,11 @@ skip = [
   'test/foundry/SessionStateDigest.t.sol',
   'test/foundry/SettleWithSeeds.t.sol',
   'test/foundry/DiceSettleVerifier.t.sol',
+  # Holdem suites pull in HoldemRules.sol, which needs viaIR:true (stack-too-deep
+  # under the verifier's legacy pipeline); not part of the mode-2 integration.
+  'test/foundry/HoldemTableN.t.sol',
+  'test/foundry/HoldemTableNShowdown.t.sol',
+  'test/foundry/HoldemTableNInvariant.t.sol',
 ]
 
 [profile.zkm2.fuzz]
