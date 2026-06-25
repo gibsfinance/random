@@ -17,8 +17,9 @@ for (const c of candidates) {
 if (!binding) {
   throw new Error(
     `@gibs/pow-grinder: no native addon for ${platform}-${arch}. ` +
-      `Build it: cargo build --release --features napi (in examples/games/pow-grinder). ` +
-      `Last error: ${lastErr && lastErr.message}`,
+      `The published package ships the portable WASM engine, not a native prebuild — ` +
+      `import '@gibs/pow-grinder/wasm' for the cross-platform stamp (or build a native addon ` +
+      `with 'npm run build:native'). Last error: ${lastErr && lastErr.message}`,
   )
 }
 
