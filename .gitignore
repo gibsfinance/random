@@ -34,6 +34,9 @@ packages/contracts/forge-out/
 packages/contracts/forge-cache/
 packages/contracts/forge-out-zk/
 packages/contracts/forge-cache-zk/
+packages/contracts/forge-out-zkverify/
+packages/contracts/forge-cache-zkverify/
+packages/contracts/forge-out-verifieronly/
 
 # games parity-gate per-chain deployment cache
 examples/games/e2e/scripts/.gate-deployments.json
