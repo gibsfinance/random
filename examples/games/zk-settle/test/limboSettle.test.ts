@@ -126,6 +126,110 @@ describe('limbo PRIVACY settle (Task 5): hidden amounts + conservation', () => {
     expect(await verify(c, proof, publicInputs)).toBe(true)
   }, 180_000)
 
+  // -------------------------------------------------------------------------
+  // Task-5 review fix: limbo win-payout overflow.
+  //
+  // The win payout is `stake * targetX100 / 100`. In u64 the intermediate
+  // `stake * targetX100` can reach 1e15 * 99_000_000 == 9.9e22, exceeding u64
+  // max (1.844e19). The canonical bigint `limbo.settleRound` computes this at
+  // arbitrary precision, so for an IN-RANGE witness (stake <= MAX_AMOUNT,
+  // targetX100 <= LIMBO_MAX_TARGET) the OLD circuit aborted the proof with an
+  // opaque "attempt to multiply with overflow" instead of computing the payout
+  // and letting the conservation/cap asserts decide. The fix widens the multiply
+  // to u128 (overflow-proof) and narrows back under an explicit guard.
+  //
+  // Vectors (target 9900 == 99.00x): WIN at server 0x..01, client 0x..09.
+  // -------------------------------------------------------------------------
+  describe('Task-5 review fix: high-stake win payout (u128-wide multiply, parity with limbo.settleRound)', () => {
+    const HIGH_TARGET = 9900n // 99.00x
+    const HIGH_WIN = { serverSeed: b32(1n), clientSeed: b32(9n) }
+    const MAX_AMOUNT = 1_000_000_000_000_000n // mirror the circuit cap
+
+    it('a legitimate HIGH-STAKE win (wide product 9.9e16) proves+verifies; payout == limbo.settleRound', async () => {
+      // stake 1e13 at 99x => payout 9.9e14 (<= MAX_AMOUNT), product stake*target
+      // == 9.9e16 exercises the WIDE multiply path (well past dice's small range).
+      const stake = 10_000_000_000_000n // 1e13
+      const outcome = limboOutcome(HIGH_WIN.serverSeed, HIGH_WIN.clientSeed, HIGH_TARGET, stake)
+      expect(outcome.win).toBe(true)
+      // PARITY: the canonical bigint payout the circuit must reproduce exactly.
+      const canonicalPayout = (stake * HIGH_TARGET) / 100n
+      expect(outcome.playerDelta).toBe(canonicalPayout - stake)
+      expect(canonicalPayout).toBe(990_000_000_000_000n)
+      expect(canonicalPayout).toBeLessThanOrEqual(MAX_AMOUNT)
+
+      // Conserving balances: house must cover the +delta; all amounts <= MAX_AMOUNT.
+      const openHouse = MAX_AMOUNT
+      const openPlayer = 0n
+      const amounts: LimboSettleAmounts = {
+        stake,
+        openBalancePlayer: openPlayer,
+        openBalanceHouse: openHouse,
+        finalBalancePlayer: openPlayer + outcome.playerDelta,
+        finalBalanceHouse: openHouse - outcome.playerDelta,
+      }
+      // pot conserved + all in range
+      expect(amounts.finalBalancePlayer + amounts.finalBalanceHouse).toBe(
+        amounts.openBalancePlayer + amounts.openBalanceHouse,
+      )
+      for (const v of Object.values(amounts)) expect(v).toBeLessThanOrEqual(MAX_AMOUNT)
+
+      const witness: LimboSettleWitness = {
+        serverSeed: HIGH_WIN.serverSeed,
+        clientSeed: HIGH_WIN.clientSeed,
+        targetX100: HIGH_TARGET,
+        amounts,
+        blindings: BLINDINGS,
+      }
+      const { proof, publicInputs } = await prove(c, limboSettleInputs(witness))
+
+      // commitments match the TS-built ones (the proven payout is consistent with
+      // the committed final balances == the canonical limbo.settleRound result).
+      const commits = await limboSettleCommitments(amounts, BLINDINGS)
+      const expectedCommitInputs = commitmentsToPublicInputs(commits)
+      const tail = publicInputs.slice(publicInputs.length - 10)
+      expect(tail.map((h) => BigInt(h))).toEqual(expectedCommitInputs.map((h) => BigInt(h)))
+
+      expect(await verify(c, proof, publicInputs)).toBe(true)
+    }, 180_000)
+
+    it('an in-range win whose stake*target overflows u64 is rejected by a MEANINGFUL assert (not a u64-multiply abort)', async () => {
+      // stake == MAX_AMOUNT at target 19000 (190.00x): product 1.9e19 > u64 max.
+      // The OLD arithmetic aborted with "attempt to multiply with overflow"; with
+      // the u128-wide multiply the payout (1.9e17) is computed and then rejected
+      // because it cannot be conserved (it exceeds u64 / the MAX_AMOUNT-bounded
+      // balances). Whichever assert bites, the message must NOT be the opaque
+      // arithmetic overflow.
+      const OVF_WIN = { serverSeed: b32(1n), clientSeed: b32(59n) }
+      const stake = MAX_AMOUNT
+      const outcome = limboOutcome(OVF_WIN.serverSeed, OVF_WIN.clientSeed, 19_000n, stake)
+      expect(outcome.win).toBe(true)
+      expect(stake * 19_000n).toBeGreaterThan((1n << 64n) - 1n) // overflows u64
+
+      // valid u64 balances (each <= MAX_AMOUNT); they cannot conserve a 1.9e17 payout.
+      const amounts: LimboSettleAmounts = {
+        stake,
+        openBalancePlayer: MAX_AMOUNT,
+        openBalanceHouse: MAX_AMOUNT,
+        finalBalancePlayer: MAX_AMOUNT,
+        finalBalanceHouse: MAX_AMOUNT,
+      }
+      const witness: LimboSettleWitness = {
+        serverSeed: OVF_WIN.serverSeed,
+        clientSeed: OVF_WIN.clientSeed,
+        targetX100: 19_000n,
+        amounts,
+        blindings: BLINDINGS,
+      }
+      await expect(prove(c, limboSettleInputs(witness))).rejects.toThrow(
+        /payout exceeds u64|conservation/,
+      )
+      // and specifically NOT the opaque arithmetic overflow the old circuit hit:
+      await prove(c, limboSettleInputs(witness)).catch((e: unknown) => {
+        expect(String((e as Error)?.message)).not.toMatch(/multiply with overflow/)
+      })
+    }, 180_000)
+  })
+
   describe('soundness: forged witnesses FAIL to prove', () => {
     it('wrong finalBalancePlayer (not openP + delta) fails — conservation bites', async () => {
       const amounts = conservedAmounts(WIN.serverSeed, WIN.clientSeed)

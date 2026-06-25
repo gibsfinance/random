@@ -256,3 +256,53 @@ Task-2 abiEncode reference are reused unchanged.
   player could cover the stake (no underflow). The win arm's `payout >= stake` holds for all valid
   limbo targets (`targetX100 >= 100`) and is asserted for safety.
 ```
+
+---
+
+## Task-5 review fix: limbo payout overflow
+
+**Finding (Important).** The limbo win payout was computed as `payout = stake * targetX100 / 100`
+in **u64**. With in-range witnesses (`stake <= MAX_AMOUNT == 1e15`, `targetX100 <= LIMBO_MAX_TARGET
+== 99_000_000`) the intermediate `stake * targetX100` reaches ~9.9e22, which exceeds **u64 max
+(1.844e19)**. Noir range-constrains the u64 multiply, so this is NOT a soundness/steal hole (it can
+never wrap to a false proof) — but for an in-range *winning* witness whose product overflows, the
+OLD circuit aborted the proof with an opaque **"attempt to multiply with overflow"** instead of
+computing the payout and letting the conservation/cap asserts decide. That is a DoS / divergence
+from the canonical bigint `limbo.ts` (whose `(stake * targetX100) / 100` is arbitrary-precision).
+Dice is unaffected: its multiplier ceiling (~9900) keeps the product < u64 max.
+
+**Honest scope note (verified arithmetically).** A *conserving* win can never overflow: conservation
+bounds `payout <= ~2 * MAX_AMOUNT == 2e15`, hence `product = payout * 100 <= ~2e17 << u64 max`
+(92x margin). So the literal "high-stake win that conserves yet overflows" cannot exist given the
+range asserts — the overflow region is only reachable by NON-conserving witnesses. The real,
+demonstrable defect is therefore the **opaque multiply-abort vs. meaningful rejection** divergence
+for in-range winning witnesses, captured as a RED below.
+
+**Fix (surgical — payout arithmetic only).** Widen the win-payout multiply into **u128** (max
+~3.4e38, ample for 9.9e22), floor-divide by 100 there (native integer division, EXACT same op-order
+as `limbo.settleRound`), then narrow back to u64 under an explicit guard
+`assert(wide <= U64_MAX_AS_U128, "limbo: payout exceeds u64 (non-conserving)")` so the narrowing can
+never silently truncate (which could otherwise let a wrapped payout slip past conservation). Every
+conserving win's payout is `<= ~2e15 << u64 max`, so it always fits and proves; the seed bind, the
+`% 1e6` reduction, the case-split conservation, and the Pedersen commitments are UNCHANGED.
+
+**RED captured (old arithmetic).** In-range WIN witness `serverSeed = 0x..01`, `clientSeed = 0x..3b`
+(59), `targetX100 = 19000`, `stake = MAX_AMOUNT (1e15)` -> canonical `limbo.settleRound` wins
+(`product 1.9e19 > u64 max`); the OLD circuit aborted with `Circuit execution failed: attempt to
+multiply with overflow`. After the fix the same witness is rejected by a MEANINGFUL assert
+(`payout exceeds u64 (non-conserving)` / conservation), never the arithmetic overflow.
+
+**GREEN high-stake-win vector (proves + parity).** `serverSeed = 0x..01`, `clientSeed = 0x..09`,
+`targetX100 = 9900 (99.00x)`, `stake = 1e13` -> WIN, `playerDelta = +9.8e14`,
+`payout = (1e13 * 9900) / 100 == 9.9e14 (<= MAX_AMOUNT)`, wide product `9.9e16` (exercises the
+u128 path). The in-circuit payout equals `limbo.settleRound`'s bigint payout exactly (asserted in
+the test), the conserved balances (openP 0 / openH 1e15 -> finalP 9.8e14 / finalH 2e13) conserve the
+pot, and the proof PROVES + VERIFIES with commitments matching the TS-built ones.
+
+**Verify output.**
+```
+test/limboSettle.test.ts (7 tests) — all pass, incl:
+  - Task-5 review fix: a legitimate HIGH-STAKE win (wide product 9.9e16) proves+verifies; payout == limbo.settleRound
+  - Task-5 review fix: in-range overflow win rejected by a MEANINGFUL assert (not a u64-multiply abort)
+Full package suite: 7 test files, 43 tests passed (incl. settleE2E.test.ts limbo path), tsc --noEmit clean.
+```

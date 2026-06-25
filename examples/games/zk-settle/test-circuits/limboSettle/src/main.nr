@@ -37,6 +37,9 @@ global LIMBO_MIN_TARGET: u64 = 100; // 1.00x
 // 99 * 1_000_000 == 99_000_000 (990000.00x). Above this no roll can ever win.
 global LIMBO_MAX_TARGET: u64 = LIMBO_ONE_MINUS_EDGE_X100 * LIMBO_U_SPACE; // 99_000_000
 global MAX_AMOUNT: u64 = 1_000_000_000_000_000; // 1e15 wager/balance cap (Task 3)
+// u64 max as u128 (2^64 - 1) - the guard bound for narrowing the wide payout back
+// to u64 (Task-5 review fix). Every conserving win has payout << this.
+global U64_MAX_AS_U128: u128 = 18_446_744_073_709_551_615;
 
 // r % m on a 256-bit big-endian byte array, computed on the WIDE value (never a
 // single Field, which would wrap at ~254 bits). Horner in u64; max intermediate
@@ -114,7 +117,37 @@ fn main(
     let result_x100 = (LIMBO_ONE_MINUS_EDGE_X100 * LIMBO_U_SPACE) / (LIMBO_U_SPACE - u);
     let win = result_x100 >= targetX100;
     // payout on a win is stake * targetX100 / 100 (the chosen target multiplier).
-    let payout = if win { stake * targetX100 / HUNDREDTHS } else { 0 };
+    //
+    // OVERFLOW-SAFE multiply (Task-5 review fix): in u64 the intermediate
+    // `stake * targetX100` can reach stake_max * target_max == 1e15 * 99_000_000
+    // == 9.9e22, which EXCEEDS u64 max (1.844e19). The canonical bigint limbo.ts
+    // computes `(stake * targetX100) / 100` at arbitrary precision, so for an
+    // in-range witness (stake <= MAX_AMOUNT, targetX100 <= LIMBO_MAX_TARGET) the
+    // u64 product range-constraint aborts the proof with an opaque "multiply with
+    // overflow" instead of cleanly computing the payout and letting the
+    // conservation/cap asserts reject it. That is a DoS / divergence from the
+    // source (dice is unaffected: its multiplier ceiling keeps the product small).
+    //
+    // Widen the multiply into u128 (max ~3.4e38, ample for 9.9e22), floor-divide
+    // by 100 there (native integer division, EXACT same op-order as limbo.ts), then
+    // narrow back to u64. The narrowing `as u64` is itself range-constrained: a
+    // payout that truly exceeds u64 (only possible for a NON-conserving witness)
+    // is caught here or by the downstream MAX_AMOUNT-bounded conservation asserts,
+    // NOT by an arithmetic overflow. For every conserving win the payout is
+    // bounded by MAX_AMOUNT, so it always fits u64. The result equals
+    // limbo.settleRound's bigint payout for the SAME inputs (parity-asserted in test).
+    let payout = if win {
+        let wide: u128 = (stake as u128) * (targetX100 as u128) / (HUNDREDTHS as u128);
+        // Narrowing back to u64 must NOT silently truncate: a payout that exceeds
+        // u64 is only reachable for a NON-conserving witness (every conserving win
+        // has payout <= ~2*MAX_AMOUNT == 2e15 << u64 max). Guard the narrowing so
+        // such a case fails with a MEANINGFUL assert rather than a wrapped value
+        // that could slip past conservation (soundness). U64_MAX as u128:
+        assert(wide <= U64_MAX_AS_U128, "limbo: payout exceeds u64 (non-conserving)");
+        wide as u64
+    } else {
+        0
+    };
 
     // ----- conservation on the HIDDEN amounts -----
     // playerDelta is signed; handle win/loss as separate u64 updates so no
