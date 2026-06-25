@@ -1,3 +1,10 @@
 // @gibs/zk-settle — Track 2 ZK privacy (Noir) off-chain prove/verify.
-// Public API filled out in later tasks (Task 6). Task 0/1 only stand up the toolchain.
+// Public API filled out incrementally per task (final surface in Task 6).
 export const PACKAGE = '@gibs/zk-settle'
+
+export { compileCircuit, type Compiled } from './compile'
+export { prove, type Proof } from './prove'
+export { verify } from './verify'
+export { execute, type AbiValue } from './execute'
+export { roundRandomPreimage } from './abiEncode'
+export { GAME_DICE, GAME_LIMBO } from './gameId'
