@@ -3,6 +3,7 @@
     "moduleTypes": {
       "../../examples/games/zk-core/**": "cjs",
       "../../examples/games/hilo-war/**": "cjs",
+      "../../examples/games/holdem/**": "cjs",
       "../../examples/games/msgboard-games/**": "cjs",
       "../../examples/games/msgboard-settle/**": "cjs"
     }

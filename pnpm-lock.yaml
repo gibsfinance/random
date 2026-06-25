@@ -111,6 +111,28 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.20)
 
+  examples/games/holdem:
+    dependencies:
+      '@gibs/zk-cards-core':
+        specifier: workspace:*
+        version: link:../zk-core
+      '@noble/curves':
+        specifier: ^1.6.0
+        version: 1.9.7
+      viem:
+        specifier: ^2.25.0
+        version: 2.52.2(typescript@5.8.3)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.20
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.20)
+
   examples/games/house-service:
     dependencies:
       '@gibs/msgboard-games':
@@ -397,6 +419,9 @@ importers:
       '@gibs/hilo-war':
         specifier: workspace:*
         version: link:../../examples/games/hilo-war
+      '@gibs/holdem':
+        specifier: workspace:*
+        version: link:../../examples/games/holdem
       '@gibs/msgboard-games':
         specifier: workspace:*
         version: link:../../examples/games/msgboard-games
