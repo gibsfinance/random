@@ -244,6 +244,19 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      // Task 6: 5-of-7 hand evaluator, Solidity mirror of @gibs/holdem handEval.ts. Shanghai
+      // + viaIR like its ZkTable siblings (the 21-combo scan needs viaIR to avoid stack-too-deep).
+      'contracts/zk/HoldemHandEval.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
       // Test-only reentrancy probe in the ZkTable family — Shanghai like its siblings.
       'contracts/test/ReenteringReceiver.sol': {
         version: '0.8.25',
