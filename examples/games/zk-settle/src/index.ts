@@ -30,6 +30,16 @@ export {
   type LimboSettleCommitments,
 } from './limboSettle'
 
+// M2 (Track-2, Milestone 2) — the ON-CHAIN dice settle witness builder. The
+// circuit/proof feed the generated Solidity UltraHonk verifier (mode-2 settle).
+export {
+  diceOnchainPayout,
+  diceOnchainPublics,
+  diceOnchainInputs,
+  type DiceOnchainRound,
+  type DiceOnchainPublics,
+} from './diceSettleOnchain'
+
 // Task 6 — the unified off-chain M1 E2E settle API (dice + limbo).
 export {
   proveSettle,

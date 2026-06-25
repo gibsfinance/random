@@ -7,6 +7,16 @@ import {Ownable} from "solady/src/auth/Ownable.sol";
 import {SessionState, SessionStateLib, SessionStateEIP712} from "./SessionState.sol";
 import {GamePayouts} from "./GamePayouts.sol";
 
+/// On-chain UltraHonk verifier interface (mode-2 ZK settle). The generated
+/// `HonkVerifier` (contracts/zk/generated/DiceSettleHonkVerifier.sol) implements
+/// this. Kept as a minimal interface so HouseChannel does not pull the ~99 KiB
+/// verifier into its own compilation unit — the deployer wires a verifier address
+/// at construction. `verify` reverts on a malformed/invalid proof and otherwise
+/// returns true.
+interface IHonkVerifier {
+    function verify(bytes calldata proof, bytes32[] calldata publicInputs) external view returns (bool);
+}
+
 /// House-signed authorization for a single escrowed table open (spec 4.3 / 6.2). The player
 /// presents this with the house's signature; the contract reserves escrowHouse from the pool.
 struct OpenTerms {
@@ -64,6 +74,9 @@ contract HouseChannel is SessionStateEIP712, Ownable {
     error ClockNotExpired();
     error BadReveal();
     error BadParams();
+    error NoVerifier();
+    error BadProof();
+    error PayoutExceedsPot();
 
     enum Status { None, Live, Disputed, Settled }
 
@@ -93,11 +106,19 @@ contract HouseChannel is SessionStateEIP712, Ownable {
     uint256 public housePool;
     mapping(bytes32 tableId => Table) public tables;
 
+    /// ZK mode-2 verifier per gameId (1 dice, 2 limbo). Set by the owner after the
+    /// generated UltraHonk verifier is deployed. settleWithProof(gameId) reverts
+    /// with NoVerifier if none is wired, so mode-2 is opt-in per game and never
+    /// blocks the co-sign (mode 0) / recompute (mode 1) paths.
+    mapping(uint8 gameId => address) public proofVerifier;
+
     event HouseFunded(uint256 amount);
     event HouseWithdrawn(uint256 amount);
     event HouseKeySet(address indexed key);
     event Opened(bytes32 indexed tableId, address indexed player, address playerKey, uint8 gameId, uint256 escrowPlayer, uint256 escrowHouse);
     event Settled(bytes32 indexed tableId, uint256 payoutPlayer, uint256 payoutHouse);
+    event ProofVerifierSet(uint8 indexed gameId, address verifier);
+    event SettledWithProof(bytes32 indexed tableId, uint256 payoutPlayer, uint256 payoutHouse);
     event DisputeOpened(bytes32 indexed tableId, uint8 disputant, uint64 nonce, uint64 deadline);
     event DisputeAnsweredWithState(bytes32 indexed tableId, uint64 nonce);
     event DisputeForfeited(bytes32 indexed tableId, uint256 payoutPlayer, uint256 payoutHouse);
@@ -110,6 +131,12 @@ contract HouseChannel is SessionStateEIP712, Ownable {
     function setHouseKey(address key) external onlyOwner {
         houseKey = key;
         emit HouseKeySet(key);
+    }
+
+    /// Wire the generated UltraHonk verifier for a game's mode-2 ZK settle.
+    function setProofVerifier(uint8 gameId, address verifier) external onlyOwner {
+        proofVerifier[gameId] = verifier;
+        emit ProofVerifierSet(gameId, verifier);
     }
 
     function fundHouse(uint256 amount) external onlyOwner {
@@ -203,6 +230,80 @@ contract HouseChannel is SessionStateEIP712, Ownable {
             GamePayouts.settle(t.gameId, r, params, t.escrowPlayer, t.escrowHouse);
 
         _payout(t, tableId, balancePlayer, balanceHouse);
+    }
+
+    /// Permissionless ZK (mode-2) settle: anyone submits an UltraHonk proof that the round was honest,
+    /// WITHOUT revealing the seeds on-chain. Unlike settleWithSeeds (mode 1) — which publishes both
+    /// serverSeed and clientSeed in calldata — the seeds stay PRIVATE witnesses inside the proof; only
+    /// their house-signed commits (rngCommit, clientSeedCommit, fixed at open) are public. The proof
+    /// attests, in zero knowledge, that:
+    ///   keccak256(serverSeed) == rngCommit, keccak256(clientSeed) == clientSeedCommit (nonce 1),
+    ///   r = uint256(keccak256(abi.encode(serverSeed, clientSeed, 1))), and
+    ///   payoutPlayer == the EXACT GamePayouts dice math for (r, targetX100, escrowPlayer).
+    /// The contract recomputes the conserved house share (pot - payoutPlayer) and settles.
+    ///
+    /// BINDING (how a proof is tied to THIS table so it cannot be replayed across channels/rounds):
+    ///   The 68 public inputs the contract feeds the verifier are reconstructed from the TABLE's own
+    ///   stored state — t.rngCommit, t.clientSeedCommit (the house-signed commits bound at open),
+    ///   t.escrowPlayer, t.escrowHouse — NOT from caller input. A proof generated against a different
+    ///   table has different commit bytes, so the verifier's Fiat-Shamir transcript differs and verify
+    ///   fails. `params` is bound to t.paramsHash (the house-signed bet), and targetX100 is decoded from
+    ///   it into the public inputs, so the bet cannot be swapped post-hoc. The nonce is hardcoded 1 in
+    ///   the circuit (single-draw), same soundness rule as settleWithSeeds: a grindable nonce is unsound.
+    ///   Only `payoutPlayer` comes from the caller, and it is itself a bound public input — a wrong value
+    ///   makes the proof fail to verify. Result: the proof authorizes settling exactly this table's
+    ///   escrow to exactly the proven split.
+    ///
+    /// Public-input order MUST match the circuit's `pub` parameter order
+    /// (examples/games/zk-settle/test-circuits/diceSettleOnchain): rngCommit[32 bytes as 32 fields] ‖
+    /// clientSeedCommit[32 fields] ‖ targetX100 ‖ escrowPlayer ‖ escrowHouse ‖ payoutPlayer = 68 fields.
+    function settleWithProof(
+        bytes32 tableId,
+        bytes calldata params,
+        uint256 payoutPlayer,
+        bytes calldata proof
+    ) external {
+        Table storage t = tables[tableId];
+        if (t.status != Status.Live) revert BadStatus();
+        if (keccak256(params) != t.paramsHash) revert BadParams();
+
+        address verifier = proofVerifier[t.gameId];
+        if (verifier == address(0)) revert NoVerifier();
+
+        uint256 pot = t.escrowPlayer + t.escrowHouse;
+        if (payoutPlayer > pot) revert PayoutExceedsPot();
+
+        uint256 targetX100 = abi.decode(params, (uint256));
+        bytes32[] memory publicInputs =
+            _buildPublicInputs(t.rngCommit, t.clientSeedCommit, targetX100, t.escrowPlayer, t.escrowHouse, payoutPlayer);
+
+        // verify() reverts on a malformed/invalid proof (bb behaviour); also reject a clean `false`.
+        if (!IHonkVerifier(verifier).verify(proof, publicInputs)) revert BadProof();
+
+        emit SettledWithProof(tableId, payoutPlayer, pot - payoutPlayer);
+        _payout(t, tableId, payoutPlayer, pot - payoutPlayer);
+    }
+
+    /// Reconstruct the 68-element UltraHonk public-input vector for the dice on-chain settle circuit.
+    /// Each byte of the two 32-byte commits becomes one zero-padded bytes32 field (the `[u8; 32]` Noir
+    /// shape); the four scalars follow as plain big-endian fields. Order is consensus with the circuit.
+    function _buildPublicInputs(
+        bytes32 rngCommit,
+        bytes32 clientSeedCommit,
+        uint256 targetX100,
+        uint256 escrowPlayer,
+        uint256 escrowHouse,
+        uint256 payoutPlayer
+    ) internal pure returns (bytes32[] memory pi) {
+        pi = new bytes32[](68);
+        for (uint256 i = 0; i < 32; i++) {
+            pi[i] = bytes32(uint256(uint8(rngCommit[i])));
+            pi[32 + i] = bytes32(uint256(uint8(clientSeedCommit[i])));
+        }
+        pi[64] = bytes32(targetX100);
+        pi[65] = bytes32(escrowPlayer);
+        pi[66] = bytes32(escrowHouse);
+        pi[67] = bytes32(payoutPlayer);
     }
 
     /// Post your latest both-signed state and start the chess clock. Because Plan-1 open()
