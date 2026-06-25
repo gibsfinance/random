@@ -1,0 +1,262 @@
+import { expect } from 'chai'
+import hre from 'hardhat'
+import * as viem from 'viem'
+import {
+  Phase,
+  initHoldem,
+  applyMove,
+  encodeGameState,
+  encodeMove,
+  hashGameState,
+  whoseTurn,
+  type HoldemState,
+  type Move,
+} from '@gibs/holdem'
+
+// Deterministic PRNG so every walk is reproducible from its seed alone.
+function mulberry32(seed: number) {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+const pick = <T,>(rnd: () => number, xs: readonly T[]): T => xs[Math.floor(rnd() * xs.length)]!
+
+type RulesReader = { read: { applyMove: (args: [viem.Hex, viem.Hex]) => Promise<viem.Hex> } }
+
+// Blinds are still owed iff preflop and the big blind hasn't opened the action yet
+// (currentBet only rises to the big blind once the BB posts).
+function blindsDue(s: HoldemState): boolean {
+  return s.phase === Phase.BET_PREFLOP && s.currentBet < s.bigBlind
+}
+
+// A legal move for the current state (best-effort; some may still be incomplete-raise rejects,
+// which is fine — TS+Solidity must agree on the rejection).
+function genLegalMove(rnd: () => number, s: HoldemState): Move {
+  // blinds first: SB (no committed yet) then BB.
+  if (blindsDue(s)) {
+    const sbDone = s.committed.some((c) => c > 0n)
+    return { kind: 'POST_BLIND', seat: s.toAct, amount: sbDone ? s.bigBlind : s.smallBlind }
+  }
+  const seat = s.toAct
+  const toCall = s.currentBet - s.committed[seat]!
+  const stack = s.stacks[seat]!
+  const r = rnd()
+  if (toCall === 0n) {
+    // Bias toward CHECK so hands frequently advance through the flop/turn/river streets
+    // (the coverage assertions require BET_FLOP/BET_TURN/BET_RIVER all be reached). Still
+    // bet/fold often enough to exercise aggression, all-ins and side pots.
+    if (r < 0.72) return { kind: 'CHECK', seat }
+    if (r < 0.76) return { kind: 'FOLD', seat }
+    // BET: a legal bet is to >= currentBet + minRaise (here currentBet=0 -> >= minRaise),
+    // capped at stack (all-in below min is allowed).
+    const minTo = s.currentBet + s.minRaise
+    const cap = s.committed[seat]! + stack
+    const to = minTo <= cap ? minTo + BigInt(Math.floor(rnd() * 3)) : cap
+    return { kind: 'BET', seat, to: to <= cap ? to : cap }
+  }
+  // facing a bet: CALL / FOLD / RAISE — bias toward CALL so the street closes and advances.
+  if (r < 0.7) return { kind: 'CALL', seat }
+  if (r < 0.8) return { kind: 'FOLD', seat }
+  // RAISE to >= currentBet + minRaise, capped at all-in.
+  const minTo = s.currentBet + s.minRaise
+  const cap = s.committed[seat]! + stack
+  const to = minTo <= cap ? minTo + BigInt(Math.floor(rnd() * 5)) : cap
+  return { kind: 'RAISE', seat, to: to <= cap ? to : cap }
+}
+
+// A deliberately illegal move: out-of-turn, wrong blind, under-min-raise, check-facing-bet.
+function genIllegalMove(rnd: () => number, s: HoldemState): Move {
+  const seat = s.toAct
+  const other = (seat + 1 + Math.floor(rnd() * (s.nSeats - 1))) % s.nSeats
+  switch (Math.floor(rnd() * 5)) {
+    case 0:
+      // out of turn
+      return rnd() < 0.5 ? { kind: 'CALL', seat: other } : { kind: 'CHECK', seat: other }
+    case 1: {
+      // wrong blind amount (only meaningful at blind time)
+      if (blindsDue(s)) return { kind: 'POST_BLIND', seat: s.toAct, amount: s.smallBlind + 7n }
+      // else under-min-raise
+      const minTo = s.currentBet + s.minRaise
+      if (minTo > 1n) return { kind: 'RAISE', seat, to: minTo - 1n }
+      return { kind: 'RAISE', seat, to: s.currentBet }
+    }
+    case 2: {
+      // check facing a bet (or call nothing)
+      const toCall = s.currentBet - s.committed[seat]!
+      return toCall > 0n ? { kind: 'CHECK', seat } : { kind: 'CALL', seat }
+    }
+    case 3:
+      // raise not exceeding currentBet
+      return { kind: 'RAISE', seat, to: s.currentBet }
+    default:
+      // bet/raise larger than stack
+      return { kind: 'RAISE', seat, to: s.committed[seat]! + s.stacks[seat]! + 1000n }
+  }
+}
+
+function genMove(rnd: () => number, s: HoldemState): Move {
+  return rnd() < 0.18 ? genIllegalMove(rnd, s) : genLegalMove(rnd, s)
+}
+
+type WalkStats = {
+  acceptedPhase: Record<number, number>
+  allIns: number
+  folds: number
+  multiwayPots: number // states reached with ≥1 side pot
+  reachedShowdown: number
+  failure: string | null
+}
+
+async function runWalk(rules: RulesReader, nSeats: number, seed: number, stats: WalkStats): Promise<void> {
+  const rnd = mulberry32(seed)
+  const stack = 20n + BigInt(Math.floor(rnd() * 80))
+  let s: HoldemState = initHoldem({
+    nSeats,
+    stacks: Array.from({ length: nSeats }, () => stack),
+    button: Math.floor(rnd() * nSeats),
+    sb: 1n,
+    bb: 2n,
+  })
+  for (let step = 0; step < 40; step++) {
+    if (s.phase === Phase.SHOWDOWN || s.phase === Phase.SETTLED) {
+      stats.reachedShowdown++
+      return
+    }
+    // The deal phases between streets are advanced by a DEAL_DONE; mix it into the walk.
+    let move: Move
+    if (s.phase === Phase.DEAL_FLOP || s.phase === Phase.DEAL_TURN || s.phase === Phase.DEAL_RIVER) {
+      move = { kind: 'DEAL_DONE', phase: s.phase }
+    } else {
+      move = genMove(rnd, s)
+    }
+    const tsOut = applyMove(s, move)
+    let solOk = true
+    let solBytes: viem.Hex | undefined
+    try {
+      solBytes = await rules.read.applyMove([encodeGameState(s), encodeMove(move)])
+    } catch {
+      solOk = false
+    }
+    const fail = (msg: string) => {
+      if (!stats.failure) stats.failure = msg
+    }
+    if ('error' in tsOut) {
+      if (solOk) {
+        fail(`N=${nSeats} seed ${seed} step ${step}: TS rejected (${tsOut.error}) but contract accepted ${move.kind}`)
+        return
+      }
+      // both rejected: stay on the same state and try another move next step.
+      continue
+    }
+    if (!solOk) {
+      fail(`N=${nSeats} seed ${seed} step ${step}: contract rejected legal ${move.kind} (TS accepted)`)
+      return
+    }
+    if (viem.keccak256(solBytes!) !== hashGameState(tsOut.state)) {
+      fail(`N=${nSeats} seed ${seed} step ${step}: state hash diverged after ${move.kind}`)
+      return
+    }
+    s = tsOut.state
+    stats.acceptedPhase[s.phase] = (stats.acceptedPhase[s.phase] ?? 0) + 1
+    if (s.allIn.some((a) => a)) stats.allIns++
+    if (s.folded.some((f) => f)) stats.folds++
+    if (s.sidePots.length > 0) stats.multiwayPots++
+  }
+}
+
+describe('Holdem TS<->Solidity parity', () => {
+  // The full state is a ~1.5KB dynamic struct whose ABI-decode costs ~1.5M gas per call, so
+  // every walk step is an expensive eth_call against the in-process EDR node. 180 independent
+  // seeded walks (across N∈{2,3,6}) already drive every interior phase, multiple all-ins, folds
+  // and multi-way side pots — the coverage assertions below FAIL the test if depth is ever lost,
+  // so the count is sized for signal, not ceremony.
+  const WALKS = 180
+  it(`${180} seeded random walks agree on every betting transition (N in {2,3,6})`, async function () {
+    this.timeout(420_000)
+    const rules = (await hre.viem.deployContract('HoldemRules' as any, [])) as unknown as RulesReader
+    const stats: WalkStats = {
+      acceptedPhase: {},
+      allIns: 0,
+      folds: 0,
+      multiwayPots: 0,
+      reachedShowdown: 0,
+      failure: null,
+    }
+    const seatsFor = (seed: number) => [2, 3, 6][seed % 3]!
+    const BATCH = 30
+    for (let base = 1; base <= WALKS && !stats.failure; base += BATCH) {
+      const batch: Promise<void>[] = []
+      for (let seed = base; seed < base + BATCH && seed <= WALKS; seed++) {
+        batch.push(runWalk(rules, seatsFor(seed), seed, stats))
+      }
+      await Promise.all(batch)
+    }
+    expect(stats.failure, stats.failure ?? 'parity drift').to.equal(null)
+    // Coverage: the fuzz is worthless if it never reaches deep states. Prove depth.
+    expect(stats.allIns, 'no walk ever produced an all-in').to.be.greaterThan(0)
+    expect(stats.folds, 'no walk ever produced a fold').to.be.greaterThan(0)
+    expect(stats.multiwayPots, 'no walk ever produced a side pot').to.be.greaterThan(0)
+    expect(stats.reachedShowdown, 'no walk ever reached showdown').to.be.greaterThan(0)
+    // Every interior betting street reached by an accepted transition at least once.
+    for (const p of [Phase.BET_PREFLOP, Phase.BET_FLOP, Phase.BET_TURN, Phase.BET_RIVER, Phase.SHOWDOWN]) {
+      expect(stats.acceptedPhase[p] ?? 0, `phase ${p} never reached by an accepted transition`).to.be.greaterThan(0)
+    }
+  })
+
+  it('whoseTurn names exactly the seats that owe (spot states)', async () => {
+    const rules = await hre.viem.deployContract('HoldemRules' as any, [])
+    const turn = async (s: HoldemState) => rules.read.whoseTurn([encodeGameState(s)])
+    const apply = (s: HoldemState, m: Move): HoldemState => {
+      const r = applyMove(s, m)
+      if ('error' in r) throw new Error(r.error)
+      return r.state
+    }
+    // N=3, button 0: after blinds preflop, only UTG (seat 0) owes -> mask 0b001.
+    {
+      let s = initHoldem({ nSeats: 3, stacks: [100n, 100n, 100n], button: 0, sb: 1n, bb: 2n })
+      s = apply(s, { kind: 'POST_BLIND', seat: 1, amount: 1n })
+      s = apply(s, { kind: 'POST_BLIND', seat: 2, amount: 2n })
+      expect(s.toAct).to.equal(0)
+      expect(whoseTurn(s)).to.equal(1n)
+      expect(await turn(s)).to.equal(1n)
+    }
+    // After UTG calls, SB (seat 1) owes -> mask 0b010.
+    {
+      let s = initHoldem({ nSeats: 3, stacks: [100n, 100n, 100n], button: 0, sb: 1n, bb: 2n })
+      s = apply(s, { kind: 'POST_BLIND', seat: 1, amount: 1n })
+      s = apply(s, { kind: 'POST_BLIND', seat: 2, amount: 2n })
+      s = apply(s, { kind: 'CALL', seat: 0 })
+      expect(whoseTurn(s)).to.equal(2n)
+      expect(await turn(s)).to.equal(2n)
+    }
+    // A DEAL_FLOP state: every live seat owes board progress.
+    {
+      let s = initHoldem({ nSeats: 3, stacks: [100n, 100n, 100n], button: 0, sb: 1n, bb: 2n })
+      s = apply(s, { kind: 'POST_BLIND', seat: 1, amount: 1n })
+      s = apply(s, { kind: 'POST_BLIND', seat: 2, amount: 2n })
+      s = apply(s, { kind: 'FOLD', seat: 0 })
+      s = apply(s, { kind: 'CALL', seat: 1 })
+      s = apply(s, { kind: 'CHECK', seat: 2 })
+      expect(s.phase).to.equal(Phase.DEAL_FLOP)
+      // seats 1 & 2 live -> mask 0b110
+      expect(whoseTurn(s)).to.equal(6n)
+      expect(await turn(s)).to.equal(6n)
+    }
+    // SHOWDOWN (uncontested): nobody owes -> mask 0.
+    {
+      let s = initHoldem({ nSeats: 3, stacks: [100n, 100n, 100n], button: 0, sb: 1n, bb: 2n })
+      s = apply(s, { kind: 'POST_BLIND', seat: 1, amount: 1n })
+      s = apply(s, { kind: 'POST_BLIND', seat: 2, amount: 2n })
+      s = apply(s, { kind: 'FOLD', seat: 0 })
+      s = apply(s, { kind: 'FOLD', seat: 1 })
+      expect(s.phase).to.equal(Phase.SHOWDOWN)
+      expect(whoseTurn(s)).to.equal(0n)
+      expect(await turn(s)).to.equal(0n)
+    }
+  })
+})
