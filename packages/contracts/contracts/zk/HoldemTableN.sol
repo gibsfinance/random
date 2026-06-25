@@ -243,6 +243,11 @@ contract HoldemTableN is EIP712 {
         _seatOf(t, msg.sender);
         _checkCoSigned(t, tableId, state, sigs);
         if (t.hasCheckpoint && state.nonce < t.checkpointNonce) revert StaleNonce();
+        // Uniform rake ceiling across settle/timeout: the disputeState carried here is what
+        // resolveTimeout pays rake from, so bound it by rakeCap exactly as settle does (the
+        // full bps reconstruction is settle-only because a mid-hand disputeState may carry a
+        // non-zero pot). Without this an over-cap rakeAccrued could be paid out via timeout.
+        if (state.rakeAccrued > t.rakeCap) revert RakeTooHigh();
         if (t.rules.hashGameState(gameState) != state.gameStateHash) revert BadGameState();
         if (demandKind != DEMAND_MOVE && demandKind != DEMAND_SHARE) revert BadDemand();
         if (demandSeat >= t.seats.length) revert SeatRange();

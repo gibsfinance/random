@@ -192,6 +192,53 @@ contract HoldemTableNTest is Test {
         zk.respondWithState(tableId, s, sigs2); // nonce equal, but conservation checked first
     }
 
+    /// openDispute must enforce the SAME rake ceiling as settle: a conserving disputeState
+    /// whose rakeAccrued exceeds rakeCap is rejected (otherwise resolveTimeout could pay out
+    /// an over-cap rake). Mirrors settle's `rakeAccrued <= rakeCap` check.
+    function test_openDisputeRejectsOverCapRake() public {
+        uint256 n = 3;
+        uint256 buyIn = 100;
+        uint256 total = n * buyIn; // 300
+        uint256 rakeCap = 20; // tight cap
+        address a0 = vm.addr(_pk(0));
+        vm.deal(a0, buyIn);
+        vm.prank(a0);
+        // openDispute checks only the rakeCap ceiling (the bps reconstruction is settle-only),
+        // so the cap is the binding constraint here. rakeBps at the protocol max (250).
+        bytes32 tableId = zk.create{value: buyIn}(IGameRulesN(address(rules)), buyIn, n, 250, rakeCap, CLOCK, a0);
+        for (uint256 i = 1; i < n; i++) {
+            address ai = vm.addr(_pk(i));
+            vm.deal(ai, buyIn);
+            vm.prank(ai);
+            zk.join{value: buyIn}(tableId, ai);
+        }
+        vm.prank(a0);
+        zk.start(tableId);
+
+        // Conserving CONTESTED state, but rakeAccrued = 30 > rakeCap = 20.
+        // 80+80+60 + pot20 + rake30 = ... let's make it sum to 300: 70+70+50 + pot80 + rake30 = 300.
+        ChannelStateN memory s = _emptyState(tableId, n);
+        s.nonce = 1;
+        s.balances[0] = 70; s.balances[1] = 70; s.balances[2] = 50;
+        s.pot = 80;
+        s.rakeAccrued = 30; // > rakeCap (20)
+        s.phase = 5;
+        s.gameStateHash = keccak256("gs");
+        bytes[] memory sigs = _coSign(n, s);
+
+        vm.prank(a0);
+        vm.expectRevert(HoldemTableN.RakeTooHigh.selector);
+        zk.openDispute(tableId, s, sigs, "gs", 2, 1, 0);
+        assertEq(uint8(zk.status(tableId)), uint8(HoldemTableN.Status.Live), "dispute not opened");
+
+        // Sanity: at/under the cap (rake 20, pot 90) the same shape is accepted.
+        s.pot = 90; s.rakeAccrued = 20;
+        bytes[] memory sigs2 = _coSign(n, s);
+        vm.prank(a0);
+        zk.openDispute(tableId, s, sigs2, "gs", 2, 1, 0);
+        assertEq(uint8(zk.status(tableId)), uint8(HoldemTableN.Status.Disputed), "at-cap dispute opens");
+    }
+
     // ── per-seat dispute + forced fold ──────────────────────────────────────────
 
     /// A seat that does not respond in its window is force-folded: it keeps its balance,

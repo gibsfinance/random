@@ -121,6 +121,39 @@ export class ShareAttributionFault extends Error {
   }
 }
 
+/**
+ * Thrown when two DEALT slots reveal to the SAME card index — i.e. the dealt multiset is
+ * not collision-free. This is the v1 DECK WELL-FORMEDNESS gate (whole-branch review fix).
+ *
+ * The attested shuffle (`verifyShuffle` = signature + length only) proves ATTRIBUTION
+ * (who shuffled) but NOT that the deck is a valid PERMUTATION: a malicious shuffler can
+ * COPY one slot's ElGamal ciphertext `(c1,c2)` into another slot during its shuffle turn
+ * (two curve points, no plaintext knowledge needed). Both slots then decrypt to the same
+ * valid card, every per-slot reveal passes (no `RevealFault`), and the duplicate would be
+ * dealt silently — letting a cheater pair the board or a hole to steal pot equity.
+ *
+ * The cross-slot uniqueness check in `runDeal` catches this. The duplicate is attributable
+ * to the shuffle chain: the SHUFFLE posts on the transcript replay via `verifyShuffleChain`,
+ * so the offending shuffle round/seat that first injected the collision can be traced. We
+ * carry the colliding `slots` (sorted) and the duplicated `card` so a dispute can pinpoint
+ * the corruption without re-running crypto.
+ */
+export class DuplicateCardFault extends Error {
+  /** the duplicated card index that two slots both revealed to */
+  readonly card: number
+  /** the two (sorted) dealt slots that collided */
+  readonly slots: [number, number]
+  constructor(card: number, slots: [number, number]) {
+    super(
+      `deal: slots ${slots[0]} and ${slots[1]} both revealed card ${card} — deck is not a ` +
+        `valid permutation (a shuffler duplicated a ciphertext; trace via verifyShuffleChain)`,
+    )
+    this.name = 'DuplicateCardFault'
+    this.card = card
+    this.slots = slots
+  }
+}
+
 interface SeatRef {
   secret: Hex
   pub: Hex
@@ -195,6 +228,21 @@ async function verifyAttributed(
   throw new ShareAttributionFault(slot, shares[0]?.from ?? ('0x' as Hex))
 }
 
+/**
+ * Cross-slot WELL-FORMEDNESS check: assert no two dealt slots revealed the same card.
+ * Iterating in ascending slot order makes the reported colliding pair `[earlier, later]`
+ * deterministic (the earlier slot is the first occurrence the later one duplicates).
+ */
+function assertNoDuplicateCards(revealedBySlot: Map<number, number>): void {
+  const firstSlotForCard = new Map<number, number>()
+  for (const slot of [...revealedBySlot.keys()].sort((a, b) => a - b)) {
+    const card = revealedBySlot.get(slot)!
+    const prev = firstSlotForCard.get(card)
+    if (prev !== undefined) throw new DuplicateCardFault(card, [prev, slot])
+    firstSlotForCard.set(card, slot)
+  }
+}
+
 /** Apply the optional forge seam to a freshly-collected share set (test only). */
 async function maybeForge(
   shares: RevealShare[],
@@ -222,6 +270,11 @@ export async function runDeal(args: RunDealArgs): Promise<RunDealResult> {
     throw new Error(`runDeal: rounds length must be ${n} (one shuffle per seat), got ${rounds.length}`)
   const pubs = seats.map((s) => s.pub)
   let postCount = 0
+  // Cross-slot WELL-FORMEDNESS ledger: every DEALT slot's revealed card index, accumulated
+  // across ALL hole slots (every seat) AND every community slot. A valid permutation deals
+  // 2N+5 DISTINCT cards; a duplicate (a shuffler copying one slot's ciphertext into another)
+  // surfaces here as two slots mapping to the same card — see DuplicateCardFault.
+  const revealedBySlot = new Map<number, number>()
 
   // 1) Shuffle chain: one SHUFFLE post per seat. Each post carries the REAL per-round
   //    WireShuffle from runShuffleChain (verifiable shuffle record — M1 carry-forward),
@@ -252,7 +305,9 @@ export async function runDeal(args: RunDealArgs): Promise<RunDealResult> {
       const allForSlot: RevealShare[] = [...peerShares, { from: seats[s]!.pub, share: ownShare }]
       // verify-then-combine, with seat attribution on failure
       await verifyAttributed(provider, pubs, deck, slot, tableId, allForSlot)
-      holeCards[s]!.push(revealHole(provider, deck, slot, ownShare, peerShares))
+      const card = revealHole(provider, deck, slot, ownShare, peerShares)
+      revealedBySlot.set(slot, card)
+      holeCards[s]!.push(card)
     }
   }
 
@@ -272,8 +327,20 @@ export async function runDeal(args: RunDealArgs): Promise<RunDealResult> {
       postCount++
     }
     await verifyAttributed(provider, pubs, deck, slot, tableId, shares)
-    community.push(revealCommunity(provider, deck, slot, shares))
+    const card = revealCommunity(provider, deck, slot, shares)
+    revealedBySlot.set(slot, card)
+    community.push(card)
   }
+
+  // 4) WELL-FORMEDNESS gate (whole-branch review fix): the dealt multiset over ALL revealed
+  //    slots (holes across every seat + community) MUST be collision-free. This is the cheap
+  //    v1 substitute for the deferred SNARK shuffle proof: one honest shuffler hides ORDER
+  //    but does NOT prevent a single malicious shuffler from duplicating a ciphertext, so the
+  //    attested shuffle alone cannot guarantee a permutation. Running the check over the FULL
+  //    revealed set (not per-seat) catches a duplicate that spans a hole and a community slot,
+  //    or two seats' holes. A collision is attributable: the SHUFFLE posts on the transcript
+  //    replay via verifyShuffleChain, so the injecting round/seat can be traced.
+  assertNoDuplicateCards(revealedBySlot)
 
   return { holeCards, community, postCount }
 }

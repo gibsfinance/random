@@ -21,13 +21,32 @@ import type {
  *     shuffles+re-encrypts the freshly-masked initial deck, seat i shuffles seat
  *     i-1's output. Each step is one `provider.shuffle` — real ElGamal re-encryption
  *     plus a Fisher–Yates permutation, attested by that seat's wallet signature over
- *     keccak(before‖after). One honest shuffler ⇒ no single seat knows the order.
+ *     keccak(before‖after).
  *   - `verifyShuffleChain` replays the chain, checking each round's attest signature
  *     against the running "before" deck and the seat address at that position.
  *
- * v1 posture: the shuffle is ATTESTED (a signature), not zero-knowledge. Soundness
- * rests on "every shuffler would have to collude to know the order" (spec §12). The
- * `MaskedDeckProvider` seam is the drop-in point for the later SNARK shuffle prover.
+ * TRUST MODEL — TWO DISTINCT PROPERTIES (do not conflate; whole-branch review fix):
+ *
+ *   (a) ORDER SECRECY  — one HONEST shuffler suffices: because that seat re-encrypts and
+ *       permutes with secret randomness no other seat sees, no single seat (and no
+ *       coalition short of ALL shufflers) knows the final order. This is what the attested
+ *       shuffle chain buys (spec §12).
+ *
+ *   (b) DECK WELL-FORMEDNESS (the deck is a valid PERMUTATION — no duplicated/dropped
+ *       cards) — the attested shuffle does NOT prove this. `verifyShuffle` checks only the
+ *       signature and the deck LENGTH; it does NOT prove the output is a permutation of the
+ *       input. A single MALICIOUS shuffler among N-1 honest ones can copy one slot's
+ *       ElGamal ciphertext into another during its turn — both slots then decrypt to the
+ *       same card and every per-slot reveal still passes. ONE honest shuffler does NOT
+ *       protect against this. In v1 well-formedness is enforced SEPARATELY by a cross-slot
+ *       uniqueness check at deal time (`dealSeq.ts` `runDeal` → `DuplicateCardFault`), NOT
+ *       by the attested shuffle. See the spec note on the attested-shuffle limitation.
+ *
+ * v1 posture: the shuffle is ATTESTED (a signature), not zero-knowledge. ORDER SECRECY
+ * rests on "every shuffler would have to collude to know the order" (spec §12); DECK
+ * WELL-FORMEDNESS rests on the deal-time uniqueness check. The `MaskedDeckProvider` seam is
+ * the drop-in point for the later SNARK shuffle prover, which would prove BOTH at once and
+ * make the deal-time check redundant.
  */
 
 export interface SeatKeys {
@@ -73,6 +92,11 @@ export async function runShuffleChain(
 /**
  * Verify a shuffle chain: every round must verify against the deck that preceded it
  * and the seat address at that position. The round/signer counts must match exactly.
+ *
+ * NOTE: this attests ATTRIBUTION + length only — it does NOT prove each round is a valid
+ * permutation (a shuffler can duplicate a ciphertext and still pass). Deck WELL-FORMEDNESS
+ * is enforced separately by the deal-time uniqueness check (`runDeal` → `DuplicateCardFault`);
+ * this function is what that fault uses to TRACE a duplicate back to the offending round/seat.
  */
 export async function verifyShuffleChain(
   provider: MaskedDeckProvider,

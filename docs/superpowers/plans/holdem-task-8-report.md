@@ -222,3 +222,89 @@ npx tsc --noEmit -p tsconfig.json       # no HoldemSettleE2E.test.ts (:68/:105) 
 
 Whole-suite hardhat remains blocked by the **pre-existing** `stamper.ts` ESM loader issue
 (concern 2 above) — not in scope; the Task-8 e2e is run by file path in isolation, as before.
+
+---
+
+## Whole-branch review fix: deck well-formedness + trust-model framing
+
+**Finding (Important).** The attested N-party shuffle (`zk-core/src/attestedDeck.ts`
+`verifyShuffle` = signature + deck-length only) does NOT prove the deck is a valid
+PERMUTATION. A malicious shuffler can COPY one slot's ElGamal ciphertext `(c1,c2)` into
+another slot during its `shuffle` turn — just two curve points, no plaintext knowledge.
+Both slots then decrypt to the SAME valid card: every per-slot reveal passes
+(`unmaskWithShares` finds a real card → no `RevealFault`), `runDeal` did not dedup, and the
+evaluator treats a duplicate index as an ordinary pair. So a cheater could duplicate a
+community card or pair the board with a hole card to manufacture a winning hand and steal
+pot equity. Empirically reproduced: copying slot 0 → slot 5 yields both = card 0 with no
+fault.
+
+This is the documented v1 attested-shuffle limitation, but it is closable **cheaply in v1
+WITHOUT the deferred SNARK shuffle** — a deck well-formedness guard. The previous "one
+honest shuffler ⇒ unknown order" framing was misleading: one honest shuffler protects ORDER
+SECRECY but NOT deck WELL-FORMEDNESS (a single malicious shuffler among N-1 honest ones
+still injects a duplicate).
+
+### Fix 1 (core) — cross-slot uniqueness check in `runDeal`
+
+`holdem/src/dealSeq.ts`: `runDeal` now accumulates every DEALT slot's revealed card index
+into a `revealedBySlot` map (across ALL hole slots for every seat AND every community slot),
+and after the full dealt set is known calls `assertNoDuplicateCards`, which raises a new
+attributable **`DuplicateCardFault`** (`{ card, slots: [earlier, later] }`) if any two slots
+revealed the same card. The check runs over the FULL revealed multiset — not per-seat — so a
+duplicate that spans a hole↔community boundary (or two seats' holes) is caught.
+
+**Where it runs / why.** The check runs at **deal time**, at the end of `runDeal` — the
+soundest available point, because `runDeal` is the sequencer that legitimately learns the
+complete `2N+5` revealed set (every seat's holes + community) as it drives the deal. This is
+strictly cleaner than deferring to showdown: it catches a duplicated card the instant the
+deal completes, before any betting, and it needs no extra cross-seat hole disclosure beyond
+what the sequencer already combines. (In the live protocol the same sequencer role runs the
+deal; the duplicate is attributable — the SHUFFLE posts on the transcript replay via
+`verifyShuffleChain`, so the injecting shuffle round/seat can be traced.)
+
+### Fix 2 — re-scope the trust-model comments
+
+`holdem/src/deckN.ts`: the module + `verifyShuffleChain` doc comments now split the trust
+model into two DISTINCT properties and stop overclaiming:
+  - **(a) ORDER SECRECY** — one honest shuffler suffices (attested chain, spec §12).
+  - **(b) DECK WELL-FORMEDNESS** (no duplicates) — the attested shuffle does NOT prove this
+    (`verifyShuffle` checks signature + length only); enforced SEPARATELY in v1 by the
+    deal-time uniqueness check (`runDeal` → `DuplicateCardFault`). The `MaskedDeckProvider`
+    SNARK seam would later prove both at once and make the deal-time check redundant.
+
+### Fix 3 (cheap hardening) — uniform rake ceiling at `openDispute`
+
+`packages/contracts/contracts/zk/HoldemTableN.sol`: `openDispute` now enforces
+`state.rakeAccrued <= rakeCap` (mirroring settle's cap check), so the rake ceiling is uniform
+across settle/timeout — the `disputeState` carried into a dispute is exactly what
+`resolveTimeout` pays rake from, and without this an over-cap `rakeAccrued` could be paid out
+via the timeout path. (The full bps reconstruction stays settle-only, since a mid-hand
+disputeState may carry a non-zero pot.)
+
+### Tests (RED → GREEN)
+
+`holdem/test/dealSeq.test.ts`:
+  - **duplicate-injection** — copies slot 0's ciphertext into slot 5 (the review's repro;
+    slot 5 = seat 2's 2nd hole, N=3), asserts both slots individually reveal the SAME card
+    (the old silent duplicate), then asserts `runDeal` now throws `DuplicateCardFault` with
+    `card` and `slots: [0, 5]`. RED on old code (dealt silently, no fault), GREEN after.
+  - **no false positive** — a legitimate deck still deals `2N+5` DISTINCT cards, no fault.
+
+`packages/contracts/test/foundry/HoldemTableN.t.sol`:
+  - **`test_openDisputeRejectsOverCapRake`** — a conserving CONTESTED disputeState with
+    `rakeAccrued = 30 > rakeCap = 20` is rejected with `RakeTooHigh`; at/under the cap
+    (rake 20) the same shape opens the dispute. RED without the require (openDispute did not
+    revert), GREEN after.
+
+### Verify (review fixes)
+
+```
+pnpm --filter @gibs/holdem test                          # 9 files, 119 tests PASS (117 + 2 new)
+cd packages/contracts && forge test --match-contract HoldemTableN
+                                                         # 20 tests PASS (19 + 1 new)
+cd packages/contracts && npx hardhat test test/HoldemSettleE2E.test.ts
+                                                         # 4 passing (e2e green)
+```
+
+Stays within the attested v1 model — this is the cheap well-formedness guard, NOT the
+deferred SNARK shuffle.

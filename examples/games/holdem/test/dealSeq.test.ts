@@ -7,6 +7,7 @@ import { collectShares, revealCommunity, revealHole, ctxFor } from '../src/revea
 import {
   dealPlan,
   deckCommitment,
+  DuplicateCardFault,
   postStep,
   runDeal,
   ShareAttributionFault,
@@ -283,6 +284,79 @@ describe('bad share is caught with seat attribution', () => {
       slot: badSlot,
       seat: badPub,
     })
+  })
+})
+
+describe('duplicate-card injection (well-formedness, whole-branch review fix)', () => {
+  // The attested shuffle (signature + length only) does NOT prove the deck is a valid
+  // PERMUTATION. A malicious shuffler can COPY one slot's ElGamal ciphertext (c1,c2) into
+  // another slot during its shuffle turn — two curve points, no plaintext knowledge needed.
+  // Both slots then decrypt to the SAME valid card; every per-slot reveal passes (no
+  // RevealFault) and the deal silently deals a duplicate. We reproduce the review's
+  // slot 0 → slot 5 copy and assert it is now CAUGHT as an attributable fault.
+  it('copying one slot ciphertext into another (slot 0 → slot 5) is caught as an attributable DuplicateCardFault', async () => {
+    const { p, seats, agg, tableId, finalDeck } = await setupTable(3)
+    const board = fakeBoard(tableId)
+    const plan = dealPlan(3)
+
+    // Malicious shuffler duplicates slot 0 into slot 5 (both are DEALT slots: slot 0 is
+    // seat 0's first hole, slot 5 is seat 2's second hole, N=3 → holeSlots[2]=[2,5]).
+    // This spans a hole↔hole boundary across two different seats, so the duplicate can
+    // ONLY surface in a CROSS-SLOT uniqueness check over all revealed slots together.
+    const corrupt = [...finalDeck]
+    corrupt[5] = { ...finalDeck[0]! }
+
+    // Sanity: both slots individually reveal to the SAME valid card (no per-slot fault).
+    const idx0 = revealCommunity(
+      p,
+      corrupt,
+      0,
+      await collectShares(p, seats, corrupt, 0, tableId),
+    )
+    const idx5 = revealCommunity(
+      p,
+      corrupt,
+      5,
+      await collectShares(p, seats, corrupt, 5, tableId),
+    )
+    expect(idx0).toBe(idx5) // the silent duplicate the old code would have dealt
+
+    // The fix: runDeal asserts the multiset of revealed indices is collision-free and
+    // raises an attributable DuplicateCardFault naming the two colliding slots + card.
+    await expect(
+      runDeal({
+        provider: p,
+        seats,
+        agg,
+        tableId,
+        deck: corrupt,
+        plan,
+        board,
+        verifyAllShares: true,
+      }),
+    ).rejects.toMatchObject({
+      name: 'DuplicateCardFault',
+      card: idx0,
+      slots: [0, 5],
+    })
+  })
+
+  it('a legitimate deck deals 2N+5 DISTINCT cards and raises NO duplicate fault (no false positive)', async () => {
+    const { p, seats, agg, tableId, finalDeck } = await setupTable(3)
+    const board = fakeBoard(tableId)
+    const plan = dealPlan(3)
+    const result = await runDeal({
+      provider: p,
+      seats,
+      agg,
+      tableId,
+      deck: finalDeck,
+      plan,
+      board,
+      verifyAllShares: true,
+    })
+    const revealed = [...Object.values(result.holeCards).flat(), ...result.community]
+    expect(new Set(revealed).size).toBe(2 * 3 + 5)
   })
 })
 
