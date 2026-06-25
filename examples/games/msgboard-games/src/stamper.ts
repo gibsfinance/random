@@ -59,16 +59,44 @@ async function tryNative(): Promise<EngineStamp | null> {
   }
 }
 
+/**
+ * This module's own location as a `file://` URL — the base for resolving the committed wasm.
+ *
+ * IMPORTANT (do not "simplify" back to a bare `import.meta.url`): this file is consumed BOTH as an ES
+ * module (browser/Web Worker, vitest) AND transpiled to CommonJS by ts-node (the Hardhat suite in
+ * `packages/contracts`, via the `moduleTypes` override in its tsconfig). A *syntactic* `import.meta`
+ * token forces TypeScript/Node to treat the emitted file as ESM even under `module: commonjs`; the
+ * CJS emit still references `exports`, so it then blows up with `ReferenceError: exports is not defined
+ * in ES module scope` — which broke the whole-suite Hardhat run. So we read `import.meta.url` WITHOUT a
+ * syntactic `import.meta` (so the CJS emit stays pure CJS), and fall back to CJS's `__filename` when
+ * `import.meta` isn't available (i.e. when we really are running as CommonJS).
+ */
+function selfFileUrl(): string {
+  // ESM path: read `import.meta.url` without the syntactic token (so a CJS transpile of this file does
+  // not get force-detected as ESM). `eval` of a CJS module throws here → caught → CJS branch below.
+  try {
+    const metaUrl = (0, eval)('import.meta.url') as string | undefined
+    if (typeof metaUrl === 'string') return metaUrl
+  } catch {
+    /* not an ES module — fall through to the CommonJS form */
+  }
+  // CommonJS path (ts-node / Hardhat): the module-local `__filename` is the on-disk path of this module.
+  if (typeof __filename !== 'undefined') return `file://${__filename}`
+  // Last resort: resolve relative to the process cwd so the workspace-relative fallback still has a base.
+  return `file://${process.cwd()}/`
+}
+
 /** Locate `pow_grinder_bg.wasm` for Node: prefer the sibling of the resolved `@gibs/pow-grinder/wasm`
  *  JS module; fall back to the workspace-relative path. Returns a file:// URL `readFileSync` accepts. */
 async function wasmBytesUrl(): Promise<URL> {
+  const base = selfFileUrl()
   try {
     const { createRequire } = await import('node:module')
-    const require = createRequire(import.meta.url)
+    const require = createRequire(base)
     const jsPath = require.resolve('@gibs/pow-grinder/wasm') // .../pkg/pow_grinder.js
     return new URL('pow_grinder_bg.wasm', `file://${jsPath}`)
   } catch {
-    return new URL('../../pow-grinder/pkg/pow_grinder_bg.wasm', import.meta.url)
+    return new URL('../../pow-grinder/pkg/pow_grinder_bg.wasm', base)
   }
 }
 
