@@ -19,3 +19,13 @@ export {
   type DiceSettleWitness,
   type DiceSettleCommitments,
 } from './diceSettle'
+export {
+  limboOutcome,
+  limboSettleCommitments,
+  commitmentsToPublicInputs as limboCommitmentsToPublicInputs,
+  limboSettleInputs,
+  type LimboSettleAmounts,
+  type LimboSettleBlindings,
+  type LimboSettleWitness,
+  type LimboSettleCommitments,
+} from './limboSettle'
