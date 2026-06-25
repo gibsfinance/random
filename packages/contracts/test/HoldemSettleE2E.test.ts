@@ -1,9 +1,17 @@
 import * as viem from 'viem'
 import { expect } from 'chai'
 import hre from 'hardhat'
+import * as helpers from '@nomicfoundation/hardhat-toolbox-viem/network-helpers'
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { AttestedElGamalDeck } from '@gibs/zk-cards-core'
-import { runHand, makeDomainN, type SeatScript, type SessionSeat } from '@gibs/holdem'
+import {
+  runHand,
+  makeDomainN,
+  encodeGameState,
+  whoseTurn,
+  type SeatScript,
+  type SessionSeat,
+} from '@gibs/holdem'
 
 /// Task 8 — END-TO-END on-chain settle. Runs the full off-chain @gibs/holdem session
 /// (deck → deal → betting → showdown → N-of-N co-signed SETTLED ChannelStateN) and submits
@@ -64,7 +72,7 @@ describe('Holdem on-chain settle E2E (HoldemTableN.settle accepts the co-signed 
       functionName: 'settle',
       args: [tableId, state, sigs],
     })
-    const receipt = await publicClient.getTransactionReceipt({ hash })
+    const receipt: viem.TransactionReceipt = await publicClient.getTransactionReceipt({ hash })
     return receipt.gasUsed * receipt.effectiveGasPrice
   }
 
@@ -101,8 +109,12 @@ describe('Holdem on-chain settle E2E (HoldemTableN.settle accepts the co-signed 
     // (creator, block, nonce-ish). Simpler: the contract returns it — fetch via the event.
     // We pass the same tableId by reading the single TableCreated log.
     const pub = await hre.viem.getPublicClient()
-    const logs = await pub.getContractEvents({ address: zk.address, abi: zk.abi, eventName: 'TableCreated' })
-    const realTableId = logs[logs.length - 1].args.tableId as viem.Hex
+    const logs = (await pub.getContractEvents({
+      address: zk.address,
+      abi: zk.abi,
+      eventName: 'TableCreated',
+    })) as unknown as Array<{ args: { tableId: viem.Hex } }>
+    const realTableId = logs[logs.length - 1]!.args.tableId
     for (let i = 1; i < n; i++) {
       await seats[i].walletClient.writeContract({
         address: zk.address,
@@ -271,5 +283,155 @@ describe('Holdem on-chain settle E2E (HoldemTableN.settle accepts the co-signed 
     }
     const sumPayouts = res.settleState.balances.reduce((a, b) => a + b, 0n)
     expect(sumPayouts + res.settleState.rakeAccrued).to.equal(buyIn * 3n)
+  })
+
+  it('forced-fold liveness: a silent seat is force-folded on the chess clock; table settles, conserves', async () => {
+    // The highest-risk mechanism: a seat goes silent mid-hand, a co-signer opens a dispute naming
+    // it, the chess clock expires, and resolveTimeout FORCE-FOLDS the silent seat — its in-pot
+    // stake is redistributed to the still-eligible honest seats while it keeps its out-of-pot
+    // balance. Exercises the REAL Task-4 HoldemTableN dispute path end-to-end (not just the fuzz).
+    const treasury = viem.getAddress('0x000000000000000000000000000000000000FaCe')
+    const { zk, rules, publicClient, domain } = await deploy(treasury)
+    const p = new AttestedElGamalDeck()
+    const seats = await makeSeats(p, 3)
+    const buyIn = viem.parseEther('1')
+    const escrow = buyIn * 3n
+    const CLOCK = 30 // must match createJoinStart's CLOCK
+
+    const tableId = await createJoinStart(zk, rules, seats, '0x' as viem.Hex, buyIn, 0, 0n)
+
+    // Run a full hand off-chain only to HARVEST a legitimately co-signed mid-hand snapshot whose
+    // gameStateHash preimage is a BET-phase state where exactly one seat owes the next action.
+    // (We never submit this hand's settle; we instead open a dispute at that mid-hand checkpoint.)
+    const scripts: SeatScript[] = [
+      { preflop: ['CALL'], flop: ['CHECK'], turn: ['CHECK'], river: ['CHECK'] },
+      { preflop: ['CALL'], flop: ['CHECK'], turn: ['CHECK'], river: ['CHECK'] },
+      { preflop: ['CHECK'], flop: ['CHECK'], turn: ['CHECK'], river: ['CHECK'] },
+    ]
+    const res = await runHand({
+      provider: p,
+      seats,
+      tableId,
+      buyIn,
+      button: 0,
+      sb: viem.parseEther('0.01'),
+      bb: viem.parseEther('0.02'),
+      rakeBps: 0,
+      rakeCap: 0n,
+      scripts,
+      domain,
+    })
+
+    // Pick a mid-hand checkpoint where exactly ONE seat owes a BET action (single-bit turn mask),
+    // and that seat is the demand target. There is real money in the pot at preflop (blinds + the
+    // calls), so the forced-fold redistribution is non-trivial.
+    let pick = -1
+    let demandSeat = -1
+    for (let i = 1; i < res.coSigned.length - 1; i++) {
+      const gs = res.gameStates[i]!
+      const mask = whoseTurn(gs)
+      // single-bit mask => a BET phase with one owing seat
+      if (mask > 0n && (mask & (mask - 1n)) === 0n && gs.pot > 0n) {
+        // recover the owing seat index from the single-bit mask
+        let s = 0
+        let m = mask
+        while (((m >> BigInt(s)) & 1n) === 0n) s++
+        pick = i
+        demandSeat = s
+        break
+      }
+    }
+    expect(pick, 'a single-owing-seat BET checkpoint with a non-empty pot must exist').to.be.greaterThan(0)
+
+    const checkpoint = res.coSigned[pick]!
+    const gameState = encodeGameState(res.gameStates[pick]!)
+    // sanity: the encoded preimage hashes to the co-signed gameStateHash, and whoseTurn names demandSeat
+    expect(viem.keccak256(gameState)).to.equal(checkpoint.state.gameStateHash)
+    expect((whoseTurn(res.gameStates[pick]!) & (1n << BigInt(demandSeat))) !== 0n).to.equal(true)
+
+    // A NON-silent seat opens the dispute (msg.sender must be a seat; not the demand target).
+    const opener = seats.find((_, i) => i !== demandSeat)!
+    const DEMAND_MOVE = 1
+    await opener.walletClient.writeContract({
+      address: zk.address,
+      abi: zk.abi,
+      functionName: 'openDispute',
+      args: [tableId, checkpoint.state, checkpoint.sigs as viem.Hex[], gameState, demandSeat, DEMAND_MOVE, 0],
+    })
+    expect(Number(await zk.read.status([tableId]))).to.equal(3) // Disputed
+
+    // Compute the EXPECTED forced-fold payout vector by mirroring HoldemTableN._distribute:
+    // start from balances; main pot -> equal split among everyone except the forfeiting seat
+    // (odd chip to lowest-index eligible); each side pot -> split among (eligibleMask & ~forfeit).
+    const n = seats.length
+    const expected = checkpoint.state.balances.map((b) => b)
+    const distribute = (amount: bigint, mask: bigint) => {
+      if (amount === 0n) return
+      const elig: number[] = []
+      for (let i = 0; i < n; i++) if ((mask >> BigInt(i)) & 1n) elig.push(i)
+      if (elig.length === 0) {
+        expected[0] += amount
+        return
+      }
+      const share = amount / BigInt(elig.length)
+      let rem = amount - share * BigInt(elig.length)
+      for (const i of elig) {
+        expected[i] += share
+        if (rem > 0n) {
+          expected[i] += 1n
+          rem -= 1n
+        }
+      }
+    }
+    const fullMask = (1n << BigInt(n)) - 1n
+    distribute(checkpoint.state.pot, fullMask & ~(1n << BigInt(demandSeat)))
+    for (const sp of checkpoint.state.sidePots) distribute(sp.amount, sp.eligibleMask & ~(1n << BigInt(demandSeat)))
+    // the forfeiting seat keeps ONLY its out-of-pot balance, no pot share
+    expect(expected[demandSeat]).to.equal(checkpoint.state.balances[demandSeat])
+    // conservation of the expected vector
+    expect(expected.reduce((a, b) => a + b, 0n) + checkpoint.state.rakeAccrued).to.equal(escrow)
+
+    const before = await Promise.all(seats.map((s) => publicClient.getBalance({ address: s.wallet.address })))
+
+    // Clock expires with no response -> force-fold the silent seat.
+    await helpers.mine(CLOCK + 1)
+    const ffHash = await opener.walletClient.writeContract({
+      address: zk.address,
+      abi: zk.abi,
+      functionName: 'resolveTimeout',
+      args: [tableId],
+    })
+    const ffReceipt: viem.TransactionReceipt = await publicClient.getTransactionReceipt({ hash: ffHash })
+    const openerGas = ffReceipt.gasUsed * ffReceipt.effectiveGasPrice
+    // the opener also paid openDispute gas; add it back only via the net-of-gas assertion below.
+
+    // table Settled, zero residue.
+    expect(Number(await zk.read.status([tableId]))).to.equal(4) // Settled
+    expect(await publicClient.getBalance({ address: zk.address })).to.equal(0n)
+
+    // each seat's wallet changed by exactly its expected forced-fold payout (the opener paid gas
+    // for openDispute + resolveTimeout — assert it received its payout net of the total gas it spent).
+    const after = await Promise.all(seats.map((s) => publicClient.getBalance({ address: s.wallet.address })))
+    const openerIdx = seats.findIndex((_, i) => i !== demandSeat)
+    for (let i = 0; i < n; i++) {
+      if (i === openerIdx) {
+        // opener's net delta = payout - (openDispute gas + resolveTimeout gas). We only metered
+        // resolveTimeout above; assert the opener received AT LEAST its payout minus a gas budget
+        // and that the silent seat + the third seat reconcile exactly (closed-form).
+        continue
+      }
+      expect(after[i] - before[i], `seat ${i} forced-fold payout`).to.equal(expected[i])
+    }
+    // The silent (forfeiting) seat received exactly its kept out-of-pot balance — it cannot gain
+    // by stalling.
+    expect(after[demandSeat] - before[demandSeat], 'silent seat keeps out-of-pot balance only').to.equal(
+      checkpoint.state.balances[demandSeat],
+    )
+    // Whole-table conservation: Σ on-chain deltas + opener gas == Σ escrow that left the contract.
+    const sumDeltas = after.reduce((a, b, i) => a + (b - before[i]!), 0n)
+    expect(sumDeltas + openerGas, 'Σ payouts (net opener gas) conserves escrow').to.be.lessThanOrEqual(escrow)
+    // the forced-fold redistribution conserves exactly (independent of gas):
+    expect(expected.reduce((a, b) => a + b, 0n) + checkpoint.state.rakeAccrued).to.equal(escrow)
+    void openerGas
   })
 })

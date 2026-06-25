@@ -1,6 +1,6 @@
 # Track 3 — Task 8 report: End-to-end multi-seat Hold'em hand + on-chain settle
 
-- **Status:** DONE
+- **Status:** DONE (+ Task-8 review fixes applied 2026-06-25 — see final section)
 - **Date:** 2026-06-25
 - **Branch / clone:** `feat/holdem-nparty` in the main clone
   `/Users/michaelmclaughlin/Documents/gibs-finance/random` (no worktree touched).
@@ -62,9 +62,12 @@ fan-out, so each snapshot in `res.coSigned` is fully signed by all N seats.
   exactly its 2 hole cards, community is 5 distinct cards, every co-signed state conserves
   against escrow, the showdown winner matches `evaluate7`, and the SHUFFLE posts replay as a
   valid shuffle chain.
-- **N=3 CONTESTED multiway with rake** — everyone calls/checks to a 3-way showdown; the
-  evaluator's max-score seat(s) win; conservation (Σ balances + rake == Σ escrow) holds;
-  fully co-signed (3 sigs).
+- **N=3 CONTESTED multiway** — everyone calls/checks to a 3-way showdown; the evaluator's
+  max-score seat(s) win; conservation (Σ balances + rake == Σ escrow) holds; fully co-signed
+  (3 sigs). **Rake is 0 in this vitest case** (pot 30, 2.5% floors to 0), so it does NOT
+  exercise a non-zero rake — it only asserts the conservation field carries the (zero) rake.
+  The genuine **non-zero** rake coverage is the hardhat e2e (`rakeBps=250`, ether-scale blinds,
+  `rakeAccrued > 0` asserted, rake paid to the treasury).
 - **N=3 UNCONTESTED sweep** — seat 0 and SB fold, BB wins uncontested (`stubWinner == 2`),
   no hand evaluation; pot − rake to the last seat; conserves.
 
@@ -138,3 +141,84 @@ figure is the Task-3 per-post measurement projected onto the live board; the fak
    `Transcript` + a no-op `stamp()` counter). The live `msgboard-games/board.ts` PoW path is
    not wired here (it is the same broken-loader package as concern 2); the security model is
    identical — only the per-post latency differs.
+
+---
+
+## Task-8 review fixes (2026-06-25)
+
+The Task-8 review found 2 Important coverage gaps, 2 cosmetic type errors, and one overstated
+report claim. All closed on `feat/holdem-nparty` (main clone), TDD, reusing the real modules +
+the real on-chain dispute path. No reimplementation.
+
+### Fix 1 (Important) — All-in → multi-level side pot through the FULL session e2e
+
+New vitest case **"N=3 ALL-IN → multi-level side pot"** in
+`examples/games/holdem/test/session.test.ts`. It drives a REAL all-in through `runHand` using
+the `ALLIN` token and **uneven per-seat stacks** (new `RunHandArgs.buyIns` override, length ==
+seat count): seat 0 (50) shoves all-in for less, seat 1 (100) shoves over it, seat 2 (200)
+calls — producing a genuine two-layer pot: **main pot 150 eligible {0,1,2}** + **side pot 100
+eligible {1,2}** (the short stack is NOT eligible for the side pot). The test asserts:
+- a co-signed snapshot carried a non-empty `sidePots` on the all-in street (the side pot formed
+  mid-hand, not just at settle);
+- the layered structure matches the REAL `buildSidePots` on the final `totalContributed`;
+- the showdown distributed **exactly per pot** — the final stacks equal the independently
+  recomputed `showdownPayouts(...)` over the real revealed cards;
+- the short stack is eligible **only** for the main pot (`winnings[0] <= 150`, can never receive
+  a chip of the side pot);
+- conservation holds at **every** co-signed step and whole-table against escrow.
+
+Drive-through is the real modules end-to-end (deck→deal→betting→showdown→settle); no side-pot
+logic is reimplemented in the test — it cross-checks against `buildSidePots` + `showdownPayouts`.
+
+### Fix 2 (Important) — Forced-fold liveness e2e (highest-risk mechanism)
+
+New on-chain e2e **"forced-fold liveness: a silent seat is force-folded on the chess clock"** in
+`packages/contracts/test/HoldemSettleE2E.test.ts`. It exercises the REAL Task-4
+`HoldemTableN` dispute path through the channel e2e (not just the foundry fuzz):
+1. create/join/start a real table → **Live** (N=3, real escrow).
+2. run `runHand` only to **harvest a legitimately co-signed mid-hand checkpoint** whose
+   `gameStateHash` preimage is a BET-phase state where exactly one seat owes the next action
+   and the pot is non-empty. (To make this possible, `runHand` now returns `gameStates` — the
+   `HoldemState` preimage aligned 1:1 with each `coSigned` snapshot — so the on-chain side can
+   recompute `encodeGameState(...)`; the test sanity-checks `keccak256(gameState) ===
+   state.gameStateHash` and that `whoseTurn` names the demand seat.)
+3. a non-silent seat calls **`openDispute`** naming the silent seat (DEMAND_MOVE) → **Disputed**.
+4. `helpers.mine(CLOCK + 1)` advances past the chess clock.
+5. **`resolveTimeout`** force-folds the silent seat.
+
+Asserts: table reaches **Settled**, zero contract residue; the silent seat keeps **exactly** its
+out-of-pot `balances[demandSeat]` (forfeits its in-pot stake, cannot gain by stalling); the
+pot + side pots are redistributed to the still-eligible honest seats per the contract's
+`_distribute` (mirrored in JS for the exact expected vector); conservation (Σ payouts + rake ==
+Σ escrow) holds. This proves the dispute/forced-fold mechanism works through the channel e2e on
+the **real `HoldemRules`** (`whoseTurn`/`hashGameState` over the canonical game-state tuple), not
+only the foundry stub.
+
+### Fix 3 (Minor) — type errors in `HoldemSettleE2E.test.ts`
+
+- `:68` (`receipt.gasUsed * receipt.effectiveGasPrice` typed `number`) — the receipt is now
+  typed `viem.TransactionReceipt`, so the product is `bigint`.
+- `:105` (`Property 'args' does not exist` on the `getContractEvents` decoded log) — the result
+  is now cast to a typed `{ args: { tableId } }[]` shape.
+
+The contracts test file **typechecks cleanly** under the project tsconfig
+(`npx tsc --noEmit -p tsconfig.json` reports no `HoldemSettleE2E.test.ts` errors).
+
+### Fix 4 (Minor) — report correction
+
+The earlier claim that the N=3 vitest case "exercises rake" was overstated — rake is **0** there
+(pot 30, 2.5% floors to 0). The "Tests" section above now states this accurately: the genuine
+non-zero rake coverage is the hardhat e2e.
+
+### Verify (review fixes)
+
+```
+pnpm --filter @gibs/holdem test         # 9 files, 117 tests PASS (incl. the new all-in/side-pot case)
+pnpm --filter @gibs/holdem typecheck    # tsc --noEmit, exit 0
+cd packages/contracts && npx hardhat test test/HoldemSettleE2E.test.ts
+                                        # 4 passing (N=2, N=3 rake, N=3 sweep, + forced-fold liveness)
+npx tsc --noEmit -p tsconfig.json       # no HoldemSettleE2E.test.ts (:68/:105) errors
+```
+
+Whole-suite hardhat remains blocked by the **pre-existing** `stamper.ts` ESM loader issue
+(concern 2 above) — not in scope; the Task-8 e2e is run by file path in isolation, as before.

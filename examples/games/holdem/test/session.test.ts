@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import type { Hex } from 'viem'
 import { AttestedElGamalDeck, verifyEnvelope } from '@gibs/zk-cards-core'
-import { Phase } from '../src/rules'
+import { Phase, showdownPayouts } from '../src/rules'
+import { buildSidePots } from '../src/sidePots'
 import { evaluate7 } from '../src/handEval'
 import { verifyShuffleChain } from '../src/deckN'
 import { totalLocked } from '../src/stateSigN'
@@ -154,6 +155,82 @@ describe("Hold'em full-hand session (in-memory board)", () => {
     expect(sumBal + res.final.rakeAccrued).toBe(escrow)
     assertConservation(res, escrow)
     void totalPot
+  })
+
+  it('N=3 ALL-IN → multi-level side pot: short-stack all-in forms main+side pot, distributes per-pot, conserves', async () => {
+    const p = new AttestedElGamalDeck()
+    const seats = await mkSeats(p, 3)
+    const tableId = randTableId()
+    // Uneven stacks so a SHORT-STACK all-in forms a REAL multi-level side pot.
+    // button=0 -> SB=seat1, BB=seat2, UTG=seat0. blinds 5/10.
+    //   seat0 (50)  shoves ALL-IN  -> total this-street 50
+    //   seat1 (100) shoves ALL-IN  -> RAISE to 100 (covers seat0, has more)
+    //   seat2 (200) CALLs to 100
+    // totalContributed = [50,100,100], nobody folds =>
+    //   main pot 150 eligible {0,1,2}; side pot 100 eligible {1,2}.  (multi-level)
+    const buyIns = [50n, 100n, 200n]
+    const escrow = buyIns.reduce((a, b) => a + b, 0n)
+
+    const scripts: SeatScript[] = [
+      { preflop: ['ALLIN'] }, // seat 0 (UTG) shoves 50 — all-in for less
+      { preflop: ['ALLIN'] }, // seat 1 (SB) shoves 100
+      { preflop: ['CALL'] }, // seat 2 (BB) calls to 100
+    ]
+
+    const res = await runHand({
+      provider: p,
+      seats,
+      tableId,
+      buyIn: 0n, // unused; per-seat buyIns drive the stacks
+      buyIns,
+      button: 0,
+      sb: 5n,
+      bb: 10n,
+      rakeBps: 0,
+      rakeCap: 0n,
+      scripts,
+    })
+
+    expect(res.final.phase).toBe(Phase.SETTLED)
+    expect(res.settleSigs.filter((x) => x !== undefined).length).toBe(3)
+
+    // A REAL multi-level side pot formed during betting. Find the co-signed snapshot that carried
+    // a non-empty sidePots (the all-in street) and assert the layered structure.
+    const withSide = res.coSigned.find((cs) => cs.state.sidePots.length >= 1)
+    expect(withSide, 'a side pot must have formed on the all-in street').toBeDefined()
+    // Cross-check against the REAL side-pot builder on the final totalContributed.
+    const layers = buildSidePots(res.final.totalContributed, res.final.folded)
+    expect(layers.length).toBe(2) // main + one side pot
+    expect(layers[0]!.amount).toBe(150n)
+    expect(layers[0]!.eligible).toEqual([0, 1, 2])
+    expect(layers[1]!.amount).toBe(100n)
+    expect(layers[1]!.eligible).toEqual([1, 2]) // short stack (seat 0) NOT eligible for the side pot
+
+    // No one folded: contested 3-way (eligible-for-something) showdown.
+    expect(res.final.folded.filter((f) => !f).length).toBe(3)
+
+    // Independently recompute the per-pot payout via the REAL showdown resolver, using the actual
+    // revealed cards, and assert the session distributed EXACTLY per pot.
+    const hands = [0, 1, 2].map((s) => [...res.holeCards[s]!, ...res.community])
+    const pots = [
+      { amount: layers[0]!.amount, eligible: layers[0]!.eligible },
+      { amount: layers[1]!.amount, eligible: layers[1]!.eligible },
+    ]
+    const { winnings } = showdownPayouts({ nSeats: 3, button: 0, pots, hands, rakeBps: 0, rakeCap: 0n })
+    // final stack = behind-stack at all-in (seat2 kept 100 behind; seats 0,1 kept 0) + winnings.
+    const behind = [0n, 0n, 100n] // seat2 covered to 100 of its 200 buy-in
+    for (let s = 0; s < 3; s++) {
+      expect(res.final.stacks[s]!, `seat ${s} final stack`).toBe(behind[s]! + winnings[s]!)
+    }
+
+    // The short stack (seat 0) is eligible ONLY for the main pot — it can win AT MOST 150 and can
+    // never receive a chip of the 100 side pot.
+    expect(winnings[0]! <= 150n, 'short stack capped at the main pot').toBe(true)
+
+    // conservation at EVERY co-signed step + whole-table against escrow.
+    assertConservation(res, escrow)
+    const sumBal = res.final.stacks.reduce((a, b) => a + b, 0n)
+    expect(sumBal + res.final.rakeAccrued).toBe(escrow)
   })
 
   it('N=3 UNCONTESTED sweep: everyone folds to one seat — no evaluation, pot to last seat', async () => {

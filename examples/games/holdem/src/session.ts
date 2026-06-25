@@ -83,7 +83,12 @@ export interface RunHandArgs {
   provider: MaskedDeckProvider
   seats: SessionSeat[]
   tableId: Hex
+  /** Uniform per-seat buy-in. Ignored for any seat overridden by `buyIns`. */
   buyIn: bigint
+  /** Per-seat buy-in override (length === seats.length). Use for uneven stacks (e.g. a
+   *  short-stacked seat that goes all-in for less, forming a real multi-level side pot).
+   *  When omitted every seat buys in for `buyIn`. */
+  buyIns?: bigint[]
   button: number
   sb: bigint
   bb: bigint
@@ -109,6 +114,11 @@ export interface HandResult {
   settleSigs: (Hex | undefined)[]
   /** every co-signed ChannelStateN in nonce order (genesis → … → SETTLED) */
   coSigned: CoSignedSnapshot[]
+  /** the HoldemState preimage of each co-signed snapshot's `gameStateHash`, aligned 1:1 with
+   *  `coSigned` (genesis/post-shuffle states use the SETUP state). This is what the on-chain
+   *  dispute path needs: `encodeGameState(gameStates[i])` is the `gameState` preimage whose
+   *  keccak == `coSigned[i].state.gameStateHash`, and `whoseTurn` over it names the owing seat. */
+  gameStates: HoldemState[]
   /** per-seat hole cards (each seat learned exactly its 2) */
   holeCards: Record<number, number[]>
   /** the 5 community cards */
@@ -168,8 +178,11 @@ export async function runHand(args: RunHandArgs): Promise<HandResult> {
   const { provider, seats, tableId, buyIn, button, sb, bb } = args
   const n = seats.length
   if (args.scripts.length !== n) throw new Error('session: one script per seat required')
+  if (args.buyIns && args.buyIns.length !== n)
+    throw new Error('session: buyIns length must equal seat count')
+  const stacks0 = args.buyIns ? [...args.buyIns] : seats.map(() => buyIn)
   const domain = args.domain ?? TEST_DOMAIN_N
-  const escrow = buyIn * BigInt(n)
+  const escrow = stacks0.reduce((a, b) => a + b, 0n)
   const rakeBps = args.rakeBps ?? 0
   const rakeCap = args.rakeCap ?? 0n
 
@@ -212,14 +225,18 @@ export async function runHand(args: RunHandArgs): Promise<HandResult> {
       new ChannelN({ domain, tableId, me: s.channel, seat, seatKeys, escrow }),
   )
   const coSigned: CoSignedSnapshot[] = []
+  const gameStates: HoldemState[] = []
 
   const ZERO32 = ('0x' + '00'.repeat(32)) as Hex
   let nonce = 0n
+  // Pre-blinds SETUP-equivalent game (its preimage backs the genesis snapshot slot; the genesis
+  // co-signed state uses a ZERO gameStateHash, so this preimage is informational only).
+  let game = initHoldem({ nSeats: n, stacks: stacks0, button, sb, bb, rakeBps, rakeCap })
   // Genesis: balances = each seat's buy-in, pot 0.
   await coSignState(channels, 0, {
     tableId,
     nonce,
-    balances: seats.map(() => buyIn),
+    balances: [...stacks0],
     pot: 0n,
     sidePots: [],
     rakeAccrued: 0n,
@@ -228,14 +245,13 @@ export async function runHand(args: RunHandArgs): Promise<HandResult> {
     gameStateHash: ZERO32,
   })
   coSigned.push(snapshot(channels[0]!))
+  gameStates.push(game)
 
   // ── 3) Betting (Task 5) ──────────────────────────────────────────────────────
-  let game = initHoldem({ nSeats: n, stacks: seats.map(() => buyIn), button, sb, bb, rakeBps, rakeCap })
-
   // Auto-post blinds in blind order (the seat that is `toAct` owes the next blind).
   game = mustApply(game, { kind: 'POST_BLIND', seat: game.toAct, amount: blindAmount(game, true) })
   game = mustApply(game, { kind: 'POST_BLIND', seat: game.toAct, amount: blindAmount(game, false) })
-  nonce = await syncGame(channels, coSigned, game, ++nonce, tableId, deckCommitment)
+  nonce = await syncGame(channels, coSigned, gameStates, game, ++nonce, tableId, deckCommitment)
 
   // Per-seat per-street action cursors.
   const cursors: Record<StreetKey, number[]> = {
@@ -260,11 +276,11 @@ export async function runHand(args: RunHandArgs): Promise<HandResult> {
         throw new Error(`session: seat ${seat} script exhausted on ${key} (phase ${game.phase})`)
       cursors[key][seat] = idx + 1
       game = mustApply(game, tokenToMove(game, seat, queue[idx]!))
-      nonce = await syncGame(channels, coSigned, game, ++nonce, tableId, deckCommitment)
+      nonce = await syncGame(channels, coSigned, gameStates, game, ++nonce, tableId, deckCommitment)
     } else if (isDealPhase(game.phase)) {
       // Board reveal already done in runDeal; attest the deal completed for this group.
       game = mustApply(game, { kind: 'DEAL_DONE', phase: game.phase })
-      nonce = await syncGame(channels, coSigned, game, ++nonce, tableId, deckCommitment)
+      nonce = await syncGame(channels, coSigned, gameStates, game, ++nonce, tableId, deckCommitment)
     } else {
       throw new Error(`session: unexpected phase ${game.phase} during betting loop`)
     }
@@ -287,12 +303,14 @@ export async function runHand(args: RunHandArgs): Promise<HandResult> {
   const settleState = toChannelSettleState(game, { tableId, nonce, deckCommitment })
   const settleSigs = await coSignState(channels, 0, settleState)
   coSigned.push({ state: settleState, sigs: [...settleSigs] })
+  gameStates.push(game)
 
   return {
     final: game,
     settleState,
     settleSigs,
     coSigned,
+    gameStates,
     holeCards: deal.holeCards,
     community: deal.community,
     transcript: board.transcript,
@@ -330,6 +348,7 @@ function mustApply(s: HoldemState, m: Move): HoldemState {
 async function syncGame(
   channels: ChannelN[],
   log: CoSignedSnapshot[],
+  gameLog: HoldemState[],
   game: HoldemState,
   nonce: bigint,
   tableId: Hex,
@@ -342,6 +361,7 @@ async function syncGame(
   const state = toChannelSettleState(game, { tableId, nonce, deckCommitment })
   const sigs = await coSignState(channels, 0, state)
   log.push({ state, sigs: [...sigs] })
+  gameLog.push(game)
   return nonce
 }
 
