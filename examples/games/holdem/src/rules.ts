@@ -313,12 +313,17 @@ export function applyMove(s0: HoldemState, m: Move): MoveResult {
     if (s0.phase !== Phase.BET_PREFLOP) return err('POST_BLIND outside preflop open')
     if (seat !== s0.toAct) return err('not your turn (blind order)')
     const expectSb = s0.committed.every((c) => c === 0n)
-    const expected = expectSb ? s0.smallBlind : s0.bigBlind
+    const requiredBlind = expectSb ? s0.smallBlind : s0.bigBlind
+    // Short all-in blind (standard live poker): a seat that can't cover its blind posts its
+    // whole stack and is all-in. The seat must post exactly min(stack, requiredBlind).
+    const expected = requiredBlind < s0.stacks[seat]! ? requiredBlind : s0.stacks[seat]!
     if (m.amount !== expected) return err(`blind must be ${expected}`)
     const s = clone(s0)
-    putIn(s, seat, m.amount, /*isVoluntary*/ false)
+    putIn(s, seat, m.amount, /*isVoluntary*/ false) // marks all-in if it empties the stack
     if (!expectSb) {
-      // Big blind posted: open the action.
+      // Big blind posted: open the action. The action level is the FULL big blind even when
+      // the BB could only cover part of it (a short BB is all-in for less; later seats still
+      // owe the full blind to call).
       s.currentBet = s.bigBlind
       s.minRaise = s.bigBlind
       // first to act preflop = seat left of the BB.
@@ -379,6 +384,11 @@ export function applyMove(s0: HoldemState, m: Move): MoveResult {
       const isAllIn = need >= stack
       const actualAdd = isAllIn ? stack : need
       const actualTarget = already + actualAdd
+      // A short all-in whose *actual* (stack-capped) total does not exceed the current bet is
+      // not a bet/raise — it's an all-in call for less. Reject it as a BET/RAISE (the caller
+      // must CALL). Without this guard `increment` below would go negative; Solidity computes
+      // it in uint256 and would underflow-revert, desyncing the two implementations.
+      if (actualTarget <= s0.currentBet) return err('all-in does not exceed current bet (use CALL)')
       const increment = actualTarget - s0.currentBet
       // A non-all-in raise must meet the min-raise increment.
       if (!isAllIn && increment < s0.minRaise) return err('raise below min-raise')

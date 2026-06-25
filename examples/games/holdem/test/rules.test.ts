@@ -209,6 +209,72 @@ describe('Hold\'em betting — all-ins + side-pots + conservation', () => {
   })
 })
 
+describe('Hold\'em betting — short blinds (all-in for less than the blind)', () => {
+  it('BB with stack < big blind posts all-in for its whole stack, no throw, conserves', () => {
+    // 3 seats, button 0 -> SB = seat 1, BB = seat 2. BB stack is 1, big blind is 2.
+    const s0raw = initHoldem({ nSeats: 3, stacks: [100n, 100n, 1n], button: 0, sb: 1n, bb: 2n })
+    const escrow = 201n
+    // SB posts the full 1 (stack 100 covers it).
+    let s = step(s0raw, { kind: 'POST_BLIND', seat: 1, amount: 1n }, escrow)
+    // BB owes 2 but only has 1 -> posts min(stack, blind) = 1 and is marked all-in.
+    // This MUST return a valid MoveResult (the old code threw 'insufficient stack').
+    s = step(s, { kind: 'POST_BLIND', seat: 2, amount: 1n }, escrow)
+    expect(s.allIn[2]).toBe(true)
+    expect(s.stacks[2]).toBe(0n)
+    expect(s.committed[2]).toBe(1n)
+    expect(s.totalContributed[2]).toBe(1n)
+    // The full big blind opened the action even though the BB could only cover part of it.
+    expect(s.currentBet).toBe(2n)
+    // Action opens left of the BB = button (seat 0) preflop.
+    expect(s.toAct).toBe(0)
+    expect(conserved(s)).toBe(escrow)
+  })
+
+  it('the all-in short-BB cannot act again; the hand proceeds and conserves', () => {
+    const s0raw = initHoldem({ nSeats: 3, stacks: [100n, 100n, 1n], button: 0, sb: 1n, bb: 2n })
+    const escrow = 201n
+    let s = step(s0raw, { kind: 'POST_BLIND', seat: 1, amount: 1n }, escrow)
+    s = step(s, { kind: 'POST_BLIND', seat: 2, amount: 1n }, escrow)
+    // Seat 0 (UTG) calls 2; SB (seat 1) completes; BB (seat 2) is all-in and ineligible to act.
+    s = step(s, { kind: 'CALL', seat: 0 }, escrow)
+    s = step(s, { kind: 'CALL', seat: 1 }, escrow)
+    // Round closes: seats 0 & 1 matched at 2, seat 2 all-in at 1. We advance off preflop.
+    expect(s.phase).not.toBe(Phase.BET_PREFLOP)
+    // The all-in short BB never gets the turn again on this street.
+    expect(s.allIn[2]).toBe(true)
+    // totalContributed = [2, 2, 1]: main pot 3 {0,1,2}, side pot 2 {0,1}.
+    expect(s.totalContributed).toEqual([2n, 2n, 1n])
+    expect(conserved(s)).toBe(escrow)
+  })
+
+  it('SB with stack < small blind posts all-in for its whole stack, no throw', () => {
+    // SB = seat 1 with stack 1, small blind 2 (bb 4) -> SB short.
+    const s0raw = initHoldem({ nSeats: 3, stacks: [100n, 1n, 100n], button: 0, sb: 2n, bb: 4n })
+    const escrow = 201n
+    // SB owes 2 but only has 1 -> posts 1 all-in.
+    let s = step(s0raw, { kind: 'POST_BLIND', seat: 1, amount: 1n }, escrow)
+    expect(s.allIn[1]).toBe(true)
+    expect(s.stacks[1]).toBe(0n)
+    expect(s.committed[1]).toBe(1n)
+    // BB still owed by seat 2; toAct moved to the BB seat.
+    expect(s.toAct).toBe(2)
+    expect(conserved(s)).toBe(escrow)
+  })
+
+  it('heads-up: button/SB short all-in, BB posts, button is all-in and cannot act', () => {
+    // N=2, button 0 is SB. Button stack 1, small blind 2.
+    const s0raw = initHoldem({ nSeats: 2, stacks: [1n, 100n], button: 0, sb: 2n, bb: 4n })
+    const escrow = 101n
+    // Button (SB) posts min(1,2)=1 all-in.
+    let s = step(s0raw, { kind: 'POST_BLIND', seat: 0, amount: 1n }, escrow)
+    expect(s.allIn[0]).toBe(true)
+    // BB (seat 1) posts the full 4.
+    s = step(s, { kind: 'POST_BLIND', seat: 1, amount: 4n }, escrow)
+    expect(s.currentBet).toBe(4n)
+    expect(conserved(s)).toBe(escrow)
+  })
+})
+
 // Helper: the bottom pot's eligible set isn't stored separately on HoldemState (pot is the
 // bottom layer); recompute it for assertions from totalContributed/folded.
 function potEligible(s: HoldemState, _layer: number): number[] {

@@ -117,3 +117,41 @@
   `eligibleMask:bigint`; `encoding.ts` bridges them. Task 7 settle must convert the game-state
   side pots into the channel's `SidePot[]` (mask form) when producing the co-signed settle state.
 - Showdown winner + rake are stubbed (see boundary above) — Task 6/7.
+
+## Task-5 review fix: C1 short-blind all-in
+
+Fixed C1 (Critical) from the Task-5 review: a seat owing a blind larger than its remaining
+stack used to throw an uncaught `Error('insufficient stack')` from `putIn` (violating the
+`MoveResult` never-throw contract), while Solidity `_postBlind` cleanly reverted — a TS(throw)
+vs Solidity(reject) desync the parity gate structurally could not see (the fuzzer's stack floor
+of `20 + rnd*80` never generated a short blind, and `runWalk` called TS `applyMove` with no
+try/catch, so the path would have *crashed* the gate rather than logged a divergence).
+
+Resolution — the standard live-poker **short all-in blind**, mirrored on both sides:
+
+- **TS** (`examples/games/holdem/src/rules.ts`, POST_BLIND): the expected blind is now
+  `min(stack, requiredBlind)`; a seat that can't cover its blind posts its whole stack and is
+  marked all-in by `putIn` (which empties the stack). The big blind still opens the action at
+  the FULL `bigBlind` level even when the BB is short (later seats owe the full blind to call).
+- **Solidity** (`packages/contracts/contracts/zk/HoldemRules.sol`, `_postBlind`): mirrored
+  exactly — `expected = min(stack, requiredBlind)`, same resulting state, so
+  `keccak(encode(state))` matches TS.
+- **Latent bug also surfaced by widening the fuzz** (and fixed on both sides): a BET/RAISE
+  whose *stack-capped* all-in target falls at or below `currentBet` (e.g. a 1-chip stack
+  "raising" while facing a bet of 2) was accepted by TS as a raise that LOWERED `currentBet`,
+  while Solidity underflowed `actualTarget - currentBet` (uint256) and reverted. Added a guard
+  on both sides: an all-in that does not exceed the current bet is rejected as a BET/RAISE
+  (it is an all-in call for less — the caller must CALL). This keeps `increment` non-negative.
+- **Parity fuzzer** (`packages/contracts/test/HoldemParity.test.ts`): lowered the per-seat
+  stack floor from 20 to 1 (`1 + rnd*100`) so short blinds are generated; `genLegalMove` now
+  posts `min(stack, blind)`; added a `shortBlinds` coverage counter with an assertion that the
+  short-all-in-blind path is actually exercised (TS+Solidity agreeing on accept/reject +
+  post-move state hash). Hardened `runWalk`: the TS `applyMove` call is wrapped so a thrown
+  exception is recorded as a DIVERGENCE (test failure with detail), not an uncaught crash —
+  defense in depth so a future never-throw violation is caught, not hidden.
+
+Tests: a new short-blind describe block in `examples/games/holdem/test/rules.test.ts` (short BB,
+short SB, heads-up short button, all-in seat ineligible to act + conservation) — RED on the old
+code (throw / "blind must be 2"), GREEN after. Full holdem vitest = 65 pass (61 prior + 4 new),
+conservation holds at every step. `npx hardhat test test/HoldemParity.test.ts` = 2 passing with
+the short-blind coverage assertion now reached.

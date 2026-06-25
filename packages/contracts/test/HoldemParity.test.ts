@@ -37,10 +37,14 @@ function blindsDue(s: HoldemState): boolean {
 // A legal move for the current state (best-effort; some may still be incomplete-raise rejects,
 // which is fine — TS+Solidity must agree on the rejection).
 function genLegalMove(rnd: () => number, s: HoldemState): Move {
-  // blinds first: SB (no committed yet) then BB.
+  // blinds first: SB (no committed yet) then BB. A seat that can't cover its blind posts a
+  // short all-in blind = min(stack, blind); posting the full blind would be rejected.
   if (blindsDue(s)) {
     const sbDone = s.committed.some((c) => c > 0n)
-    return { kind: 'POST_BLIND', seat: s.toAct, amount: sbDone ? s.bigBlind : s.smallBlind }
+    const required = sbDone ? s.bigBlind : s.smallBlind
+    const stack = s.stacks[s.toAct]!
+    const amount = required < stack ? required : stack
+    return { kind: 'POST_BLIND', seat: s.toAct, amount }
   }
   const seat = s.toAct
   const toCall = s.currentBet - s.committed[seat]!
@@ -109,15 +113,19 @@ type WalkStats = {
   folds: number
   multiwayPots: number // states reached with ≥1 side pot
   reachedShowdown: number
+  shortBlinds: number // POST_BLIND moves where the poster was all-in for less than the blind
   failure: string | null
 }
 
 async function runWalk(rules: RulesReader, nSeats: number, seed: number, stats: WalkStats): Promise<void> {
   const rnd = mulberry32(seed)
-  const stack = 20n + BigInt(Math.floor(rnd() * 80))
+  // Per-seat stacks with a LOW floor so short blinds (stack < blind, e.g. BB stack=1, bb=2)
+  // are generated and the short-all-in-blind path is actually exercised. Floor is 1 (not the
+  // old 20) so seats can be too poor to cover their blind; ceiling still reaches ~100.
+  const stacks = Array.from({ length: nSeats }, () => 1n + BigInt(Math.floor(rnd() * 100)))
   let s: HoldemState = initHoldem({
     nSeats,
-    stacks: Array.from({ length: nSeats }, () => stack),
+    stacks,
     button: Math.floor(rnd() * nSeats),
     sb: 1n,
     bb: 2n,
@@ -134,16 +142,31 @@ async function runWalk(rules: RulesReader, nSeats: number, seed: number, stats: 
     } else {
       move = genMove(rnd, s)
     }
-    const tsOut = applyMove(s, move)
+    // A short all-in blind (poster can't cover the owed blind) — the exact C1 path. Count it
+    // so the coverage assertion proves the widened fuzz actually reaches it.
+    if (move.kind === 'POST_BLIND') {
+      const required = blindsDue(s) && s.committed.some((c) => c > 0n) ? s.bigBlind : s.smallBlind
+      if (s.stacks[move.seat]! < required) stats.shortBlinds++
+    }
+    const fail = (msg: string) => {
+      if (!stats.failure) stats.failure = msg
+    }
+    // Harden against a never-throw violation of the MoveResult contract: a thrown exception
+    // from TS applyMove is recorded as a DIVERGENCE (test failure with detail), not an
+    // uncaught crash that would silently take down the whole gate (defense in depth — C1).
+    let tsOut: ReturnType<typeof applyMove>
+    try {
+      tsOut = applyMove(s, move)
+    } catch (e) {
+      fail(`N=${nSeats} seed ${seed} step ${step}: TS applyMove THREW on ${move.kind} (must return {error}, never throw): ${(e as Error).message}`)
+      return
+    }
     let solOk = true
     let solBytes: viem.Hex | undefined
     try {
       solBytes = await rules.read.applyMove([encodeGameState(s), encodeMove(move)])
     } catch {
       solOk = false
-    }
-    const fail = (msg: string) => {
-      if (!stats.failure) stats.failure = msg
     }
     if ('error' in tsOut) {
       if (solOk) {
@@ -185,6 +208,7 @@ describe('Holdem TS<->Solidity parity', () => {
       folds: 0,
       multiwayPots: 0,
       reachedShowdown: 0,
+      shortBlinds: 0,
       failure: null,
     }
     const seatsFor = (seed: number) => [2, 3, 6][seed % 3]!
@@ -202,6 +226,9 @@ describe('Holdem TS<->Solidity parity', () => {
     expect(stats.folds, 'no walk ever produced a fold').to.be.greaterThan(0)
     expect(stats.multiwayPots, 'no walk ever produced a side pot').to.be.greaterThan(0)
     expect(stats.reachedShowdown, 'no walk ever reached showdown').to.be.greaterThan(0)
+    // C1: the fuzz must actually exercise the short-all-in-blind path (poster stack < blind),
+    // and TS+Solidity agreed on it above (accept/reject + post-move state hash).
+    expect(stats.shortBlinds, 'no walk ever produced a short all-in blind (C1 path unexercised)').to.be.greaterThan(0)
     // Every interior betting street reached by an accepted transition at least once.
     for (const p of [Phase.BET_PREFLOP, Phase.BET_FLOP, Phase.BET_TURN, Phase.BET_RIVER, Phase.SHOWDOWN]) {
       expect(stats.acceptedPhase[p] ?? 0, `phase ${p} never reached by an accepted transition`).to.be.greaterThan(0)

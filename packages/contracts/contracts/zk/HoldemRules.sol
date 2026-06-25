@@ -179,10 +179,15 @@ contract HoldemRules is IGameRulesN {
         if (s.phase != BET_PREFLOP) revert WrongPhase();
         if (seat != s.toAct) revert NotYourTurn();
         bool expectSb = _allZero(s.committed);
-        uint256 expected = expectSb ? s.smallBlind : s.bigBlind;
+        uint256 requiredBlind = expectSb ? s.smallBlind : s.bigBlind;
+        // Short all-in blind (mirror rules.ts): a seat that can't cover its blind posts its
+        // whole stack and is all-in. Must post exactly min(stack, requiredBlind).
+        uint256 expected = requiredBlind < s.stacks[seat] ? requiredBlind : s.stacks[seat];
         if (amount != expected) revert BadBlind();
-        _putIn(s, seat, amount);
+        _putIn(s, seat, amount); // marks all-in if it empties the stack
         if (!expectSb) {
+            // BB posted: the action level is the FULL big blind even if the BB is short
+            // (all-in for less); later seats still owe the full blind to call.
             s.currentBet = s.bigBlind;
             s.minRaise = s.bigBlind;
             s.toAct = _nextToAct(s, seat);
@@ -203,6 +208,10 @@ contract HoldemRules is IGameRulesN {
         bool isAllIn = need >= stack;
         uint256 actualAdd = isAllIn ? stack : need;
         uint256 actualTarget = already + actualAdd;
+        // A short all-in whose stack-capped total does not exceed the current bet is an all-in
+        // call for less, not a bet/raise — reject (mirror rules.ts). This also guards the
+        // `increment` subtraction below from a uint256 underflow.
+        if (actualTarget <= s.currentBet) revert MustExceedBet();
         uint256 increment = actualTarget - s.currentBet;
         if (!isAllIn && increment < s.minRaise) revert BelowMinRaise();
         bool isFullRaise = increment >= s.minRaise;
