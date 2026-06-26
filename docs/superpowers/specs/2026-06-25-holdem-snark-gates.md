@@ -129,3 +129,45 @@ existence.**
 against it on-chain (P6.2 is the next concrete step). Until P6.1–P6.5 land, the shipped path
 remains the attested shuffle (real hiding + share soundness; one honest shuffler ⇒ secret
 order), now hardened by Gate 1's on-chain share dispute.
+
+---
+
+## Gate 2 spike — execution status (2026-06-25, `feat/holdem-gate2-shuffle`)
+
+Pinned `@zypher-game/secret-engine@0.3.0` (devDependency; **GPLv3 via uzkge — PoC only, pending
+license review**, P6.5 unchanged). Every file that touches the prover carries a top-of-file GPL
+provenance note; the prover is loaded lazily behind the seam so it can be swapped/removed.
+
+- **P6.1 MaskedCard marshalling — DONE.** The `shuffle_cards` panic had TWO causes: (1) the deck
+  must be the **bare `MaskedCard` 4-tuples** `init_masked_cards(joint,52).map(m => m.card)`, NOT
+  the `{card,proof}` objects; (2) **`refresh_joint_key(joint,52)` MUST be called before
+  `shuffle_cards`** — it loads the joint key into prover state; skipping it makes shuffle panic
+  `unreachable`. With both fixed, `shuffle_cards` + `verify_shuffled_cards` are deterministic and
+  green. Generator: `examples/games/zk-core/scripts/gen-shuffle-proof.mts`.
+- **P6.2 on-chain shuffle PoC — DONE / GREEN.** A FRESHLY-generated v0.3.0 shuffle proof verifies
+  on-chain against the vendored `ShuffleVerifier52.verify52 == true` (~2.38M gas); tampered proof
+  and tampered public-input both surface `InvalidShuffleProof`. Test:
+  `packages/contracts/test/foundry/ShuffleVerifier52Positive.t.sol` (FOUNDRY_PROFILE=zk). **This
+  also confirms the v0.3.0 proving key matches the vendored `VerifierKey_52` — no key drift.**
+- **P6.3 ZypherDeckProvider (Baby-JubJub) — DONE behind the seam.**
+  `examples/games/zk-core/src/zypherDeck.ts` implements `MaskedDeckProvider` on the real ZK
+  shuffle, sibling to (not replacing) `AttestedElGamalDeck`. Lifecycle vitest
+  (`test/zypherDeck.test.ts`, 4 tests) is green: two-party ZK shuffle → off-chain verify → reveal
+  → deal; true permutation (all 52 distinct); tampered shuffle + wrong-key reveal rejected.
+  *Partial:* not yet wired into `deckN`/`revealN`/`dealSeq` (those live outside this package);
+  the seam is curve-agnostic so the swap is a provider selection, not a rewrite.
+- **P6.4 Gate-1 convergence onto EdOnBN254 — on-chain verifier PoC DONE; respondWithShare re-home
+  PARTIAL.** A freshly-generated `reveal_card` DLEQ proof (160 bytes = a‖b‖r) verifies on-chain
+  against the vendored `RevealVerifier.verifyReveal == true`; tamper + wrong-token rejected. Test:
+  `packages/contracts/test/foundry/RevealVerifierBabyJubJub.t.sol` (FOUNDRY_PROFILE=zk). This
+  proves the EdOnBN254 Chaum-Pedersen verifier is **curve-correct** for the Baby-JubJub deck.
+  *Still deferred:* rewriting `HoldemTableN.respondWithShare` to call this verifier, and **binding
+  the table/slot `ctx`** — zypher's reveal proof binds `{pk, card}` but NOT an external ctx string,
+  so the anti-replay binding the secp256k1 `RevealShareDLEQ` provides needs a design decision
+  (domain-separate the transcript, or keep ctx binding at the contract layer). The secp256k1
+  `RevealShareDLEQ` path is left intact and shipped until this lands.
+- **P6.5 legal — unchanged, deferred to counsel.**
+
+Foundry wiring: the two new positive tests run under `FOUNDRY_PROFILE=zk` (where the
+uzkge/EdOnBN254 graph compiles, viaIR:false); both are added to the `default`/`zkverify`/`zkm2`/
+`ffi` skip lists so every profile still compiles. Default suite (81) and full zk profile (10) green.
