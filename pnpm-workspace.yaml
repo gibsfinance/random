@@ -10,4 +10,5 @@ packages:
 allowBuilds:
   esbuild: true
   keccak: true
+  msgpackr-extract: false
   secp256k1: true
