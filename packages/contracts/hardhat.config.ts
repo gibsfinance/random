@@ -33,6 +33,18 @@ const config: HardhatUserConfig = {
     // reverts on 943 as "invalid opcode: MCOPY". Target Shanghai so the deployed bytecode runs
     // there. (Core Random was compiled cancun but happens not to emit MCOPY in its live paths.)
     overrides: {
+      // Generated UltraHonk verifier: needs solc >= 0.8.26 + viaIR:false (mirrors foundry zkverify).
+      'contracts/zk/generated/DiceSettleHonkVerifier.sol': {
+        version: '0.8.27',
+        settings: {
+          viaIR: false,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+        },
+      },
       'contracts/CoinFlip.sol': {
         version: '0.8.25',
         settings: {
