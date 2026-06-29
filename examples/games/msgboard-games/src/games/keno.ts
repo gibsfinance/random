@@ -1,5 +1,6 @@
 import { encodeAbiParameters, type Hex } from 'viem'
 import { EDGE_BPS, HUNDREDTHS, type Game, type RoundOutcome } from '../game'
+import { binomialWeights, scaledFairTableX100 } from '../rtp'
 
 export interface KenoParams {
   /** the player's chosen numbers: distinct integers in [1, 40], typically 1..10 picks. */
@@ -16,27 +17,34 @@ export const DEFAULT_DRAWN = 10 // standard keno draws 10 of 40
 const ONE_MINUS_EDGE_X100 = (10_000n - EDGE_BPS) / HUNDREDTHS // 99n
 
 /**
- * PLACEHOLDER PAYTABLE. Keyed by [number of picks][number of hits] -> "fair" multiplier in
- * hundredths BEFORE the house edge is applied. These are a standard/plausible keno table and are
- * NOT the reference morbius/stake (IMG_2259.MP4) values — they must be replaced with the real
- * tuned table once supplied. The engine (deterministic draw-without-replacement, hit counting,
- * table lookup, edge application, payout) is correct independent of these numbers.
+ * RTP-CALIBRATED PAYTABLE. Keyed by [number of picks][number of hits] -> "fair" multiplier in
+ * hundredths BEFORE the house edge. Each pick-row is built from the true HYPERGEOMETRIC hit
+ * probabilities (drawing DEFAULT_DRAWN of POOL) and a rising winner SHAPE, then normalized by
+ * `scaledFairTableX100` so the row's probability-weighted fair mean is ~1.00x — after the single edge
+ * that is a verified ~1% house edge (test/rtp.test.ts). Losing hit counts (below the pay threshold)
+ * stay 0. Index convention: BASE_PAYTABLE_X100[picks][hits], picks in [1,10], hits in [0,picks].
  *
- * Index convention: BASE_PAYTABLE_X100[picks][hits], picks in [1,10], hits in [0,picks].
- * A value of 0n means "no payout" for that (picks, hits) cell.
+ * The engine (deterministic draw-without-replacement, hit counting, table lookup, edge, payout) is
+ * unchanged; only the numbers are now derived from probabilities rather than eyeballed.
  */
+const choose = (n: number, k: number): bigint => (k < 0 || k > n ? 0n : binomialWeights(n)[k]!)
+
+/** Build one pick-row: hypergeometric weights × a rising winner shape, normalized to fair mean ~1.0. */
+function kenoFairRow(picks: number): bigint[] {
+  const payFrom = Math.max(1, Math.floor(picks / 2)) // start paying around half your picks
+  const weights: bigint[] = []
+  const shape: bigint[] = []
+  for (let h = 0; h <= picks; h++) {
+    weights.push(choose(picks, h) * choose(POOL - picks, DEFAULT_DRAWN - h)) // C(p,h)·C(40-p,10-h)
+    const rank = h - payFrom + 1
+    shape.push(rank > 0 ? BigInt(rank * rank * rank) : 0n) // rising jackpot toward all-hits
+  }
+  return scaledFairTableX100(weights, shape)
+}
+
 export const BASE_PAYTABLE_X100: readonly (readonly bigint[])[] = [
-  /* picks 0 (unused) */ [0n],
-  /* picks 1 */ [0n, 360n],
-  /* picks 2 */ [0n, 0n, 900n],
-  /* picks 3 */ [0n, 0n, 270n, 4500n],
-  /* picks 4 */ [0n, 0n, 180n, 750n, 9000n],
-  /* picks 5 */ [0n, 0n, 150n, 420n, 1300n, 30000n],
-  /* picks 6 */ [0n, 0n, 110n, 200n, 660n, 6000n, 70000n],
-  /* picks 7 */ [0n, 0n, 0n, 200n, 700n, 3000n, 18000n, 70000n],
-  /* picks 8 */ [0n, 0n, 0n, 200n, 400n, 1100n, 6700n, 40000n, 90000n],
-  /* picks 9 */ [0n, 0n, 0n, 200n, 350n, 600n, 3300n, 8000n, 50000n, 100000n],
-  /* picks 10 */ [0n, 0n, 0n, 150n, 250n, 450n, 1600n, 7000n, 40000n, 80000n, 100000n],
+  [0n], // picks 0 (unused)
+  ...Array.from({ length: MAX_PICKS }, (_, i) => kenoFairRow(i + 1)),
 ]
 
 /** Apply the 1% house edge to a "fair" multiplier in hundredths. */

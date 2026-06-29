@@ -41,16 +41,21 @@ describe('keno (draw-without-replacement)', () => {
   })
 
   it('applies the 1% house edge to the fair paytable multiplier', () => {
-    // picks=3, hits=3 fair == 4500 (45.00x) -> edge -> floor(4500*99/100) = 4455
-    expect(applyEdgeX100(BASE_PAYTABLE_X100[3]![3]!)).toBe(4455n)
+    // pure edge formula (independent of the table values): floor(fair * 99 / 100)
+    expect(applyEdgeX100(4500n)).toBe(4455n)
+    // and a top-hit cell pays its edged fair-table entry (a real, positive jackpot)
+    const fairTop = BASE_PAYTABLE_X100[3]![3]!
+    expect(fairTop).toBeGreaterThan(100n)
+    expect(applyEdgeX100(fairTop)).toBe((fairTop * 99n) / 100n)
   })
 
   it('wins on a qualifying hit count and pays stake*(mult-1)', () => {
-    // raw=0, drawn=3 -> {1,39,40}; picks all 3 -> 3 hits -> fair 4500 -> edged 4455
+    // raw=0, drawn=3 -> {1,39,40}; picks all 3 -> 3 hits -> the top cell for picks=3.
+    const expected = applyEdgeX100(BASE_PAYTABLE_X100[3]![3]!)
     const win = keno.settleRound(100n, { picks: [1, 39, 40], drawn: 3 }, 0n)
     expect(win.win).toBe(true)
-    expect(win.multiplierX100).toBe(4455n) // 45.00x after 1% edge
-    expect(win.playerDelta).toBe(4355n) // 100*4455/100 - 100
+    expect(win.multiplierX100).toBe(expected)
+    expect(win.playerDelta).toBe((100n * expected) / 100n - 100n)
   })
 
   it('loses the stake when the hit count does not pay', () => {

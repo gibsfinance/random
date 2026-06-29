@@ -1,6 +1,7 @@
 import { encodeAbiParameters, type Hex } from 'viem'
 import { HUNDREDTHS, type Game, type RoundOutcome } from '../game'
 import { plinkoBucket, plinkoEdgedX100, type PlinkoRisk } from './plinko'
+import { symmetricBinomialFairTableX100 } from '../rtp'
 
 /**
  * Pachinko — a ball drops through `rows` of pegs, deflecting left/right at each, and lands in one of
@@ -22,23 +23,22 @@ const MIN_ROWS = 1
 const MAX_ROWS = 16
 
 /**
- * PLACEHOLDER PAYTABLES — VALUES ARE NOT FINAL (⚠ pending IMG_2259.MP4 / live morbius reference).
- *
- * Fair (pre-edge) slot multipliers in HUNDREDTHS (100 == 1.00x), symmetric, length rows+1, one table
- * per risk. Standard pachinko shapes (edges pay big, centre pays little). The ENGINE is final; only
- * these literal numbers are placeholders. Shipped for rows=12 (the pachinko default); add others as
- * the reference supplies them.
+ * Fair (pre-edge) slot multipliers in HUNDREDTHS, symmetric, length rows+1, one table per risk.
+ * RTP-CALIBRATED like plinko: a relative shape normalized by `scaledFairTableX100` to a fair mean of
+ * exactly 1.00x, so the single per-slot edge gives a verified ~1% house edge (test/rtp.test.ts).
+ * Shipped for rows=12 (the pachinko default).
  */
+const ROWS = 12
+/** relative half-shapes (slots 0..rows/2; the builder mirrors + normalizes the mean to 1.00x). */
+const HALF_SHAPES: Record<PachinkoRisk, bigint[]> = {
+  low: [100n, 30n, 16n, 12n, 11n, 10n, 9n],
+  medium: [2400n, 600n, 200n, 100n, 40n, 20n, 15n],
+  high: [42000n, 1800n, 500n, 200n, 60n, 20n, 20n],
+}
 const FAIR_TABLES_X100: Record<PachinkoRisk, Record<number, readonly bigint[]>> = {
-  low: {
-    12: [1000n, 300n, 160n, 120n, 110n, 100n, 50n, 100n, 110n, 120n, 160n, 300n, 1000n],
-  },
-  medium: {
-    12: [2400n, 600n, 200n, 140n, 100n, 60n, 30n, 60n, 100n, 140n, 200n, 600n, 2400n],
-  },
-  high: {
-    12: [42000n, 1800n, 500n, 200n, 60n, 20n, 20n, 20n, 60n, 200n, 500n, 1800n, 42000n],
-  },
+  low: { [ROWS]: symmetricBinomialFairTableX100(ROWS, HALF_SHAPES.low) },
+  medium: { [ROWS]: symmetricBinomialFairTableX100(ROWS, HALF_SHAPES.medium) },
+  high: { [ROWS]: symmetricBinomialFairTableX100(ROWS, HALF_SHAPES.high) },
 }
 
 /** the fair (pre-edge) slot table for a (risk, rows) pair, or throw if unsupported. */

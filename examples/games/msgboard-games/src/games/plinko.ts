@@ -1,5 +1,6 @@
 import { encodeAbiParameters, type Hex } from 'viem'
 import { EDGE_BPS, HUNDREDTHS, type Game, type RoundOutcome } from '../game'
+import { symmetricBinomialFairTableX100 } from '../rtp'
 
 export type PlinkoRisk = 'low' | 'medium' | 'high'
 
@@ -15,26 +16,27 @@ const MIN_ROWS = 1
 const MAX_ROWS = 16 // we only ship reference tables up to 16 rows
 
 /**
- * PLACEHOLDER PAYTABLES — VALUES ARE NOT FINAL.
+ * Fair (pre-edge) bucket multipliers in HUNDREDTHS, one symmetric table per risk level, length rows+1.
  *
- * These are the "fair" (pre-edge) bucket multipliers in HUNDREDTHS (100 == 1.00x), one symmetric
- * table per risk level, length rows+1. They are plausible/standard Plinko-shaped tables but the
- * exact morbius/stake reference numbers (from IMG_2259.MP4) are NOT yet available. Replace the
- * `rows === 16` rows below (and add other row counts as needed) with the reference values.
+ * RTP-CALIBRATED, not eyeballed: each table is built from a relative SHAPE (the volatility profile —
+ * low is near-flat, high spikes at the edges) and then NORMALIZED by `scaledFairTableX100` so the
+ * binomial-weighted fair mean is exactly 1.00x. After the single per-bucket edge that yields a verified
+ * ~1% house edge (see test/rtp.test.ts). The shapes are standard Plinko profiles; the exact morbius
+ * numbers are optional polish, but the ECONOMICS (RTP) are now provable, not guessed.
  *
- * The ENGINE (deflection -> bucket -> table lookup -> edge -> payout) is final and correct; only
- * these literal numbers are tuning placeholders.
+ * The ENGINE (deflection -> bucket -> table lookup -> edge -> payout) is unchanged.
  */
+const ROWS = 16
+/** relative half-shapes (buckets 0..rows/2; the builder mirrors + normalizes the mean to 1.00x). */
+const HALF_SHAPES: Record<PlinkoRisk, bigint[]> = {
+  low: [160n, 90n, 20n, 14n, 14n, 12n, 11n, 10n, 9n],
+  medium: [4000n, 1200n, 300n, 150n, 80n, 50n, 30n, 20n, 15n],
+  high: [100000n, 13000n, 2600n, 900n, 400n, 200n, 20n, 20n, 20n],
+}
 const FAIR_TABLES_X100: Record<PlinkoRisk, Record<number, readonly bigint[]>> = {
-  low: {
-    16: [1600n, 900n, 200n, 140n, 110n, 100n, 50n, 50n, 30n, 50n, 50n, 100n, 110n, 140n, 200n, 900n, 1600n],
-  },
-  medium: {
-    16: [11000n, 4100n, 1000n, 500n, 300n, 150n, 100n, 50n, 30n, 50n, 100n, 150n, 300n, 500n, 1000n, 4100n, 11000n],
-  },
-  high: {
-    16: [100000n, 13000n, 2600n, 900n, 400n, 200n, 20n, 20n, 20n, 20n, 20n, 200n, 400n, 900n, 2600n, 13000n, 100000n],
-  },
+  low: { [ROWS]: symmetricBinomialFairTableX100(ROWS, HALF_SHAPES.low) },
+  medium: { [ROWS]: symmetricBinomialFairTableX100(ROWS, HALF_SHAPES.medium) },
+  high: { [ROWS]: symmetricBinomialFairTableX100(ROWS, HALF_SHAPES.high) },
 }
 
 /** the fair (pre-edge) bucket table for a (risk, rows) pair, or throw if unsupported. */

@@ -10,8 +10,10 @@ describe('wheel (segmented spin)', () => {
   it('pointer lands on raw % segments and reads the edged segment multiplier', () => {
     expect(wheelSegment(0n, 10)).toBe(0)
     expect(wheelSegment(13n, 10)).toBe(3)
-    // high/10 has nine 0x and one 9.90x; the spike sits at index 9.
-    expect(wheelMultiplierX100('high', 10, 9)).toBe(wheelEdgedX100(990n))
+    // high/10 is a single jackpot segment (the last) carrying the whole wheel; the rest pay 0.
+    const fair = wheelFairTableX100('high', 10)
+    expect(wheelMultiplierX100('high', 10, 9)).toBe(wheelEdgedX100(fair[9]!))
+    expect(wheelMultiplierX100('high', 10, 9)).toBeGreaterThan(100n)
     expect(wheelMultiplierX100('high', 10, 0)).toBe(0n)
   })
 

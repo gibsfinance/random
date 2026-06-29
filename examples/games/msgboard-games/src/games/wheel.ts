@@ -1,5 +1,6 @@
 import { encodeAbiParameters, type Hex } from 'viem'
 import { EDGE_BPS, HUNDREDTHS, type Game, type RoundOutcome } from '../game'
+import { scaledFairTableX100 } from '../rtp'
 
 export type WheelRisk = 'low' | 'medium' | 'high'
 
@@ -13,50 +14,42 @@ export interface WheelParams {
 const BPS = 10_000n
 export const SUPPORTED_SEGMENTS = [10, 20, 30, 40, 50] as const
 
-/** expand run-length pairs [mult, count] into a flat segment table; the counts must sum to `segments`. */
-function runs(segments: number, pairs: readonly (readonly [bigint, number])[]): readonly bigint[] {
-  const out: bigint[] = []
-  for (const [mult, count] of pairs) for (let i = 0; i < count; i++) out.push(mult)
-  if (out.length !== segments) throw new Error(`wheel: table length ${out.length} != segments ${segments}`)
-  return out
-}
-
 /**
- * PLACEHOLDER PAYTABLES — VALUES ARE NOT FINAL (⚠ pending IMG_2259.MP4 / live morbius reference).
- *
- * Fair (pre-edge) segment multipliers in HUNDREDTHS (100 == 1.00x), one table per (risk, segments).
- * Expressed as run-length pairs for readability; the engine flattens them. The shapes are standard
- * wheel profiles (low = many small wins, high = mostly 0x with rare large spikes); the exact reference
- * numbers must replace these. The ENGINE (pointer = raw % segments -> table -> edge -> payout) is final.
+ * Relative segment SHAPE per risk (volatility profile). The economics come from normalization, not
+ * these numbers: `scaledFairTableX100` rescales the shape so the uniform-weighted fair mean is exactly
+ * 1.00x, and the single per-segment edge then yields a verified ~1% house edge (test/rtp.test.ts).
+ *   - low: most segments win a little, ~20% lose (a near-flat wheel);
+ *   - medium: half lose, the rest pay moderate, one big spike;
+ *   - high: a single jackpot segment carries the whole wheel (segments× before edge), the rest lose.
  */
-const FAIR_TABLES_X100: Record<WheelRisk, Record<number, readonly bigint[]>> = {
-  low: {
-    10: runs(10, [[0n, 2], [120n, 4], [150n, 3], [200n, 1]]),
-    20: runs(20, [[0n, 4], [120n, 9], [150n, 5], [200n, 2]]),
-    30: runs(30, [[0n, 6], [120n, 14], [150n, 7], [200n, 3]]),
-    40: runs(40, [[0n, 8], [120n, 19], [150n, 9], [200n, 4]]),
-    50: runs(50, [[0n, 10], [120n, 24], [150n, 11], [200n, 5]]),
-  },
-  medium: {
-    10: runs(10, [[0n, 4], [150n, 3], [200n, 2], [500n, 1]]),
-    20: runs(20, [[0n, 9], [150n, 6], [200n, 3], [300n, 1], [900n, 1]]),
-    30: runs(30, [[0n, 14], [150n, 9], [200n, 4], [300n, 2], [900n, 1]]),
-    40: runs(40, [[0n, 19], [150n, 12], [200n, 5], [300n, 3], [1500n, 1]]),
-    50: runs(50, [[0n, 24], [150n, 15], [200n, 6], [300n, 4], [1500n, 1]]),
-  },
-  high: {
-    10: runs(10, [[0n, 9], [990n, 1]]),
-    20: runs(20, [[0n, 19], [1980n, 1]]),
-    30: runs(30, [[0n, 29], [3000n, 1]]),
-    40: runs(40, [[0n, 39], [4000n, 1]]),
-    50: runs(50, [[0n, 49], [5000n, 1]]),
-  },
+function wheelShape(risk: WheelRisk, segments: number): bigint[] {
+  const s = new Array<bigint>(segments).fill(0n)
+  if (risk === 'low') {
+    for (let i = 0; i < segments; i++) s[i] = i % 5 === 0 ? 0n : 13n
+  } else if (risk === 'medium') {
+    for (let i = 0; i < segments; i++) s[i] = i % 2 === 0 ? 0n : 20n
+    s[segments - 1] = 90n // one big spike
+  } else {
+    s[segments - 1] = 1n // single jackpot segment
+  }
+  return s
 }
 
-/** the fair (pre-edge) segment table for a (risk, segments) pair, or throw if unsupported. */
+const UNIFORM = (segments: number): bigint[] => new Array<bigint>(segments).fill(1n)
+
+const TABLE_CACHE = new Map<string, readonly bigint[]>()
+
+/** the fair (pre-edge) segment table for a (risk, segments) pair — RTP-normalized, memoized. */
 export function wheelFairTableX100(risk: WheelRisk, segments: number): readonly bigint[] {
-  const table = FAIR_TABLES_X100[risk]?.[segments]
-  if (!table) throw new Error(`wheel: no paytable for risk=${risk} segments=${segments}`)
+  if (!(SUPPORTED_SEGMENTS as readonly number[]).includes(segments)) {
+    throw new Error(`wheel: no paytable for segments=${segments}`)
+  }
+  const key = `${risk}:${segments}`
+  let table = TABLE_CACHE.get(key)
+  if (!table) {
+    table = scaledFairTableX100(UNIFORM(segments), wheelShape(risk, segments))
+    TABLE_CACHE.set(key, table)
+  }
   return table
 }
 

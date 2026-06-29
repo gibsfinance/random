@@ -29,29 +29,34 @@ describe('plinko (deflection -> bucket -> table)', () => {
   })
 
   it('applies the 1% house edge to the fair multiplier (floored, hundredths)', () => {
-    // low rows=16 edge bucket fair = 1600 -> 1600*9900/10000 = 1584
+    // pure edge formula (independent of the table values): floor(fair * 9900 / 10000)
     expect(plinkoEdgedX100(1600n)).toBe(1584n)
-    // center bucket fair = 30 -> 30*9900/10000 = 29 (floored)
     expect(plinkoEdgedX100(30n)).toBe(29n)
-    expect(plinkoMultiplierX100('low', 16, 0)).toBe(1584n)
-    expect(plinkoMultiplierX100('low', 16, 8)).toBe(29n)
+    // and the per-bucket multiplier is exactly the edged fair-table entry
+    const fair = plinkoFairTableX100('low', 16)
+    expect(plinkoMultiplierX100('low', 16, 0)).toBe(plinkoEdgedX100(fair[0]!))
+    expect(plinkoMultiplierX100('low', 16, 8)).toBe(plinkoEdgedX100(fair[8]!))
   })
 
   it('settles a win at an edge bucket (mult >= 1.00x) paying stake*(mult-1)', () => {
-    // raw all-right -> bucket 16; low table edge fair 1600 -> edged 1584 (15.84x)
+    // raw all-right -> bucket 16 (an edge); edges pay the most, so this is a win.
+    const edge = plinkoMultiplierX100('low', 16, 16)
+    expect(edge).toBeGreaterThan(100n)
     const r = plinko.settleRound(100n, { rows: 16, risk: 'low' }, 0xffffn)
     expect(r.win).toBe(true)
-    expect(r.multiplierX100).toBe(1584n)
-    expect(r.playerDelta).toBe(100n * 1584n / 100n - 100n) // 1484
+    expect(r.multiplierX100).toBe(edge)
+    expect(r.playerDelta).toBe((100n * edge) / 100n - 100n)
   })
 
   it('settles a loss at the center bucket (mult < 1.00x)', () => {
-    // raw=0 ... but bucket 0 is also an edge. Use a center bucket via 8 set bits (0x00ff -> bucket 8).
+    // bucket 8 (centre) via 8 set bits; the centre pays the least, so this is a loss.
+    const center = plinkoMultiplierX100('low', 16, 8)
+    expect(center).toBeLessThan(100n)
     const r = plinko.settleRound(100n, { rows: 16, risk: 'low' }, 0x00ffn)
     expect(plinkoBucket(0x00ffn, 16)).toBe(8)
-    expect(r.win).toBe(false) // 0.29x < 1.00x
-    expect(r.multiplierX100).toBe(29n)
-    expect(r.playerDelta).toBe(100n * 29n / 100n - 100n) // -71
+    expect(r.win).toBe(false)
+    expect(r.multiplierX100).toBe(center)
+    expect(r.playerDelta).toBe((100n * center) / 100n - 100n)
   })
 
   it('is deterministic for the same raw', () => {
