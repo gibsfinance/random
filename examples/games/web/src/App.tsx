@@ -14,6 +14,9 @@ import { PlinkoScreen } from './components/PlinkoScreen'
 import { PachinkoScreen } from './components/PachinkoScreen'
 import { WheelScreen } from './components/WheelScreen'
 import { MonteScreen } from './components/MonteScreen'
+import { BaccaratScreen } from './components/BaccaratScreen'
+import { DragonTigerScreen } from './components/DragonTigerScreen'
+import { AndarBaharScreen } from './components/AndarBaharScreen'
 import { KenoScreen } from './components/KenoScreen'
 import { MinesScreen } from './components/MinesScreen'
 import { HiLoWarScreen } from './components/HiLoWarScreen'
@@ -39,6 +42,9 @@ const GAMES = [
   { id: 'pachinko', label: '🔴 Pachinko' },
   { id: 'wheel', label: '🎡 Wheel' },
   { id: 'monte', label: '🃏 Monte' },
+  { id: 'baccarat', label: '🀄 Baccarat' },
+  { id: 'dragon-tiger', label: '🐲 Dragon Tiger' },
+  { id: 'andar-bahar', label: '🎴 Andar Bahar' },
   { id: 'keno', label: '🔢 Keno' },
   { id: 'mines', label: '💣 Mines' },
   { id: 'hilo', label: '⚔️ Hi-Lo War' },
@@ -260,6 +266,30 @@ export const App = () => {
       )}
       {tab === 'monte' && (
         <MonteScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'baccarat' && (
+        <BaccaratScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'dragon-tiger' && (
+        <DragonTigerScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'andar-bahar' && (
+        <AndarBaharScreen
           deployment={deployment}
           walletClient={wallet.walletClient}
           trustAcknowledged={trustAcknowledged}
