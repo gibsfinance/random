@@ -17,6 +17,10 @@ import { MonteScreen } from './components/MonteScreen'
 import { BaccaratScreen } from './components/BaccaratScreen'
 import { DragonTigerScreen } from './components/DragonTigerScreen'
 import { AndarBaharScreen } from './components/AndarBaharScreen'
+import { CrapsScreen } from './components/CrapsScreen'
+import { ThreeCardPokerScreen } from './components/ThreeCardPokerScreen'
+import { VideoPokerScreen } from './components/VideoPokerScreen'
+import { BlackjackScreen } from './components/BlackjackScreen'
 import { KenoScreen } from './components/KenoScreen'
 import { MinesScreen } from './components/MinesScreen'
 import { TowersScreen } from './components/TowersScreen'
@@ -51,6 +55,10 @@ const GAMES = [
   { id: 'baccarat', label: '🀄 Baccarat' },
   { id: 'dragon-tiger', label: '🐲 Dragon Tiger' },
   { id: 'andar-bahar', label: '🎴 Andar Bahar' },
+  { id: 'craps', label: '🎲 Craps' },
+  { id: 'three-card', label: '🃏 Three Card Poker' },
+  { id: 'video-poker', label: '🎰 Video Poker' },
+  { id: 'blackjack', label: '🂡 Blackjack' },
   { id: 'keno', label: '🔢 Keno' },
   { id: 'mines', label: '💣 Mines' },
   { id: 'towers', label: '🗼 Towers' },
@@ -303,6 +311,38 @@ export const App = () => {
       )}
       {tab === 'andar-bahar' && (
         <AndarBaharScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'craps' && (
+        <CrapsScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'three-card' && (
+        <ThreeCardPokerScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'video-poker' && (
+        <VideoPokerScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'blackjack' && (
+        <BlackjackScreen
           deployment={deployment}
           walletClient={wallet.walletClient}
           trustAcknowledged={trustAcknowledged}
