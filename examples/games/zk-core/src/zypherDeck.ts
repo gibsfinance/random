@@ -28,6 +28,9 @@
 // but cannot bind ctx here; the on-chain ctx-bound dispute belongs to the vendored EdOnBN254
 // ChaumPedersenDLVerifier (P6.4), which is curve-correct once the deck is Baby-JubJub.
 
+// Node-only: this whole module is the GPL secret-engine prover path, only ever exercised Node-side.
+// In the browser bundle, `node:module` is aliased to a stub (see web/vite.config.ts) whose
+// `createRequire` throws — harmless because `engine()` is never called in the browser.
 import { createRequire } from 'node:module'
 import { pad, type Hex } from 'viem'
 import type { MaskedDeckProvider, ShuffleSigner, WireMasked, WireShare, WireShuffle } from './maskedDeck'

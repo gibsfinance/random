@@ -7,8 +7,13 @@ import { TrustBanner, isTrustAcknowledged } from './components/TrustBanner'
 import { CoinFlipScreen } from './components/CoinFlipScreen'
 import { RaffleScreen } from './components/RaffleScreen'
 import { DiceScreen } from './components/DiceScreen'
+import { DiceX2Screen } from './components/DiceX2Screen'
 import { LimboScreen } from './components/LimboScreen'
+import { CrashScreen } from './components/CrashScreen'
 import { PlinkoScreen } from './components/PlinkoScreen'
+import { PachinkoScreen } from './components/PachinkoScreen'
+import { WheelScreen } from './components/WheelScreen'
+import { MonteScreen } from './components/MonteScreen'
 import { KenoScreen } from './components/KenoScreen'
 import { MinesScreen } from './components/MinesScreen'
 import { HiLoWarScreen } from './components/HiLoWarScreen'
@@ -27,8 +32,13 @@ const GAMES = [
   { id: 'coinflip', label: '🪙 Coin Flip' },
   { id: 'raffle', label: '🎟 The Numbers' },
   { id: 'dice', label: '🎲 Dice' },
+  { id: 'dicex2', label: '🎲 Dice X2' },
   { id: 'limbo', label: '🚀 Limbo' },
+  { id: 'crash', label: '📈 Crash' },
   { id: 'plinko', label: '⚪ Plinko' },
+  { id: 'pachinko', label: '🔴 Pachinko' },
+  { id: 'wheel', label: '🎡 Wheel' },
+  { id: 'monte', label: '🃏 Monte' },
   { id: 'keno', label: '🔢 Keno' },
   { id: 'mines', label: '💣 Mines' },
   { id: 'hilo', label: '⚔️ Hi-Lo War' },
@@ -130,8 +140,8 @@ export const App = () => {
             <a href="https://msgboard.xyz" target="_blank" rel="noreferrer">
               chain
             </a>
-            ; the dice, limbo, plinko, keno, mines, and hi-lo tables lock their seed before the first hand and settle
-            off chain, co-signed, with the trail posted to MsgBoard. A trust-me casino asks you to believe the odds;
+            ; the dice, dice x2, limbo, crash, plinko, pachinko, wheel, monte, keno, mines, and hi-lo tables lock their
+            seed before the first hand and settle off chain, co-signed, with the trail posted to MsgBoard. A trust-me casino asks you to believe the odds;
             this room hands you the books.
           </p>
           <div className="howit">
@@ -200,6 +210,14 @@ export const App = () => {
           myAddress={wallet.address}
         />
       )}
+      {tab === 'dicex2' && (
+        <DiceX2Screen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
       {tab === 'limbo' && (
         <LimboScreen
           deployment={deployment}
@@ -208,8 +226,40 @@ export const App = () => {
           myAddress={wallet.address}
         />
       )}
+      {tab === 'crash' && (
+        <CrashScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
       {tab === 'plinko' && (
         <PlinkoScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'pachinko' && (
+        <PachinkoScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'wheel' && (
+        <WheelScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'monte' && (
+        <MonteScreen
           deployment={deployment}
           walletClient={wallet.walletClient}
           trustAcknowledged={trustAcknowledged}
