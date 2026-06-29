@@ -29,6 +29,8 @@ import { FirewalkScreen } from './components/FirewalkScreen'
 import { HeistScreen } from './components/HeistScreen'
 import { HiLoScreen } from './components/HiLoScreen'
 import { GreedDiceScreen } from './components/GreedDiceScreen'
+import { CascadeScreen } from './components/CascadeScreen'
+import { LotteryScreen } from './components/LotteryScreen'
 import { HiLoWarScreen } from './components/HiLoWarScreen'
 import { LiveFeed } from './components/LiveFeed'
 import { Menu } from './components/Menu'
@@ -67,6 +69,8 @@ const GAMES = [
   { id: 'heist', label: '💰 Heist' },
   { id: 'hilo-ladder', label: '🔼 Hi-Lo' },
   { id: 'greed-dice', label: '🎲 Greed Dice' },
+  { id: 'cascade', label: '🍒 Cascade' },
+  { id: 'lottery', label: '🎰 Lottery' },
   { id: 'hilo', label: '⚔️ Hi-Lo War' },
   { id: 'live', label: '🟢 Live' },
 ] as const
@@ -407,6 +411,22 @@ export const App = () => {
       )}
       {tab === 'greed-dice' && (
         <GreedDiceScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'cascade' && (
+        <CascadeScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'lottery' && (
+        <LotteryScreen
           deployment={deployment}
           walletClient={wallet.walletClient}
           trustAcknowledged={trustAcknowledged}

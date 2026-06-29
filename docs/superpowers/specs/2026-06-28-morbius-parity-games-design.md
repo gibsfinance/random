@@ -258,8 +258,25 @@ picks winner(s), on-chain pooled settle. Not counted in the 21; near-zero new wo
    stay hidden until settlement), per-game `verify(claim, seed)` re-checks the whole hand. Full logic
    tests (195 msgboard-games TS green) + web screens (Craps on useSession; the three decision games on an
    in-process-house deal→decide→settle flow with client-side verify). Splits/odds-bets out of scope.
-5. **Cascade:** P2 single-settle if gas allows, else optimistic + dispute-only recompute.
-6. **Lottery:** raffle reskin, anytime.
+5. **Cascade (P2): ✅ SHIPPED (2026-06-29).** `src/games/cascade.ts` (id 24) — a 6×5 tumbling-grid slot
+   (Gates-of-Olympus-style): scatter-pays at 8+ of a symbol, winners clear, survivors fall, fresh symbols
+   drop from the seed stream, tumble repeats until no match. The ENTIRE tumble (initial grid + every
+   refill) is a pure function of `raw` via `subRandom(raw, index)` → single P2 settle, no co-sign; the
+   total is hard-capped at 50.00x (= the escrow ceiling) and tumbles bounded, so it always terminates.
+   RTP is not closed-form (branching refills), so — as real slots are certified — the pay table is
+   calibrated by Monte-Carlo and the realized RTP (~0.94) is verified in a band strictly below 100%
+   (`test/cascade.test.ts`, 8 tests: determinism, escrow bound, scatter invariants, RTP). A `CascadeScreen`
+   replays the tumble with a client-side verify. On-chain `_cascade` mirror tracks the stateful-games
+   milestone (heavy-but-pure tumble loop; gas-bench, else optimistic + dispute-only).
+6. **Lottery (Structure C): ✅ SHIPPED (2026-06-29).** `src/lottery.ts` — a pooled, pari-mutuel raffle
+   (players-vs-players; the house only takes a rake, no bankroll risk). `winningTicket =
+   roundRandom(serverSeed, participationCommit, nonce) % totalTickets`, where `participationCommit` is a
+   hash of the FINAL ticket list — so the draw is ungrindable by EITHER side (house commits its seed
+   before sales close; a late buyer can't compute the winner without the seed preimage). Single + tiered
+   (`lotteryDrawMultiple`, distinct tickets) draws, exact pool/rake/prize-split math (no wei lost),
+   `verifyLotteryDraw`. `test/lottery.test.ts` (9 tests incl. win-frequency-tracks-share + the
+   ungrindable/preimage property). `LotteryScreen` demos buy→draw→verify. Reuses the existing on-chain
+   raffle rails for settlement.
 7. **Privacy pass:** wire Track-2 bet/outcome privacy across the P1 games once the catalog is in.
 
 ## 5. Open items
