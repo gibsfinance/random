@@ -77,6 +77,45 @@ Matches the morbius formula: `mult = 99 / target`.
 
 Matches morbius: `winChance = 99 / target`.
 
+### Plinko (`gameId = 3`), Keno (`gameId = 4`), Mines (`gameId = 5`)
+
+Binomial-bucket drop, draw-without-replacement table, and stateful co-signed board respectively. See
+their modules for the paytables (⚠ placeholder values pending the morbius reference).
+
+### Crash (`gameId = 6`)
+
+- Pre-committed **auto-cashout** form (the trustless one): the player locks an `autoCashoutX100` at OPEN.
+- Crash point uses the **same curve as limbo**: `C = floor(99 × 1_000_000 / (1_000_000 − u))`, `u = raw % 1e6`.
+- Win iff `C >= autoCashoutX100`; pays the auto-cashout multiplier. Escrow ceiling = `autoCashoutX100`.
+- A *live manual-cashout* crash is the stateful P3 form (Phase 2) — needs a co-signed CASH_OUT recorded
+  before `C` is revealed. On-chain: routes to the limbo recompute (identical math).
+
+### Pachinko (`gameId = 7`)
+
+- Plinko clone: a ball makes `rows` binary deflections (one seed bit each) → slot `[0, rows]`.
+- Reuses plinko's bucket + edge **verbatim**; only the slot paytable and gameId differ (⚠ placeholder).
+
+### Wheel (`gameId = 8`)
+
+- Pointer lands on `raw % segments`; the landed segment's edged multiplier pays.
+- Risk profiles `low | medium | high` × segments `{10,20,30,40,50}` (⚠ placeholder tables).
+
+### Monte (`gameId = 9`)
+
+- Three-card monte: winning position is `raw % 3` (seed-derived, not house-placed).
+- A correct `pick ∈ {0,1,2}` pays `3 × (1 − edge)` = **2.97×**; one fixed payout, so escrow ceiling = 2.97×.
+
+### Dice X2 (`gameId = 10`)
+
+- Two independent rolls derived from one round via `subRandom(raw, 0|1) % 1e4`.
+- `mode = both` wins iff **both** rolls `< targetX100`; `mode = either` wins iff **at least one** does.
+- Multiplier is the single edged `(1 − edge) / winChance` for the combined event (no variance):
+  `multX100 = 9_900_000_000 / winCountScaled`, `winCountScaled = both ? target² : 1e8 − (1e4 − target)²`.
+- Example: target 50% → both pays **3.96×**, either pays **1.32×**.
+
+On-chain recompute parity for dice, limbo, crash, monte, and dicex2 is pinned in
+`packages/contracts/test/foundry/GamePayouts.t.sol` against vectors from the canonical TS code.
+
 All arithmetic is `bigint` fixed-point in hundredths; no floating-point.
 
 ---
@@ -132,7 +171,7 @@ On-chain settlement lives in a separate package, [`@gibs/msgboard-settle`](../ms
 ## Running
 
 ```sh
-# tests (34 cases)
+# tests (121 cases)
 pnpm test
 
 # type-check

@@ -86,4 +86,80 @@ contract GamePayoutsTest is Test {
         uint256 r = uint256(keccak256(abi.encode(serverSeed, clientSeed, nonce)));
         assertEq(r, R_LIMBO_WIN); // identical to viem roundRandom(s(7), s(8), 1)
     }
+
+    // ===================== Phase-1 free reskins: crash (6), monte (9), dicex2 (10) =====================
+    // All vectors from gen-recompute-vectors.ts (REAL @gibs/msgboard-games), stake 200, nonce 1.
+
+    // crash (gameId 6), auto-cashout 200 (2.00x). Same curve as limbo: a win pays stake*target/100 = 400.
+    // escrowHouse = stake*(mult-100)/100 = 200*(200-100)/100 = 200 => pot = 400 == win payout.
+    uint256 internal constant CRASH_ESCROW_HOUSE = 200;
+    uint256 internal constant R_CRASH_WIN =
+        34617439739247797394274592469372388028589459303097279438227786370651859728252;
+    uint256 internal constant R_CRASH_LOSS =
+        48021959749924668954919726745462480696587112955782032280301967118035323446008;
+    uint256 internal constant PAYOUT_CRASH_WIN = 400;
+
+    function test_crash_win_matchesTs() public pure {
+        (uint256 bP, uint256 bH) =
+            GamePayouts.settle(6, R_CRASH_WIN, _params(200), ESCROW_PLAYER, CRASH_ESCROW_HOUSE);
+        assertEq(bP, PAYOUT_CRASH_WIN);
+        assertEq(bP + bH, ESCROW_PLAYER + CRASH_ESCROW_HOUSE); // conservation
+    }
+
+    function test_crash_loss_matchesTs() public pure {
+        (uint256 bP, uint256 bH) =
+            GamePayouts.settle(6, R_CRASH_LOSS, _params(200), ESCROW_PLAYER, CRASH_ESCROW_HOUSE);
+        assertEq(bP, 0);
+        assertEq(bH, ESCROW_PLAYER + CRASH_ESCROW_HOUSE);
+    }
+
+    // monte (gameId 9), pick 0. Win pays stake*297/100 = 594.
+    // escrowHouse = 200*(297-100)/100 = 394 => pot = 594 == win payout.
+    uint256 internal constant MONTE_ESCROW_HOUSE = 394;
+    uint256 internal constant R_MONTE_WIN =
+        54500711391457061163716902261958469731645956084585092484465987053120924694578;
+    uint256 internal constant R_MONTE_LOSS =
+        34617439739247797394274592469372388028589459303097279438227786370651859728252;
+    uint256 internal constant PAYOUT_MONTE_WIN = 594;
+
+    function test_monte_win_matchesTs() public pure {
+        (uint256 bP, uint256 bH) =
+            GamePayouts.settle(9, R_MONTE_WIN, _params(0), ESCROW_PLAYER, MONTE_ESCROW_HOUSE);
+        assertEq(bP, PAYOUT_MONTE_WIN);
+        assertEq(bP + bH, ESCROW_PLAYER + MONTE_ESCROW_HOUSE);
+    }
+
+    function test_monte_loss_matchesTs() public pure {
+        (uint256 bP, uint256 bH) =
+            GamePayouts.settle(9, R_MONTE_LOSS, _params(0), ESCROW_PLAYER, MONTE_ESCROW_HOUSE);
+        assertEq(bP, 0);
+        assertEq(bH, ESCROW_PLAYER + MONTE_ESCROW_HOUSE);
+    }
+
+    // dicex2 (gameId 10), target 5000, mode 0 (both). Win pays stake*396/100 = 792.
+    // escrowHouse = 200*(396-100)/100 = 592 => pot = 792 == win payout. params = (targetX100, mode).
+    uint256 internal constant DICEX2_ESCROW_HOUSE = 592;
+    uint256 internal constant R_DICEX2_WIN =
+        48021959749924668954919726745462480696587112955782032280301967118035323446008;
+    uint256 internal constant R_DICEX2_LOSS =
+        34617439739247797394274592469372388028589459303097279438227786370651859728252;
+    uint256 internal constant PAYOUT_DICEX2_WIN = 792;
+
+    function _dicex2Params(uint256 targetX100, uint256 mode) internal pure returns (bytes memory) {
+        return abi.encode(targetX100, mode);
+    }
+
+    function test_dicex2_win_matchesTs() public pure {
+        (uint256 bP, uint256 bH) =
+            GamePayouts.settle(10, R_DICEX2_WIN, _dicex2Params(5000, 0), ESCROW_PLAYER, DICEX2_ESCROW_HOUSE);
+        assertEq(bP, PAYOUT_DICEX2_WIN);
+        assertEq(bP + bH, ESCROW_PLAYER + DICEX2_ESCROW_HOUSE);
+    }
+
+    function test_dicex2_loss_matchesTs() public pure {
+        (uint256 bP, uint256 bH) =
+            GamePayouts.settle(10, R_DICEX2_LOSS, _dicex2Params(5000, 0), ESCROW_PLAYER, DICEX2_ESCROW_HOUSE);
+        assertEq(bP, 0);
+        assertEq(bH, ESCROW_PLAYER + DICEX2_ESCROW_HOUSE);
+    }
 }

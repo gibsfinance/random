@@ -231,8 +231,14 @@ picks winner(s), on-chain pooled settle. Not counted in the 21; near-zero new wo
 
 ## 4. Sequencing (value / effort)
 
-1. **Free reskins (days):** Crash (=limbo), Pachinko (=plinko), Wheel, Monte, Dice X2 — P1, pure
-   `settleRound` + `GamePayouts` branch + UI.
+1. **Free reskins (days): ✅ SHIPPED (2026-06-28).** Crash (id 6, =limbo), Pachinko (id 7, =plinko),
+   Wheel (id 8), Monte (id 9), Dice X2 (id 10) — all five implemented as `Game<TParams>` modules in
+   `examples/games/msgboard-games/src/games/` with full unit + escrow-ceiling tests (121 TS tests green).
+   On-chain recompute mirrors added for the pure-formula three (Crash, Monte, Dice X2) in
+   `GamePayouts.sol`, parity-pinned by `GamePayouts.t.sol` vectors (12 foundry tests green). Pachinko +
+   Wheel are table games → on-chain mirror deferred to the same "table games on-chain" milestone as the
+   not-yet-mirrored Plinko/Keno (they settle via the co-signed transcript path meanwhile). Remaining:
+   UI screens to match morbius dynamics, and pinning the ⚠ placeholder paytables to real values.
 2. **Pure-RNG cards (P1-simple):** Baccarat, Dragon Tiger, Andar Bahar — deal-from-seed + recompute, no
    co-sign.
 3. **Ladders (P3, one engine):** Towers → Chicken → Firewalk → Heist → Hi-Lo → Greed Dice — all reuse a

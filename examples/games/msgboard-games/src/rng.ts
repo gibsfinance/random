@@ -39,3 +39,17 @@ export function roundRandom(serverSeed: Hex, clientSeed: Hex, nonce: bigint): bi
   )
   return hexToBigInt(keccak256(packed))
 }
+
+/**
+ * Derive an independent sub-random stream from a single round random: uint256(keccak256(abi.encode(
+ * uint256 raw, uint64 index))). Used by games that need MULTIPLE independent draws from one round
+ * (e.g. Dice X2's two rolls). Deterministic and recomputable on-chain (same keccak preimage), so it
+ * stays provably fair: the sub-draws are fixed the instant `raw` is, with no extra house input.
+ */
+export function subRandom(raw: bigint, index: bigint): bigint {
+  const packed = encodeAbiParameters(
+    [{ type: 'uint256' }, { type: 'uint64' }],
+    [raw, index],
+  )
+  return hexToBigInt(keccak256(packed))
+}
