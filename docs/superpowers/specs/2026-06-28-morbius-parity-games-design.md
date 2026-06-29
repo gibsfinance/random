@@ -239,10 +239,18 @@ picks winner(s), on-chain pooled settle. Not counted in the 21; near-zero new wo
    Wheel are table games → on-chain mirror deferred to the same "table games on-chain" milestone as the
    not-yet-mirrored Plinko/Keno (they settle via the co-signed transcript path meanwhile). Remaining:
    UI screens to match morbius dynamics, and pinning the ⚠ placeholder paytables to real values.
-2. **Pure-RNG cards (P1-simple):** Baccarat, Dragon Tiger, Andar Bahar — deal-from-seed + recompute, no
-   co-sign.
-3. **Ladders (P3, one engine):** Towers → Chicken → Firewalk → Heist → Hi-Lo → Greed Dice — all reuse a
-   generalized mines session + per-game rules mirror. Build the engine once.
+2. **Pure-RNG cards (P1-simple): ✅ SHIPPED (2026-06-28).** Baccarat (id 11), Dragon Tiger (id 12),
+   Andar Bahar (id 13) — a self-contained seeded 52-card deck (`src/cards.ts`, full Fisher–Yates from
+   one round random, on-chain-reproducible) + deal-from-seed by fixed rules, no co-sign. Edge is
+   STRUCTURAL (banker commission / tie odds / andar-first asymmetry), not an extra 1%. Full unit tests
+   + web screens wired. On-chain deal mirror deferred to the "table games on-chain" milestone.
+3. **Ladders (P3, one engine): ✅ SHIPPED (2026-06-28).** A generalized co-signed ladder ENGINE
+   (`src/ladder.ts`) — seed-DERIVED hidden layout (never house-placed), co-signed steps, running
+   multiplier, cash-out/bust, generic dispute replay (`verifyLadder`), gameStateHash ABI encoding — then
+   Towers (14), Chicken (15), Firewalk (16), Heist (17), Hi-Lo (18), Greed Dice (19) as thin per-step
+   resolvers. Full tests (growth, bust, escrow ceilings, dispute accept/reject) + a generic
+   `useLadderSession` hook + six web screens. On-chain `LadderRules.sol` dispute mirror tracks the same
+   "stateful games on-chain" milestone as MinesRules. 157 msgboard-games TS tests green overall.
 4. **Decision cards (P4):** Three Card Poker → Video Poker → Blackjack → Craps — deck-from-seed + co-signed
    decisions + rules mirror; Blackjack/Craps are the heaviest state machines, last.
 5. **Cascade:** P2 single-settle if gas allows, else optimistic + dispute-only recompute.
@@ -250,9 +258,12 @@ picks winner(s), on-chain pooled settle. Not counted in the 21; near-zero new wo
 7. **Privacy pass:** wire Track-2 bet/outcome privacy across the P1 games once the catalog is in.
 
 ## 5. Open items
-- ⚠ **Paytable VALUES** for wheel/pachinko/plinko/keno/roulette/baccarat/video-poker/blackjack etc. are
-  not yet pinned to morbius's actual numbers (IMG_2259.MP4 + live site). Each game's table is a data
-  constant; gather them before launch — the *math/mechanism* is independent of the values.
+- ⚠ **Paytable VALUES** — two distinct things: (a) *RTP-correctness* (Σ P(outcome)·mult = 1−edge) and
+  (b) *matching morbius's exact distribution shape*. Phase-2/3 games need NEITHER table fix — their
+  payouts are DERIVED from probability (banker 0.95:1, hi-lo (1−edge)/P, towers (T/S)^k…), so they are
+  RTP-correct by construction. Only the eyeballed bucket tables remain: wheel/pachinko (Phase 1) and the
+  pre-existing plinko/keno. NEXT CLEANUP: retrofit those four to exact RTP=1−edge (a pure-numeric pass,
+  no reference needed); matching morbius's exact numbers (IMG_2259.MP4 + live site) stays optional polish.
 - ⚠ Exact rules for the novel originals (Cipher, Firewalk, Heist, Greed Dice, Cascade) need confirming
   against the live games — the patterns above are the trust-correct skeleton; the precise curves are TBD.
 - Escrow ceilings must be proven `>= max payout` per game (extend `test/escrowCeiling.test.ts`).
