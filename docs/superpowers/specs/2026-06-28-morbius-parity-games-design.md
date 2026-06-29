@@ -251,8 +251,13 @@ picks winner(s), on-chain pooled settle. Not counted in the 21; near-zero new wo
    resolvers. Full tests (growth, bust, escrow ceilings, dispute accept/reject) + a generic
    `useLadderSession` hook + six web screens. On-chain `LadderRules.sol` dispute mirror tracks the same
    "stateful games on-chain" milestone as MinesRules. 157 msgboard-games TS tests green overall.
-4. **Decision cards (P4):** Three Card Poker → Video Poker → Blackjack → Craps — deck-from-seed + co-signed
-   decisions + rules mirror; Blackjack/Craps are the heaviest state machines, last.
+4. **Decision cards (P4): ✅ SHIPPED (2026-06-29).** Craps (id 20, decisionless multi-roll → fits
+   Game<TParams>), Three Card Poker (21, play/fold), Video Poker (22, hold-mask), Blackjack (23,
+   hit/stand/double state machine). `src/poker.ts` 3-card + 5-card (Jacks-or-Better) evaluators. Trust
+   model = mines-style: deck committed via keccak(seed), cards revealed incrementally (hole/undrawn deck
+   stay hidden until settlement), per-game `verify(claim, seed)` re-checks the whole hand. Full logic
+   tests (195 msgboard-games TS green) + web screens (Craps on useSession; the three decision games on an
+   in-process-house deal→decide→settle flow with client-side verify). Splits/odds-bets out of scope.
 5. **Cascade:** P2 single-settle if gas allows, else optimistic + dispute-only recompute.
 6. **Lottery:** raffle reskin, anytime.
 7. **Privacy pass:** wire Track-2 bet/outcome privacy across the P1 games once the catalog is in.
