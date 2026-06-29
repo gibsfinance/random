@@ -290,9 +290,19 @@ picks winner(s), on-chain pooled settle. Not counted in the 21; near-zero new wo
 - ✅ **Secret-exposure tests — DONE (2026-06-29).** `test/secrecy.test.ts` asserts commit-before-reveal:
   seed-chain future-seed hiding, client-seed commit binding, roundRandom needing both raw seeds, and
   mines/ladder layouts absent from in-flight state + tamper/wrong-seed rejection.
+- 🔄 **On-chain mirror — pure-RNG games DONE (2026-06-29).** `GamePayouts.sol` now recomputes baccarat
+  (11), dragon tiger (12), andar bahar (13) — incl. the seeded Fisher–Yates shuffle ported bit-for-bit —
+  and the cascade tumbling slot (24), joining dice/limbo/crash/monte/dicex2 on the single-draw recompute
+  path. Parity is pinned by `test/foundry/CardCascadePayouts.t.sol` (13 vectors from the canonical TS via
+  `gen-recompute-vectors.ts`; 111 foundry tests green). Cascade gas-benched ~160k (heavy-but-pure tumble
+  loop) — fine for permissionless/dispute settle. STILL DEFERRED to a "stateful games on-chain" milestone:
+  the RTP-table games (plinko/keno/pachinko/wheel — need the table-builder on-chain) and the stateful/
+  decision games (mines, ladder family, three-card poker, video poker, blackjack — recompute needs the
+  per-step transcript, not just `r`).
 - ⚠ Exact rules for the novel originals (Cipher, Firewalk, Heist, Greed Dice, Cascade) need confirming
   against the live games — the patterns above are the trust-correct skeleton; the precise curves are TBD.
 - Escrow ceilings must be proven `>= max payout` per game (extend `test/escrowCeiling.test.ts`).
-- Decide co-sign vs on-chain-recompute cost trade per stateful game (Cascade/Blackjack gas).
+- Decide co-sign vs on-chain-recompute cost trade per remaining stateful game (Blackjack gas); Cascade's
+  recompute is now mirrored and benched.
 - Confirm whether any morbius "Live" tables are true human-dealer (3rd-party) — those are **out of
   scope**: a human dealer cannot be made trustless; do not fake it.

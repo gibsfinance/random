@@ -7,7 +7,12 @@
  * house-service binary):
  *   cd examples/games/msgboard-settle && ../house-service/node_modules/.bin/tsx scripts/gen-recompute-vectors.ts
  */
-import { dice, limbo, crash, monte, dicex2, roundRandom } from '@gibs/msgboard-games'
+import {
+  dice, limbo, crash, monte, dicex2, roundRandom,
+  baccarat, dragonTiger, andarBahar, dealBaccarat, dealDragonTiger, dealAndarBahar,
+  cascade, resolveCascade,
+} from '@gibs/msgboard-games'
+import { keccak256, encodeAbiParameters, hexToBigInt } from 'viem'
 
 // Two fixed (serverSeed, clientSeed, nonce) triples chosen to land a WIN and a LOSS for each game.
 // Adjust the seeds until both outcomes appear (the script prints win/loss so you can tune).
@@ -74,3 +79,48 @@ scan('crash', crash.gameId, (r) => crash.settleRound(stake, { autoCashoutX100: 2
 scan('monte', monte.gameId, (r) => monte.settleRound(stake, { pick: 0 }, r))
 // dicex2 (gameId 10), target 5000 mode 'both' — wins iff both derived rolls < 5000, pays 3.96x
 scan('dicex2', dicex2.gameId, (r) => dicex2.settleRound(stake, { targetX100: 5000n, mode: 'both' }, r))
+
+// ---- Pure-RNG games on-chain milestone: baccarat (11), dragon tiger (12), andar bahar (13), cascade (24) ----
+// These are hardcoded into packages/contracts/test/foundry/CardCascadePayouts.t.sol. The card vectors scan
+// s(2k-1)/s(2k) at nonce 1 for a specific WINNER, then print r + payout for a chosen bet; cascade uses a
+// keccak(uint64 i) raw stream (same as the foundry test) and selects a zero/small/big total.
+function findCard(
+  label: string,
+  pred: (r: bigint) => boolean,
+  settle: (r: bigint) => { win: boolean; playerDelta: bigint },
+): void {
+  for (let k = 2; k < 200_000; k++) {
+    const r = roundRandom(s(2 * k - 1), s(2 * k), 1n)
+    if (!pred(r)) continue
+    const o = settle(r)
+    console.log(JSON.stringify({ label, serverSeed: s(2 * k - 1), clientSeed: s(2 * k), nonce: '1', r: r.toString(), payout: (o.playerDelta + stake).toString() }))
+    return
+  }
+  console.log(JSON.stringify({ label, error: 'not found' }))
+}
+
+findCard('bacc-player', (r) => dealBaccarat(r).winner === 'player', (r) => baccarat.settleRound(stake, { bet: 'player' }, r))
+findCard('bacc-banker', (r) => dealBaccarat(r).winner === 'banker', (r) => baccarat.settleRound(stake, { bet: 'banker' }, r))
+findCard('bacc-tie-betTie', (r) => dealBaccarat(r).winner === 'tie', (r) => baccarat.settleRound(stake, { bet: 'tie' }, r))
+findCard('bacc-tie-betPlayer(push)', (r) => dealBaccarat(r).winner === 'tie', (r) => baccarat.settleRound(stake, { bet: 'player' }, r))
+findCard('dt-dragon', (r) => dealDragonTiger(r).winner === 'dragon', (r) => dragonTiger.settleRound(stake, { bet: 'dragon' }, r))
+findCard('dt-tie-betTie', (r) => dealDragonTiger(r).winner === 'tie', (r) => dragonTiger.settleRound(stake, { bet: 'tie' }, r))
+findCard('dt-tie-betDragon(half)', (r) => dealDragonTiger(r).winner === 'tie', (r) => dragonTiger.settleRound(stake, { bet: 'dragon' }, r))
+findCard('ab-andar', (r) => dealAndarBahar(r).winner === 'andar', (r) => andarBahar.settleRound(stake, { bet: 'andar' }, r))
+findCard('ab-bahar', (r) => dealAndarBahar(r).winner === 'bahar', (r) => andarBahar.settleRound(stake, { bet: 'bahar' }, r))
+
+const rawAt = (i: number): bigint => hexToBigInt(keccak256(encodeAbiParameters([{ type: 'uint64' }], [BigInt(i)])))
+function findCascade(label: string, pred: (total: bigint) => boolean): void {
+  for (let i = 0; i < 200_000; i++) {
+    const raw = rawAt(i)
+    const total = resolveCascade(raw).totalX100
+    if (!pred(total)) continue
+    const o = cascade.settleRound(stake, {}, raw)
+    console.log(JSON.stringify({ label, gameId: cascade.gameId, raw: raw.toString(), totalX100: total.toString(), payout: (o.playerDelta + stake).toString() }))
+    return
+  }
+  console.log(JSON.stringify({ label, error: 'not found' }))
+}
+findCascade('cascade-zero', (t) => t === 0n)
+findCascade('cascade-pay-small', (t) => t > 0n && t < 500n)
+findCascade('cascade-pay-big', (t) => t >= 1000n)

@@ -3,12 +3,16 @@ pragma solidity ^0.8.24;
 
 /// Pure on-chain reproduction of the msgboard-games settlement math.
 /// M1 mirrored dice + limbo; Phase-1 "free reskins" add crash (==limbo curve), monte and dicex2.
+/// The "pure-RNG games on-chain" milestone adds the seeded-deck card games — baccarat (11), dragon
+/// tiger (12), andar bahar (13) — and the cascade tumbling slot (24): all are pure functions of the
+/// round random `r` (no player decisions, no stored state), so they settle on this single-draw path.
 /// Returns the conserved (balancePlayer, balanceHouse) split for a single-draw round. Parity with
 /// the TS reference is pinned by foundry vectors generated from the canonical game code.
 ///
-/// NOT YET mirrored on-chain (table games — same status as plinko/keno/mines): pachinko (7) and
-/// wheel (8). Their settlement currently rides the co-signed transcript path; an on-chain table
-/// recompute is a follow-on "table games on-chain" milestone.
+/// NOT YET mirrored on-chain (table games needing the RTP-table builder: plinko (3), keno (4),
+/// pachinko (7), wheel (8)) and the STATEFUL/decision games (mines, the ladder family, three-card
+/// poker, video poker, blackjack) whose recompute needs the per-step transcript, not just `r`. Those
+/// track the separate "stateful games on-chain" milestone; meanwhile they ride the co-signed path.
 library GamePayouts {
     error UnknownGame();
 
@@ -36,6 +40,18 @@ library GamePayouts {
     uint256 internal constant DICEX2_MAX_TARGET = 9899;
     uint256 internal constant DICEX2_NUM = (DICE_ROLL_SPACE - EDGE_BPS) * DICE_ROLL_SPACE * HUNDREDTHS; // 9_900_000_000
 
+    // cards — mirror src/cards.ts (52-card deck; rank = index/4 + 2, ace high = 14)
+    uint256 internal constant DECK_SIZE = 52;
+
+    // cascade — mirror src/games/cascade.ts (6×5 tumbling-grid slot)
+    uint256 internal constant CASCADE_COLS = 6;
+    uint256 internal constant CASCADE_ROWS = 5;
+    uint256 internal constant CASCADE_CELLS = 30;
+    uint256 internal constant CASCADE_SYMBOLS = 8;
+    uint256 internal constant CASCADE_MIN_MATCH = 8;
+    uint256 internal constant CASCADE_MAX_TUMBLES = 200;
+    uint256 internal constant CASCADE_MAX_MULT_X100 = 5_000; // 50.00x hard cap (= escrow ceiling)
+
     function settle(
         uint8 gameId,
         uint256 r,
@@ -57,6 +73,14 @@ library GamePayouts {
             payout = _monte(r, params, stake);
         } else if (gameId == 10) {
             payout = _dicex2(r, params, stake);
+        } else if (gameId == 11) {
+            payout = _baccarat(r, params, stake);
+        } else if (gameId == 12) {
+            payout = _dragonTiger(r, params, stake);
+        } else if (gameId == 13) {
+            payout = _andarBahar(r, params, stake);
+        } else if (gameId == 24) {
+            payout = _cascade(r, stake);
         } else {
             revert UnknownGame();
         }
@@ -132,5 +156,216 @@ library GamePayouts {
             : DICE_ROLL_SPACE * DICE_ROLL_SPACE - (DICE_ROLL_SPACE - targetX100) * (DICE_ROLL_SPACE - targetX100);
         uint256 multX100 = DICEX2_NUM / winCountScaled;
         return stake * multX100 / HUNDREDTHS;
+    }
+
+    // ============================ seeded 52-card deck (mirror src/cards.ts) ============================
+
+    /// Full Fisher–Yates shuffle of [0..51] driven by `r`, consuming base-(i+1) digits from the high end
+    /// down (deck[i] <-> deck[j], j = r % (i+1)). IDENTICAL uint256 division order to shuffleDeck in
+    /// src/cards.ts, so deck[0] is dealt first and the order matches the TS reference bit-for-bit.
+    function _shuffle(uint256 r) private pure returns (uint8[52] memory deck) {
+        for (uint256 k = 0; k < DECK_SIZE; k++) deck[k] = uint8(k);
+        uint256 acc = r;
+        for (uint256 i = DECK_SIZE - 1; i >= 1; i--) {
+            uint256 window = i + 1;
+            uint256 j = acc % window;
+            acc = acc / window;
+            (deck[i], deck[j]) = (deck[j], deck[i]);
+        } // i never decrements below 1 to 0-and-continue: at i==1 the body runs, i-- -> 0, 0>=1 is false → exit
+    }
+
+    /// rank 2..14, ace high (index/4 + 2) — mirror rankOf in src/cards.ts.
+    function _rank(uint8 card) private pure returns (uint256) {
+        return uint256(card) / 4 + 2;
+    }
+
+    /// baccarat pip value: A=1, 2..9 face, 10/J/Q/K=0 — mirror baccaratValue in src/cards.ts.
+    function _bacVal(uint8 card) private pure returns (uint256) {
+        uint256 rk = _rank(card);
+        if (rk == 14) return 1; // ace
+        if (rk >= 10) return 0; // 10, J, Q, K
+        return rk; // 2..9
+    }
+
+    /// dragon-tiger rank: ace LOW (1), else 2..13 — mirror dragonTigerRank in src/cards.ts.
+    function _dtRank(uint8 card) private pure returns (uint256) {
+        uint256 rk = _rank(card);
+        return rk == 14 ? 1 : rk;
+    }
+
+    // ============================ pure-RNG card games (no player decisions) ============================
+
+    /// baccarat (gameId 11): deal both hands from the shuffled deck per the FIXED third-card rules, pay
+    /// the chosen bet. Ports dealBaccarat + settleRound from src/games/baccarat.ts. params = uint256 bet
+    /// (0 player, 1 banker, 2 tie). Payout multiplier: player 200, banker 195, tie 900; a player/banker
+    /// bet PUSHES on a tie (100 == stake back); a tie bet loses on a non-tie.
+    function _baccarat(uint256 r, bytes memory params, uint256 stake) private pure returns (uint256) {
+        uint256 bet = abi.decode(params, (uint256));
+        require(bet <= 2, "baccarat: bad bet");
+        uint8[52] memory deck = _shuffle(r);
+        uint256 ptr = 4;
+        uint256 pSum = _bacVal(deck[0]) + _bacVal(deck[2]); // player cards 0,2
+        uint256 bSum = _bacVal(deck[1]) + _bacVal(deck[3]); // banker cards 1,3
+        uint256 pt = pSum % 10;
+        uint256 bt = bSum % 10;
+
+        if (pt < 8 && bt < 8) {
+            // not a natural — apply the fixed draw rules
+            bool playerDrew = false;
+            uint256 playerThirdPip = 0;
+            if (pt <= 5) {
+                playerThirdPip = _bacVal(deck[ptr++]);
+                pSum += playerThirdPip;
+                pt = pSum % 10;
+                playerDrew = true;
+            }
+            bool bankerDraws = !playerDrew ? (bt <= 5) : _bankerDrawsAfterPlayerThird(bt, playerThirdPip);
+            if (bankerDraws) {
+                bSum += _bacVal(deck[ptr++]);
+                bt = bSum % 10;
+            }
+        }
+
+        uint256 winner = pt > bt ? 0 : bt > pt ? 1 : 2; // 0 player, 1 banker, 2 tie
+        uint256 multX100;
+        if (winner == 2 && bet != 2) {
+            multX100 = HUNDREDTHS; // push: player/banker bet returns the stake on a tie
+        } else if (winner == bet) {
+            multX100 = bet == 0 ? 200 : bet == 1 ? 195 : 900;
+        } else {
+            multX100 = 0;
+        }
+        return stake * multX100 / HUNDREDTHS;
+    }
+
+    /// banker third-card rule given the banker's 2-card total and the player's third-card pip — mirror
+    /// bankerDrawsAfterPlayerThird in src/games/baccarat.ts.
+    function _bankerDrawsAfterPlayerThird(uint256 bankerTotal, uint256 pip) private pure returns (bool) {
+        if (bankerTotal <= 2) return true;
+        if (bankerTotal == 3) return pip != 8;
+        if (bankerTotal == 4) return pip >= 2 && pip <= 7;
+        if (bankerTotal == 5) return pip >= 4 && pip <= 7;
+        if (bankerTotal == 6) return pip >= 6 && pip <= 7;
+        return false; // 7 stands
+    }
+
+    /// dragon tiger (gameId 12): one card each (deck[0] dragon, deck[1] tiger), higher rank wins, ace
+    /// low. Ports dealDragonTiger + settleRound from src/games/dragonTiger.ts. params = uint256 bet
+    /// (0 dragon, 1 tiger, 2 tie). Win pays 200 (dragon/tiger) or 1200 (tie); on a tie a dragon/tiger
+    /// bet returns HALF (50).
+    function _dragonTiger(uint256 r, bytes memory params, uint256 stake) private pure returns (uint256) {
+        uint256 bet = abi.decode(params, (uint256));
+        require(bet <= 2, "dragon-tiger: bad bet");
+        uint8[52] memory deck = _shuffle(r);
+        uint256 dr = _dtRank(deck[0]);
+        uint256 tr = _dtRank(deck[1]);
+        uint256 winner = dr > tr ? 0 : tr > dr ? 1 : 2; // 0 dragon, 1 tiger, 2 tie
+        uint256 multX100;
+        if (winner == 2 && bet != 2) {
+            multX100 = 50; // tie, dragon/tiger bet: lose half
+        } else if (winner == bet) {
+            multX100 = bet == 2 ? 1200 : 200;
+        } else {
+            multX100 = 0;
+        }
+        return stake * multX100 / HUNDREDTHS;
+    }
+
+    /// andar bahar (gameId 13): reveal joker (deck[0]); deal alternately Andar (first), Bahar… until the
+    /// joker RANK is matched; the matching side wins. Ports dealAndarBahar + settleRound from
+    /// src/games/andarBahar.ts. params = uint256 bet (0 andar, 1 bahar). Andar pays 190, Bahar 200.
+    function _andarBahar(uint256 r, bytes memory params, uint256 stake) private pure returns (uint256) {
+        uint256 bet = abi.decode(params, (uint256));
+        require(bet <= 1, "andar-bahar: bad bet");
+        uint8[52] memory deck = _shuffle(r);
+        uint256 jokerRank = _rank(deck[0]);
+        uint256 turn = 0; // 0 andar, 1 bahar
+        uint256 winner = 2; // sentinel; a match is guaranteed (3 of the joker rank remain)
+        for (uint256 i = 1; i < DECK_SIZE; i++) {
+            if (_rank(deck[i]) == jokerRank) {
+                winner = turn;
+                break;
+            }
+            turn = turn == 0 ? 1 : 0;
+        }
+        require(winner != 2, "andar-bahar: no match"); // unreachable for a full deck
+        uint256 multX100 = winner == bet ? (bet == 0 ? 190 : 200) : 0;
+        return stake * multX100 / HUNDREDTHS;
+    }
+
+    // ================================ cascade tumbling slot (gameId 24) ================================
+
+    /// per-symbol base pay (×100 of bet) for the smallest cluster — mirror SYMBOL_BASE_X100 in cascade.ts.
+    function _cascadeSymBase(uint256 s) private pure returns (uint256) {
+        if (s == 0) return 66;
+        if (s == 1) return 82;
+        if (s == 2) return 99;
+        if (s == 3) return 132;
+        if (s == 4) return 181;
+        if (s == 5) return 264;
+        if (s == 6) return 429;
+        return 742;
+    }
+
+    /// pay for a winning cluster of `count` cells of `symbol` — mirror cascadePayX100 in cascade.ts.
+    function _cascadePay(uint256 symbol, uint256 count) private pure returns (uint256) {
+        uint256 factor = count >= 12 ? 12 : count >= 10 ? 3 : 1;
+        return _cascadeSymBase(symbol) * factor;
+    }
+
+    /// the symbol for the cell filled at stream position `index` — mirror cascadeSymbol (subRandom % 8).
+    function _cascadeSymbol(uint256 r, uint256 index) private pure returns (uint8) {
+        return uint8(uint256(keccak256(abi.encode(r, uint64(index)))) % CASCADE_SYMBOLS);
+    }
+
+    /// cascade (gameId 24): a 6×5 tumbling-grid slot. Scatter-pays at 8+ of a symbol; winners clear,
+    /// survivors fall, fresh symbols drop in from the seed stream, repeat until no match. Ports
+    /// resolveCascade from src/games/cascade.ts EXACTLY (grid index = row*6+col, row 0 top; survivors
+    /// fall bottom-up; refills top-down). The total is hard-capped at 50.00x (the escrow ceiling) with a
+    /// bounded tumble count, so it always terminates. Pure but keccak-heavy — a dispute-only recompute.
+    function _cascade(uint256 r, uint256 stake) private pure returns (uint256) {
+        uint8[30] memory grid;
+        for (uint256 i = 0; i < CASCADE_CELLS; i++) grid[i] = _cascadeSymbol(r, i);
+        uint256 nextIndex = CASCADE_CELLS;
+        uint256 totalX100 = 0;
+
+        for (uint256 t = 0; t < CASCADE_MAX_TUMBLES; t++) {
+            uint256[8] memory counts;
+            for (uint256 c = 0; c < CASCADE_CELLS; c++) counts[grid[c]]++;
+
+            bool[8] memory isWinner;
+            bool any = false;
+            uint256 stepPay = 0;
+            for (uint256 s = 0; s < CASCADE_SYMBOLS; s++) {
+                if (counts[s] >= CASCADE_MIN_MATCH) {
+                    isWinner[s] = true;
+                    any = true;
+                    stepPay += _cascadePay(s, counts[s]);
+                }
+            }
+            if (!any) break;
+
+            totalX100 += stepPay;
+            if (totalX100 >= CASCADE_MAX_MULT_X100) {
+                totalX100 = CASCADE_MAX_MULT_X100;
+                break;
+            }
+
+            // collapse: per column, survivors fall to the bottom (keeping order); empties refill top-down.
+            for (uint256 col = 0; col < CASCADE_COLS; col++) {
+                uint8[5] memory survivors;
+                uint256 sn = 0;
+                for (uint256 k = 0; k < CASCADE_ROWS; k++) {
+                    uint256 idx = (CASCADE_ROWS - 1 - k) * CASCADE_COLS + col; // bottom-up
+                    if (!isWinner[grid[idx]]) survivors[sn++] = grid[idx];
+                }
+                for (uint256 k = 0; k < CASCADE_ROWS; k++) {
+                    uint256 idx = (CASCADE_ROWS - 1 - k) * CASCADE_COLS + col;
+                    if (k < sn) grid[idx] = survivors[k]; // k == fromBottom
+                    else { grid[idx] = _cascadeSymbol(r, nextIndex); nextIndex++; }
+                }
+            }
+        }
+        return stake * totalX100 / HUNDREDTHS;
     }
 }
