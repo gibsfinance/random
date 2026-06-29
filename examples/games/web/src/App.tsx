@@ -19,6 +19,12 @@ import { DragonTigerScreen } from './components/DragonTigerScreen'
 import { AndarBaharScreen } from './components/AndarBaharScreen'
 import { KenoScreen } from './components/KenoScreen'
 import { MinesScreen } from './components/MinesScreen'
+import { TowersScreen } from './components/TowersScreen'
+import { ChickenScreen } from './components/ChickenScreen'
+import { FirewalkScreen } from './components/FirewalkScreen'
+import { HeistScreen } from './components/HeistScreen'
+import { HiLoScreen } from './components/HiLoScreen'
+import { GreedDiceScreen } from './components/GreedDiceScreen'
 import { HiLoWarScreen } from './components/HiLoWarScreen'
 import { LiveFeed } from './components/LiveFeed'
 import { Menu } from './components/Menu'
@@ -47,6 +53,12 @@ const GAMES = [
   { id: 'andar-bahar', label: '🎴 Andar Bahar' },
   { id: 'keno', label: '🔢 Keno' },
   { id: 'mines', label: '💣 Mines' },
+  { id: 'towers', label: '🗼 Towers' },
+  { id: 'chicken', label: '🐔 Chicken' },
+  { id: 'firewalk', label: '🔥 Firewalk' },
+  { id: 'heist', label: '💰 Heist' },
+  { id: 'hilo-ladder', label: '🔼 Hi-Lo' },
+  { id: 'greed-dice', label: '🎲 Greed Dice' },
   { id: 'hilo', label: '⚔️ Hi-Lo War' },
   { id: 'live', label: '🟢 Live' },
 ] as const
@@ -146,8 +158,9 @@ export const App = () => {
             <a href="https://msgboard.xyz" target="_blank" rel="noreferrer">
               chain
             </a>
-            ; the dice, dice x2, limbo, crash, plinko, pachinko, wheel, monte, keno, mines, and hi-lo tables lock their
-            seed before the first hand and settle off chain, co-signed, with the trail posted to MsgBoard. A trust-me casino asks you to believe the odds;
+            ; the dice, limbo, crash, plinko, wheel, monte, keno, mines, baccarat, dragon tiger, towers, chicken,
+            firewalk, heist, hi-lo, greed dice and the rest lock their seed before the first hand and settle
+            off chain, co-signed, with the trail posted to MsgBoard. A trust-me casino asks you to believe the odds;
             this room hands you the books.
           </p>
           <div className="howit">
@@ -306,6 +319,54 @@ export const App = () => {
       )}
       {tab === 'mines' && (
         <MinesScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'towers' && (
+        <TowersScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'chicken' && (
+        <ChickenScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'firewalk' && (
+        <FirewalkScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'heist' && (
+        <HeistScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'hilo-ladder' && (
+        <HiLoScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'greed-dice' && (
+        <GreedDiceScreen
           deployment={deployment}
           walletClient={wallet.walletClient}
           trustAcknowledged={trustAcknowledged}
