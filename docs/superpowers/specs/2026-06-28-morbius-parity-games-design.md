@@ -258,12 +258,16 @@ picks winner(s), on-chain pooled settle. Not counted in the 21; near-zero new wo
 7. **Privacy pass:** wire Track-2 bet/outcome privacy across the P1 games once the catalog is in.
 
 ## 5. Open items
-- ⚠ **Paytable VALUES** — two distinct things: (a) *RTP-correctness* (Σ P(outcome)·mult = 1−edge) and
-  (b) *matching morbius's exact distribution shape*. Phase-2/3 games need NEITHER table fix — their
-  payouts are DERIVED from probability (banker 0.95:1, hi-lo (1−edge)/P, towers (T/S)^k…), so they are
-  RTP-correct by construction. Only the eyeballed bucket tables remain: wheel/pachinko (Phase 1) and the
-  pre-existing plinko/keno. NEXT CLEANUP: retrofit those four to exact RTP=1−edge (a pure-numeric pass,
-  no reference needed); matching morbius's exact numbers (IMG_2259.MP4 + live site) stays optional polish.
+- ✅ **Paytable RTP — DONE (2026-06-29).** The eyeballed bucket tables were not just unverified, they
+  were broken (wheel paid 111% — house loses; pachinko 79%; keno 51%). Rebuilt via `src/rtp.ts`: every
+  table is normalized from a relative shape to a fair mean of 1.00x (binomial for plinko/pachinko,
+  uniform for wheel, hypergeometric for keno), edged once → verified ~1% edge. `test/rtp.test.ts`
+  computes each table's realized RTP and asserts it is never player-favorable and within band. Phase-2/3
+  games are RTP-correct by construction (payouts derived from probability). Matching morbius's exact
+  distribution numbers (IMG_2259.MP4 + live site) remains optional polish.
+- ✅ **Secret-exposure tests — DONE (2026-06-29).** `test/secrecy.test.ts` asserts commit-before-reveal:
+  seed-chain future-seed hiding, client-seed commit binding, roundRandom needing both raw seeds, and
+  mines/ladder layouts absent from in-flight state + tamper/wrong-seed rejection.
 - ⚠ Exact rules for the novel originals (Cipher, Firewalk, Heist, Greed Dice, Cascade) need confirming
   against the live games — the patterns above are the trust-correct skeleton; the precise curves are TBD.
 - Escrow ceilings must be proven `>= max payout` per game (extend `test/escrowCeiling.test.ts`).
