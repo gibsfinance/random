@@ -290,15 +290,18 @@ picks winner(s), on-chain pooled settle. Not counted in the 21; near-zero new wo
 - ✅ **Secret-exposure tests — DONE (2026-06-29).** `test/secrecy.test.ts` asserts commit-before-reveal:
   seed-chain future-seed hiding, client-seed commit binding, roundRandom needing both raw seeds, and
   mines/ladder layouts absent from in-flight state + tamper/wrong-seed rejection.
-- 🔄 **On-chain mirror — pure-RNG games DONE (2026-06-29).** `GamePayouts.sol` now recomputes baccarat
-  (11), dragon tiger (12), andar bahar (13) — incl. the seeded Fisher–Yates shuffle ported bit-for-bit —
-  and the cascade tumbling slot (24), joining dice/limbo/crash/monte/dicex2 on the single-draw recompute
-  path. Parity is pinned by `test/foundry/CardCascadePayouts.t.sol` (13 vectors from the canonical TS via
-  `gen-recompute-vectors.ts`; 111 foundry tests green). Cascade gas-benched ~160k (heavy-but-pure tumble
-  loop) — fine for permissionless/dispute settle. STILL DEFERRED to a "stateful games on-chain" milestone:
-  the RTP-table games (plinko/keno/pachinko/wheel — need the table-builder on-chain) and the stateful/
-  decision games (mines, ladder family, three-card poker, video poker, blackjack — recompute needs the
-  per-step transcript, not just `r`).
+- 🔄 **On-chain mirror — ALL single-draw games DONE (2026-06-29).** `GamePayouts.sol` recomputes the
+  pure-RNG games — baccarat (11), dragon tiger (12), andar bahar (13) incl. the seeded Fisher–Yates
+  shuffle ported bit-for-bit, and the cascade tumbling slot (24) — AND now the table games: plinko (3),
+  keno (4), pachinko (7), wheel (8). The RTP tables are embedded in `GameTables.sol` (packed uint24,
+  generated verbatim from the TS via `gen-recompute-vectors.ts`) for plinko/pachinko/keno; wheel's
+  uniform-weight table is recomputed on-chain (cheap + safe). The on-chain index math ports exactly:
+  popcount for plinko/pachinko buckets, `r % segments` for wheel, keno's partial Fisher–Yates draw of 10
+  of 40 + hit count. Parity pinned by `test/foundry/CardCascadePayouts.t.sol` (13 vectors) +
+  `TablePayouts.t.sol` (9 vectors); **120 foundry tests green**. Cascade gas ~160k (heavy-but-pure).
+  STILL DEFERRED to the "stateful games on-chain" milestone: only the genuinely STATEFUL/decision games
+  remain — mines, the ladder family, three-card poker, video poker, blackjack — whose recompute needs
+  the per-step co-signed transcript, not just `r` (a dispute-replay mirror à la MinesRules/LadderRules).
 - ⚠ Exact rules for the novel originals (Cipher, Firewalk, Heist, Greed Dice, Cascade) need confirming
   against the live games — the patterns above are the trust-correct skeleton; the precise curves are TBD.
 - Escrow ceilings must be proven `>= max payout` per game (extend `test/escrowCeiling.test.ts`).

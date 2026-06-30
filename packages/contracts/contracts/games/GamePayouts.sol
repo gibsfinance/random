@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
+import {GameTables} from "./GameTables.sol";
+
 /// Pure on-chain reproduction of the msgboard-games settlement math.
 /// M1 mirrored dice + limbo; Phase-1 "free reskins" add crash (==limbo curve), monte and dicex2.
-/// The "pure-RNG games on-chain" milestone adds the seeded-deck card games — baccarat (11), dragon
-/// tiger (12), andar bahar (13) — and the cascade tumbling slot (24): all are pure functions of the
-/// round random `r` (no player decisions, no stored state), so they settle on this single-draw path.
+/// The "pure-RNG games on-chain" milestone added the seeded-deck card games — baccarat (11), dragon
+/// tiger (12), andar bahar (13) — and the cascade tumbling slot (24). The "table games on-chain"
+/// milestone adds plinko (3), keno (4), pachinko (7) and wheel (8): all are pure functions of the round
+/// random `r` (no player decisions, no stored state), so they settle on this single-draw path. The RTP
+/// tables are embedded (GameTables.sol) for plinko/pachinko/keno; wheel's uniform table is recomputed.
 /// Returns the conserved (balancePlayer, balanceHouse) split for a single-draw round. Parity with
 /// the TS reference is pinned by foundry vectors generated from the canonical game code.
 ///
-/// NOT YET mirrored on-chain (table games needing the RTP-table builder: plinko (3), keno (4),
-/// pachinko (7), wheel (8)) and the STATEFUL/decision games (mines, the ladder family, three-card
+/// STILL NOT mirrored on-chain: the STATEFUL/decision games (mines, the ladder family, three-card
 /// poker, video poker, blackjack) whose recompute needs the per-step transcript, not just `r`. Those
 /// track the separate "stateful games on-chain" milestone; meanwhile they ride the co-signed path.
 library GamePayouts {
@@ -73,6 +76,14 @@ library GamePayouts {
             payout = _monte(r, params, stake);
         } else if (gameId == 10) {
             payout = _dicex2(r, params, stake);
+        } else if (gameId == 3) {
+            payout = _plinko(r, params, stake);
+        } else if (gameId == 4) {
+            payout = _keno(r, params, stake);
+        } else if (gameId == 7) {
+            payout = _pachinko(r, params, stake);
+        } else if (gameId == 8) {
+            payout = _wheel(r, params, stake);
         } else if (gameId == 11) {
             payout = _baccarat(r, params, stake);
         } else if (gameId == 12) {
@@ -367,5 +378,107 @@ library GamePayouts {
             }
         }
         return stake * totalX100 / HUNDREDTHS;
+    }
+
+    // ================================ table games (single-draw, RTP tables) ================================
+
+    /// apply the standard 1% house edge to a fair multiplier (×100), flooring — mirrors the TS edge
+    /// helpers (plinkoEdgedX100 / wheelEdgedX100 / keno.applyEdgeX100 are all floor(fair*9900/10000)).
+    function _edgedX100(uint256 fair) private pure returns (uint256) {
+        return fair * (BPS - EDGE_BPS) / BPS;
+    }
+
+    /// count the set bits in the low `bits` bits of `r` — the binomial bucket/slot for plinko/pachinko
+    /// (one seed bit per row; mirror plinkoBucket in src/games/plinko.ts).
+    function _popcount(uint256 r, uint256 bits) private pure returns (uint256 c) {
+        for (uint256 i = 0; i < bits; i++) if ((r >> i) & 1 == 1) c++;
+    }
+
+    /// plinko (gameId 3): land in bucket = popcount(low 16 bits); pay the edged table value. Always pays
+    /// stake*mult/100 (sub-1x buckets return a partial). params = abi.encode(uint256 rows, uint256 riskIdx)
+    /// with riskIdx 0=low 1=medium 2=high. Only rows=16 is shipped (the single reference table).
+    function _plinko(uint256 r, bytes memory params, uint256 stake) private pure returns (uint256) {
+        (uint256 rows, uint256 riskIdx) = abi.decode(params, (uint256, uint256));
+        require(rows == 16, "plinko: only rows=16 mirrored");
+        uint256 mult = _edgedX100(GameTables.plinkoFair(riskIdx, _popcount(r, 16)));
+        return stake * mult / HUNDREDTHS;
+    }
+
+    /// pachinko (gameId 7): identical engine to plinko, own table. rows=12, slot = popcount(low 12 bits).
+    function _pachinko(uint256 r, bytes memory params, uint256 stake) private pure returns (uint256) {
+        (uint256 rows, uint256 riskIdx) = abi.decode(params, (uint256, uint256));
+        require(rows == 12, "pachinko: only rows=12 mirrored");
+        uint256 mult = _edgedX100(GameTables.pachinkoFair(riskIdx, _popcount(r, 12)));
+        return stake * mult / HUNDREDTHS;
+    }
+
+    /// wheel shape value at segment `i` — mirror wheelShape in src/games/wheel.ts (riskIdx 0=low 1=med 2=high).
+    function _wheelShapeAt(uint256 riskIdx, uint256 segments, uint256 i) private pure returns (uint256) {
+        if (riskIdx == 0) return (i % 5 == 0) ? 0 : 13; // low: ~20% lose, rest near-flat
+        if (riskIdx == 1) return (i == segments - 1) ? 90 : (i % 2 == 0 ? 0 : 20); // medium: half lose + spike
+        return (i == segments - 1) ? 1 : 0; // high: single jackpot
+    }
+
+    /// wheel (gameId 8): segment = r % segments; pay the edged table value. The table is UNIFORM-weighted,
+    /// so it is recomputed on-chain (no embed): fair[i] = floor(shape[i]*segments*100/sumShape), with the
+    /// whole flooring deficit added to the lowest-index winner — exactly what scaledFairTableX100 does for
+    /// uniform weights. params = abi.encode(uint256 segments, uint256 riskIdx).
+    function _wheel(uint256 r, bytes memory params, uint256 stake) private pure returns (uint256) {
+        (uint256 segments, uint256 riskIdx) = abi.decode(params, (uint256, uint256));
+        require(riskIdx < 3, "wheel: bad risk");
+        require(
+            segments == 10 || segments == 20 || segments == 30 || segments == 40 || segments == 50,
+            "wheel: unsupported segments"
+        );
+        uint256 segment = r % segments;
+        uint256 target = segments * HUNDREDTHS;
+
+        uint256 sumShape = 0;
+        for (uint256 i = 0; i < segments; i++) sumShape += _wheelShapeAt(riskIdx, segments, i);
+
+        uint256 flooredSum = 0;
+        uint256 firstWinner = type(uint256).max;
+        for (uint256 i = 0; i < segments; i++) {
+            uint256 sh = _wheelShapeAt(riskIdx, segments, i);
+            flooredSum += sh * target / sumShape;
+            if (sh > 0 && firstWinner == type(uint256).max) firstWinner = i;
+        }
+        uint256 deficit = target - flooredSum;
+
+        uint256 fair = _wheelShapeAt(riskIdx, segments, segment) * target / sumShape;
+        if (segment == firstWinner) fair += deficit; // uniform weights → entire deficit on the first winner
+        uint256 mult = _edgedX100(fair);
+        return stake * mult / HUNDREDTHS;
+    }
+
+    /// keno (gameId 4): draw 10 of 40 (Fisher-Yates partial, mirror kenoDraw), count hits among `picks`,
+    /// pay the edged table value for (pickCount, hits) — but ONLY when the edged multiplier exceeds 1.00x
+    /// (keno's win is strict; sub-1x rows pay nothing, unlike plinko). params = abi.encode(uint256[] picks).
+    function _keno(uint256 r, bytes memory params, uint256 stake) private pure returns (uint256) {
+        uint256[] memory picks = abi.decode(params, (uint256[]));
+        uint256 p = picks.length;
+        require(p >= 1 && p <= 10, "keno: picks 1..10");
+
+        // draw 10 distinct of 40 via a partial Fisher-Yates from `r` (pool holds values 1..40).
+        uint8[40] memory pool;
+        for (uint256 k = 0; k < 40; k++) pool[k] = uint8(k + 1);
+        bool[41] memory drawn; // indexed by value 1..40
+        uint256 acc = r;
+        for (uint256 i = 39; i >= 30; i--) {
+            uint256 window = i + 1;
+            uint256 j = acc % window;
+            acc = acc / window;
+            (pool[i], pool[j]) = (pool[j], pool[i]);
+            drawn[pool[i]] = true;
+        } // i stops at 30: body runs, i-- -> 29, 29>=30 false → exit (no underflow)
+
+        uint256 hits = 0;
+        for (uint256 m = 0; m < p; m++) {
+            uint256 pick = picks[m];
+            if (pick >= 1 && pick <= 40 && drawn[pick]) hits++;
+        }
+
+        uint256 mult = _edgedX100(GameTables.kenoFair(p, hits));
+        return mult > HUNDREDTHS ? stake * mult / HUNDREDTHS : 0;
     }
 }

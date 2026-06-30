@@ -11,6 +11,8 @@ import {
   dice, limbo, crash, monte, dicex2, roundRandom,
   baccarat, dragonTiger, andarBahar, dealBaccarat, dealDragonTiger, dealAndarBahar,
   cascade, resolveCascade,
+  plinko, pachinko, wheel, keno,
+  plinkoFairTableX100, pachinkoFairTableX100, BASE_PAYTABLE_X100,
 } from '@gibs/msgboard-games'
 import { keccak256, encodeAbiParameters, hexToBigInt } from 'viem'
 
@@ -124,3 +126,45 @@ function findCascade(label: string, pred: (total: bigint) => boolean): void {
 findCascade('cascade-zero', (t) => t === 0n)
 findCascade('cascade-pay-small', (t) => t > 0n && t < 500n)
 findCascade('cascade-pay-big', (t) => t >= 1000n)
+
+// ---- Table games on-chain milestone: plinko (3), keno (4), pachinko (7), wheel (8) ----
+// The packed PLINKO/PACHINKO/KENO hex below is embedded VERBATIM into packages/contracts/contracts/
+// games/GameTables.sol; the vectors are hardcoded into test/foundry/TablePayouts.t.sol. Wheel's table
+// is recomputed on-chain (uniform weights), so only its settle vectors are emitted, no packed data.
+const tableRisks = ['low', 'medium', 'high'] as const
+const packU24 = (vals: bigint[]): string => '0x' + vals.map((v) => v.toString(16).padStart(6, '0')).join('')
+console.log('GameTables.PLINKO  ', packU24(tableRisks.flatMap((r) => [...plinkoFairTableX100(r, 16)])))
+console.log('GameTables.PACHINKO', packU24(tableRisks.flatMap((r) => [...pachinkoFairTableX100(r, 12)])))
+const kenoVals: bigint[] = []
+for (let p = 1; p <= 10; p++) kenoVals.push(...BASE_PAYTABLE_X100[p]!)
+console.log('GameTables.KENO    ', packU24(kenoVals))
+
+const bucketRaw = (bucket: number): bigint => (1n << BigInt(bucket)) - 1n
+for (const [ri, r] of tableRisks.entries()) for (const bucket of [0, 8, 16]) {
+  const o = plinko.settleRound(stake, { risk: r, rows: 16 }, bucketRaw(bucket))
+  console.log(JSON.stringify({ label: 'plinko', gameId: plinko.gameId, riskIdx: ri, rows: 16, bucket, raw: bucketRaw(bucket).toString(), payout: (o.playerDelta + stake).toString() }))
+}
+for (const [ri, r] of tableRisks.entries()) for (const slot of [0, 6, 12]) {
+  const o = pachinko.settleRound(stake, { risk: r, rows: 12 }, bucketRaw(slot))
+  console.log(JSON.stringify({ label: 'pachinko', gameId: pachinko.gameId, riskIdx: ri, rows: 12, slot, raw: bucketRaw(slot).toString(), payout: (o.playerDelta + stake).toString() }))
+}
+for (const seg of [10, 50] as const) for (const [ri, r] of tableRisks.entries()) {
+  for (let n = 1; n < 8000; n++) {
+    const raw = roundRandom(s(2 * n - 1), s(2 * n), 1n)
+    const o = wheel.settleRound(stake, { risk: r, segments: seg }, raw)
+    if (o.playerDelta + stake > 0n) {
+      console.log(JSON.stringify({ label: 'wheel-win', gameId: wheel.gameId, riskIdx: ri, segments: seg, segment: Number(raw % BigInt(seg)), raw: raw.toString(), payout: (o.playerDelta + stake).toString() }))
+      break
+    }
+  }
+}
+for (const picks of [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [3, 11, 22, 33], [7]] as number[][]) {
+  for (let n = 1; n < 30000; n++) {
+    const raw = roundRandom(s(2 * n - 1), s(2 * n), 1n)
+    const o = keno.settleRound(stake, { picks }, raw)
+    if (o.playerDelta + stake > 0n) {
+      console.log(JSON.stringify({ label: 'keno-win', gameId: keno.gameId, picks, raw: raw.toString(), payout: (o.playerDelta + stake).toString() }))
+      break
+    }
+  }
+}
