@@ -168,3 +168,138 @@ for (const picks of [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [3, 11, 22, 33], [7]] as n
     }
   }
 }
+
+// ==================================================================================================
+// STATEFUL / decision games on-chain milestone: dispute-replay mirrors.
+//   MINES (5) + the LADDER family (towers 14, chicken 15, greed-dice 19).
+// These are NOT a pure function of the round random `r`: their outcome depends on a co-signed move
+// sequence over a committed hidden layout. The on-chain mirror (MinesRules.sol / LadderRules.sol)
+// replays the revealed layout + claimed moves and recomputes the conserved (balancePlayer,
+// balanceHouse). The vectors below are hardcoded into test/foundry/MinesRules.t.sol and
+// LadderRules.t.sol so the Solidity port is checked against the canonical @gibs/msgboard-games math.
+// All uniquely-named exports (survive the barrel's `export *`).
+import {
+  hashBoard, multiplierX100At, type MinesBoard,
+  safeTilesOnFloor, towersMultiplierX100, towersMaxMultiplierX100, commitLayout,
+  laneSafe, chickenMultiplierX100, chickenMaxMultiplierX100,
+  rollSurvives, greedDiceMultiplierX100, greedDiceMaxMultiplierX100,
+} from '@gibs/msgboard-games'
+
+console.log('\n===== stateful dispute-replay vectors =====')
+
+// ---- MINES (gameId 5) ----
+// A concrete 25-tile / 3-mine board (5x5, 3 mines). Mines at {5,12,20} (strictly sorted). salt = 0x22..
+{
+  const config = { tiles: 25, mines: 3 }
+  const safe = config.tiles - config.mines // 22
+  const salt = (`0x${'22'.repeat(32)}`) as `0x${string}`
+  const mineTiles = [5, 12, 20]
+  const board: MinesBoard = { config, mineTiles, salt }
+  const commit = hashBoard(board)
+  const ceilingMultX100 = multiplierX100At(config, safe) // escrow ceiling: all safe tiles cleared
+  const emit = (label: string, reveals: number[], cashedOut: boolean) => {
+    const mineSet = new Set(mineTiles)
+    let count = 0
+    let busted = false
+    for (const t of reveals) { if (mineSet.has(t)) { busted = true; break } count++ }
+    const multX100 = busted ? 0n : multiplierX100At(config, count)
+    const payout = (cashedOut && !busted) ? (stake * multX100) / 100n : 0n
+    console.log(JSON.stringify({
+      label, gameId: 5, tiles: config.tiles, mines: config.mines,
+      salt, mineTiles, commit, reveals, cashedOut,
+      claimedMultiplierX100: multX100.toString(), payout: payout.toString(),
+      ceilingMultX100: ceilingMultX100.toString(),
+      escrowHouse: ((stake * (ceilingMultX100 - 100n)) / 100n).toString(), stake: stake.toString(),
+    }))
+  }
+  emit('mines-win', [0, 1, 2, 3, 4], true)   // 5 safe reveals then cash out
+  emit('mines-bust', [0, 1, 12], false)       // tile 12 is a mine -> bust
+}
+
+// ---- LADDER: TOWERS (gameId 14) ----
+// floors=6, tilesPerFloor=3, safePerFloor=2 (Dragon-tower shape). Layout derived from the sealed seed.
+{
+  const config = { floors: 6, tilesPerFloor: 3, safePerFloor: 2 }
+  const seed = 0x7357n
+  const commit = commitLayout(seed)
+  const ceilingMultX100 = towersMaxMultiplierX100(config)
+  // climb `k` floors, at each floor picking the SMALLEST safe tile (guaranteed safe from the seed layout)
+  const climbChoices = (k: number): number[] => {
+    const out: number[] = []
+    for (let f = 0; f < k; f++) out.push(Math.min(...safeTilesOnFloor(seed, config, f)))
+    return out
+  }
+  const unsafeTile = (floor: number): number => {
+    const safeSet = safeTilesOnFloor(seed, config, floor)
+    for (let t = 0; t < config.tilesPerFloor; t++) if (!safeSet.has(t)) return t
+    throw new Error('no unsafe tile')
+  }
+  const emit = (label: string, choices: number[], cashedOut: boolean, safeCount: number, busted: boolean) => {
+    const multX100 = busted ? 0n : towersMultiplierX100(config, safeCount)
+    const payout = (cashedOut && !busted) ? (stake * multX100) / 100n : 0n
+    console.log(JSON.stringify({
+      label, gameId: 14, floors: config.floors, tilesPerFloor: config.tilesPerFloor,
+      safePerFloor: config.safePerFloor, seed: seed.toString(), commit, choices, cashedOut,
+      claimedMultiplierX100: multX100.toString(), payout: payout.toString(),
+      ceilingMultX100: ceilingMultX100.toString(),
+      escrowHouse: ((stake * (ceilingMultX100 - 100n)) / 100n).toString(), stake: stake.toString(),
+    }))
+  }
+  emit('towers-win', climbChoices(4), true, 4, false)                   // climb 4, cash out
+  emit('towers-top', climbChoices(6), true, 6, false)                   // climb all 6 -> forced cash out
+  emit('towers-bust', [...climbChoices(2), unsafeTile(2)], false, 2, true) // climb 2, then unsafe pick
+}
+
+// ---- LADDER: CHICKEN (gameId 15) — single forced path, choice always 0, seed-derived crash region ----
+{
+  const difficulty = 'medium' as const // CRASH=3 of 25
+  const crashCount = 3
+  const lanes = 12
+  const config = { difficulty, lanes }
+  // find a seed whose first 4 lanes are safe (win) and one whose lanes 0..1 safe, lane 2 crashes (bust)
+  let winSeed: bigint | undefined, bustSeed: bigint | undefined
+  for (let k = 1n; k < 100000n && (!winSeed || !bustSeed); k++) {
+    const safe = (n: number) => laneSafe(k, difficulty, n)
+    if (!winSeed && safe(0) && safe(1) && safe(2) && safe(3)) winSeed = k
+    if (!bustSeed && safe(0) && safe(1) && !safe(2)) bustSeed = k
+  }
+  const ceilingMultX100 = chickenMaxMultiplierX100(config)
+  const emit = (label: string, seed: bigint, choices: number[], cashedOut: boolean, safeCount: number, busted: boolean) => {
+    const multX100 = busted ? 0n : chickenMultiplierX100(difficulty, safeCount)
+    const payout = (cashedOut && !busted) ? (stake * multX100) / 100n : 0n
+    console.log(JSON.stringify({
+      label, gameId: 15, crashCount, lanes, seed: seed!.toString(), commit: commitLayout(seed!),
+      choices, cashedOut, claimedMultiplierX100: multX100.toString(), payout: payout.toString(),
+      ceilingMultX100: ceilingMultX100.toString(),
+      escrowHouse: ((stake * (ceilingMultX100 - 100n)) / 100n).toString(), stake: stake.toString(),
+    }))
+  }
+  emit('chicken-win', winSeed!, [0, 0, 0, 0], true, 4, false)
+  emit('chicken-bust', bustSeed!, [0, 0, 0], false, 2, true)
+}
+
+// ---- LADDER: GREED DICE (gameId 19) — 6-face die, first bustFaces faces bust, seed-derived ----
+{
+  const bustFaces = 2
+  const rolls = 10
+  const config = { rolls, bustFaces }
+  let winSeed: bigint | undefined, bustSeed: bigint | undefined
+  for (let k = 1n; k < 100000n && (!winSeed || !bustSeed); k++) {
+    const ok = (n: number) => rollSurvives(k, config, n)
+    if (!winSeed && ok(0) && ok(1) && ok(2)) winSeed = k
+    if (!bustSeed && ok(0) && ok(1) && !ok(2)) bustSeed = k
+  }
+  const ceilingMultX100 = greedDiceMaxMultiplierX100(config)
+  const emit = (label: string, seed: bigint, choices: number[], cashedOut: boolean, safeCount: number, busted: boolean) => {
+    const multX100 = busted ? 0n : greedDiceMultiplierX100(config, safeCount)
+    const payout = (cashedOut && !busted) ? (stake * multX100) / 100n : 0n
+    console.log(JSON.stringify({
+      label, gameId: 19, bustFaces, rolls, seed: seed!.toString(), commit: commitLayout(seed!),
+      choices, cashedOut, claimedMultiplierX100: multX100.toString(), payout: payout.toString(),
+      ceilingMultX100: ceilingMultX100.toString(),
+      escrowHouse: ((stake * (ceilingMultX100 - 100n)) / 100n).toString(), stake: stake.toString(),
+    }))
+  }
+  emit('greeddice-win', winSeed!, [0, 0, 0], true, 3, false)
+  emit('greeddice-bust', bustSeed!, [0, 0, 0], false, 2, true)
+}
