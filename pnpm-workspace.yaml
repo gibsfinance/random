@@ -8,6 +8,7 @@ packages:
   # exclude packages that are inside test directories
   - '!**/test/**'
 allowBuilds:
+  blake-hash: false
   esbuild: true
   keccak: true
   msgpackr-extract: false
