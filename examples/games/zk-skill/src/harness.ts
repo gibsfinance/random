@@ -28,7 +28,21 @@ export const CIRCUITS_DIR = path.join(PACKAGE_ROOT, 'circuits')
 export const BUILD_DIR = path.join(PACKAGE_ROOT, 'build')
 export const NODE_MODULES_DIR = path.join(PACKAGE_ROOT, 'node_modules')
 
-const DEV_ENTROPY = 'zk-skill-m0-dev-entropy-not-for-production'
+// Deterministic dev "contribution" for the phase-1 powers-of-tau. We use a FIXED
+// public beacon hash (not `powersoftau contribute`): snarkjs's `contribute` mixes
+// `getRandomBytes(64)` into its RNG (misc.js getRandomRng) EVEN with a fixed -e
+// entropy string, so the resulting ptau — and thus the groth16 verifying key /
+// Solidity verifier — would differ on every run. `powersoftau beacon` instead
+// derives its randomness purely from (beaconHash, numIterations) via iterated
+// SHA-256 (misc.js rngFromBeaconParams — no OS randomness), so the ptau is
+// bit-for-bit reproducible. `groth16 setup` (zkey_new.js) adds no randomness of its
+// own, so the whole setup is deterministic and the vkey/verifier is STABLE.
+//
+// DEV/TEST-ONLY: a public, fixed beacon is a knowable-toxic-waste trusted setup —
+// fine for proving circuit logic on-chain (M0/M1), NEVER for production. A real
+// deployment needs a genuine multi-party ceremony.
+const DEV_BEACON_HASH = '0000000000000000000000000000000000000000000000000000000000000042'
+const DEV_BEACON_ITERS = '10'
 
 function circomBin(): string {
   return process.env.CIRCOM_BIN ?? 'circom'
@@ -66,7 +80,9 @@ export function ensurePtau(power: number): string {
   const pot0 = path.join(BUILD_DIR, `pot${power}_0000.ptau`)
   const pot1 = path.join(BUILD_DIR, `pot${power}_0001.ptau`)
   sh(bin, ['powersoftau', 'new', 'bn128', String(power), pot0])
-  sh(bin, ['powersoftau', 'contribute', pot0, pot1, '--name=zk-skill-m0-dev', `-e=${DEV_ENTROPY}`])
+  // Deterministic beacon "contribution" (see DEV_BEACON_HASH note above) so the
+  // ptau — and therefore the exported Solidity verifier — is reproducible.
+  sh(bin, ['powersoftau', 'beacon', pot0, pot1, DEV_BEACON_HASH, DEV_BEACON_ITERS, '--name=zk-skill-dev-beacon'])
   sh(bin, ['powersoftau', 'prepare', 'phase2', pot1, finalPath])
   return finalPath
 }

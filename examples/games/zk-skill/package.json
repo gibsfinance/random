@@ -9,7 +9,8 @@
   "exports": { ".": "./src/index.ts" },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "gen:proof-fixtures": "tsx scripts/genProofFixtures.ts"
   },
   "dependencies": {
     "circomlibjs": "^0.1.7",
