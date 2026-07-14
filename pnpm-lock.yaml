@@ -391,6 +391,9 @@ importers:
 
   examples/games/zk-skill:
     dependencies:
+      '@gibs/msgboard-games':
+        specifier: workspace:*
+        version: link:../msgboard-games
       circomlibjs:
         specifier: ^0.1.7
         version: 0.1.7
