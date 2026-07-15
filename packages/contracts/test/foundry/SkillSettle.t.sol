@@ -9,6 +9,7 @@ import {SudokuRules} from "../../contracts/zk/SudokuRules.sol";
 import {WordleRules} from "../../contracts/zk/WordleRules.sol";
 import {SudokuSolveVerifier} from "../../contracts/zk/generated/SudokuSolveVerifier.sol";
 import {WordleClueVerifier} from "../../contracts/zk/generated/WordleClueVerifier.sol";
+import {WordleSolveVerifier} from "../../contracts/zk/generated/WordleSolveVerifier.sol";
 
 /// Thin harness exposing SkillPayouts' pure funcs so the foundry suite can assert TS↔Solidity parity
 /// of the published payout curves directly (library internals aren't externally callable).
@@ -22,10 +23,10 @@ contract SkillPayoutsHarness {
     }
 }
 
-/// M2: the on-chain SKILL settle. Sudoku settles FULLY TRUSTLESSLY from a real Groth16 solve proof
-/// (the flagship end-to-end round); Wordle's payout math + all-green solve predicate + proof wiring
-/// are exercised via parity + fail-closed paths (a happy-path Wordle solve needs an all-green fixture,
-/// deferred with the interactive-channel binding — see the M3 design note).
+/// M2/M3: the on-chain SKILL settle. BOTH games now settle FULLY TRUSTLESSLY + permissionlessly from a
+/// real Groth16 proof: Sudoku from a solve proof, and Wordle (M3) from a wordle_solve proof that binds
+/// the committed guess SEQUENCE to a proven first all-green position + a dictionary answer — so the
+/// happy-path Wordle solve→payout is finally exercised end-to-end on-chain (no house co-signature).
 contract SkillSettleTest is Test {
     Chips internal chips;
     SkillSettle internal skill;
@@ -44,20 +45,22 @@ contract SkillSettleTest is Test {
     uint256[81] internal puzzle;
     uint256 internal sudokuCommit;
 
-    // wordle fixture (11 signals: commit, guess[0..4], clue[0..4]) — a NON-solve (clue not all-green)
+    // wordle_solve fixture (4 signals: commit, guessesCommit, dictRoot, guessesUsed) — an ALL-GREEN
+    // solve at guess #2 (→ 3.50x). The permissionless settle needs no house co-sign.
     uint256[2] internal wa;
     uint256[2][2] internal wb;
     uint256[2] internal wc;
-    uint256[5] internal guess;
-    uint256[5] internal clue;
     uint256 internal wordleCommit;
+    uint256 internal wordleGuessesCommit;
+    uint256 internal wordleDictRoot;
+    uint256 internal wordleGuessesUsed;
 
     uint64 internal constant CLOCK = 30;
 
     function setUp() public {
         chips = new Chips();
         sudokuRules = new SudokuRules(address(new SudokuSolveVerifier()));
-        wordleRules = new WordleRules(address(new WordleClueVerifier()));
+        wordleRules = new WordleRules(address(new WordleClueVerifier()), address(new WordleSolveVerifier()));
         skill = new SkillSettle(address(chips), address(sudokuRules), address(wordleRules));
         pay = new SkillPayoutsHarness();
 
@@ -73,6 +76,7 @@ contract SkillSettleTest is Test {
 
         _loadSudoku();
         _loadWordle();
+        skill.setWordleDictRoot(wordleDictRoot);
     }
 
     function _loadSudoku() internal {
@@ -91,21 +95,20 @@ contract SkillSettleTest is Test {
     }
 
     function _loadWordle() internal {
-        string memory json = vm.readFile("test/foundry/fixtures/wordleClueProof.json");
+        string memory json = vm.readFile("test/foundry/fixtures/wordleSolveProof.json");
         uint256[] memory pa = vm.parseJsonUintArray(json, ".pA");
         uint256[] memory pb0 = vm.parseJsonUintArray(json, ".pB0");
         uint256[] memory pb1 = vm.parseJsonUintArray(json, ".pB1");
         uint256[] memory pc = vm.parseJsonUintArray(json, ".pC");
         uint256[] memory ps = vm.parseJsonUintArray(json, ".pubSignals");
-        assertEq(ps.length, 11, "wordle fixture must have 11 signals");
+        assertEq(ps.length, 4, "wordle_solve fixture must have 4 signals");
         wa = [pa[0], pa[1]];
         wb = [[pb0[0], pb0[1]], [pb1[0], pb1[1]]];
         wc = [pc[0], pc[1]];
         wordleCommit = ps[0];
-        for (uint256 i = 0; i < 5; i++) {
-            guess[i] = ps[1 + i];
-            clue[i] = ps[6 + i];
-        }
+        wordleGuessesCommit = ps[1];
+        wordleDictRoot = ps[2];
+        wordleGuessesUsed = ps[3];
     }
 
     // ---- open helpers ----------------------------------------------------------------------------
@@ -133,7 +136,7 @@ contract SkillSettleTest is Test {
         t.escrowHouse = escrowHouse;
         t.gameId = SkillPayouts.WORDLE_GAME_ID;
         t.commit = wordleCommit;
-        t.puzzleHash = bytes32(0);
+        t.puzzleHash = bytes32(wordleGuessesCommit); // second commitment slot = guessesCommit for wordle
         t.clockBlocks = CLOCK;
         t.expiry = uint64(block.timestamp + 1 hours);
     }
@@ -171,7 +174,7 @@ contract SkillSettleTest is Test {
     function test_isAllGreen() public view {
         assertTrue(pay.isAllGreen([uint256(2), 2, 2, 2, 2]));
         assertFalse(pay.isAllGreen([uint256(2), 2, 1, 2, 2]));
-        assertFalse(pay.isAllGreen(clue)); // the fixture clue is NOT a solve
+        assertFalse(pay.isAllGreen([uint256(0), 0, 0, 0, 0]));
     }
 
     // ============================ SUDOKU — full trustless round ====================================
@@ -249,45 +252,67 @@ contract SkillSettleTest is Test {
         skill.open(t, abi.encodePacked(r, s, v));
     }
 
-    // ============================ WORDLE — solve predicate + proof wiring ==========================
+    // ==================== WORDLE — full trustless permissionless round (M3) ========================
 
-    function test_wordle_settle_rejects_nonAllGreen_clue() public {
-        bytes32 tid = keccak256("wordle-notgreen");
-        _open(_wordleTerms(tid, 100, 2400)); // ceiling: stake*24 = 2400
-        // the fixture's clue is a real, honestly-scored clue but NOT all-green → not a solve
-        bytes memory countSig = _wordleCountSig(tid, 2);
+    function test_wordle_fullRound_realProof_pays3_50x() public {
+        bytes32 tid = keccak256("wordle-win");
+        uint256 stake = 100;
+        uint256 escrowHouse = 2400; // ceiling: profit at solve-in-1 = stake*(25-1) = 2400
+        _open(_wordleTerms(tid, stake, escrowHouse));
+
+        assertEq(chips.balanceOf(player), 10_000 - stake, "stake escrowed");
+        assertEq(skill.housePool(), 100_000 - escrowHouse, "house escrow reserved");
+        assertEq(wordleGuessesUsed, 2, "fixture solves at guess 2");
+
+        // ANYONE submits the real wordle_solve proof — no house co-signature, no house involvement.
+        // guessesUsed=2 is forced by the proof; the payout is 3.50x.
         vm.prank(player);
-        vm.expectRevert(SkillSettle.NotAllGreen.selector);
-        skill.settleWordle(tid, wa, wb, wc, guess, clue, 2, countSig);
+        skill.settleWordle(tid, wa, wb, wc, wordleGuessesUsed);
+
+        // payout = stake * 3.50 = 350; player net +250
+        assertEq(chips.balanceOf(player), 10_000 - stake + 350, "player paid 3.50x");
+        assertEq(skill.housePool(), 100_000 - 250, "house pool down exactly the profit");
     }
 
-    function test_wordle_settle_rejects_allGreen_clue_without_matching_proof() public {
-        bytes32 tid = keccak256("wordle-fakegreen");
+    // Understate guesses-used to grab the 25x solve-in-1 multiplier: the public signal no longer
+    // matches the proof (which proves first-solve at guess 2) → Groth16 verify fails. This is the
+    // whole point of the M3 sequence binding — permissionless settle cannot be gamed.
+    function test_wordle_understatedGuesses_failsClosed() public {
+        bytes32 tid = keccak256("wordle-understate");
         _open(_wordleTerms(tid, 100, 2400));
-        // claim an all-green clue, but the fixture proof was made for the real (non-green) clue, so
-        // the Groth16 verify fails: the player cannot fabricate a solve.
-        uint256[5] memory allGreen = [uint256(2), 2, 2, 2, 2];
-        bytes memory countSig = _wordleCountSig(tid, 1);
         vm.prank(player);
         vm.expectRevert(SkillSettle.BadProof.selector);
-        skill.settleWordle(tid, wa, wb, wc, guess, allGreen, 1, countSig);
+        skill.settleWordle(tid, wa, wb, wc, 1); // claim solve-in-1 with a solve-in-2 proof
     }
 
-    function test_wordle_settle_rejects_forged_countSig() public {
-        bytes32 tid = keccak256("wordle-badcount");
+    function test_wordle_tamperedProof_failsClosed() public {
+        bytes32 tid = keccak256("wordle-tamper");
         _open(_wordleTerms(tid, 100, 2400));
-        uint256[5] memory allGreen = [uint256(2), 2, 2, 2, 2];
-        // house count-signature forged by a non-house key → BadSig (checked before the proof)
-        bytes32 countDigest = keccak256(abi.encodePacked("\x19\x01", skill.domainSeparator(), keccak256(abi.encode(tid, uint256(1)))));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(uint256(0xBADBAD), countDigest);
+        uint256[2] memory badA = [wa[0] ^ 0xff, wa[1]];
         vm.prank(player);
-        vm.expectRevert(SkillSettle.BadSig.selector);
-        skill.settleWordle(tid, wa, wb, wc, guess, allGreen, 1, abi.encodePacked(r, s, v));
+        vm.expectRevert(SkillSettle.BadProof.selector);
+        skill.settleWordle(tid, badA, wb, wc, wordleGuessesUsed);
     }
 
-    function _wordleCountSig(bytes32 tid, uint256 guessesUsed) internal view returns (bytes memory) {
-        bytes32 countDigest = keccak256(abi.encodePacked("\x19\x01", skill.domainSeparator(), keccak256(abi.encode(tid, guessesUsed))));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pkHouse, countDigest);
-        return abi.encodePacked(r, s, v);
+    // A proof against a DIFFERENT dictionary root than the one committed on-chain fails: swapping the
+    // owner-set root out from under a live table invalidates the answer's membership.
+    function test_wordle_wrongDictRoot_failsClosed() public {
+        bytes32 tid = keccak256("wordle-dict");
+        _open(_wordleTerms(tid, 100, 2400));
+        skill.setWordleDictRoot(wordleDictRoot + 1);
+        vm.prank(player);
+        vm.expectRevert(SkillSettle.BadProof.selector);
+        skill.settleWordle(tid, wa, wb, wc, wordleGuessesUsed);
+    }
+
+    function test_wordle_reclaimAfterDeadline_houseKeepsStake() public {
+        bytes32 tid = keccak256("wordle-loss");
+        _open(_wordleTerms(tid, 100, 2400));
+        vm.expectRevert(SkillSettle.DeadlineNotPassed.selector);
+        skill.reclaim(tid);
+        vm.roll(block.number + CLOCK + 1);
+        skill.reclaim(tid);
+        assertEq(chips.balanceOf(player), 10_000 - 100, "player loses the stake");
+        assertEq(skill.housePool(), 100_000 + 100, "house keeps the lost stake");
     }
 }
