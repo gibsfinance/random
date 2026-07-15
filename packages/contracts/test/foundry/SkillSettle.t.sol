@@ -7,9 +7,9 @@ import {SkillSettle} from "../../contracts/games/SkillSettle.sol";
 import {SkillPayouts} from "../../contracts/games/SkillPayouts.sol";
 import {SudokuRules} from "../../contracts/zk/SudokuRules.sol";
 import {WordleRules} from "../../contracts/zk/WordleRules.sol";
-import {SudokuSolveVerifier} from "../../contracts/zk/generated/SudokuSolveVerifier.sol";
-import {WordleClueVerifier} from "../../contracts/zk/generated/WordleClueVerifier.sol";
-import {WordleSolveVerifier} from "../../contracts/zk/generated/WordleSolveVerifier.sol";
+import {SudokuSolvePlonkVerifier} from "../../contracts/zk/generated/SudokuSolvePlonkVerifier.sol";
+import {WordleCluePlonkVerifier} from "../../contracts/zk/generated/WordleCluePlonkVerifier.sol";
+import {WordleSolvePlonkVerifier} from "../../contracts/zk/generated/WordleSolvePlonkVerifier.sol";
 
 /// Thin harness exposing SkillPayouts' pure funcs so the foundry suite can assert TS↔Solidity parity
 /// of the published payout curves directly (library internals aren't externally callable).
@@ -24,7 +24,7 @@ contract SkillPayoutsHarness {
 }
 
 /// M2/M3: the on-chain SKILL settle. BOTH games now settle FULLY TRUSTLESSLY + permissionlessly from a
-/// real Groth16 proof: Sudoku from a solve proof, and Wordle (M3) from a wordle_solve proof that binds
+/// real PLONK proof: Sudoku from a solve proof, and Wordle (M3) from a wordle_solve proof that binds
 /// the committed guess SEQUENCE to a proven first all-green position + a dictionary answer — so the
 /// happy-path Wordle solve→payout is finally exercised end-to-end on-chain (no house co-signature).
 contract SkillSettleTest is Test {
@@ -41,18 +41,14 @@ contract SkillSettleTest is Test {
     // sudoku fixture (83 signals: nullifier, puzzle[0..80], player). The win proof is BOUND to the
     // player it was proved for — the fixed fixture player 0xabab..ab — so the sudoku table player must
     // be that address for the proof to verify (this binding is exactly the anti-front-run property).
-    uint256[2] internal sa;
-    uint256[2][2] internal sb;
-    uint256[2] internal sc;
+    uint256[24] internal sProof;
     uint256[81] internal puzzle;
     uint256 internal sudokuNullifier;
     address internal sudokuPlayer; // == the fixture's public `player` signal, as an address
 
     // wordle_solve fixture (4 signals: commit, guessesCommit, dictRoot, guessesUsed) — an ALL-GREEN
     // solve at guess #2 (→ 3.50x). The permissionless settle needs no house co-sign.
-    uint256[2] internal wa;
-    uint256[2][2] internal wb;
-    uint256[2] internal wc;
+    uint256[24] internal wProof;
     uint256 internal wordleCommit;
     uint256 internal wordleGuessesCommit;
     uint256 internal wordleDictRoot;
@@ -62,8 +58,8 @@ contract SkillSettleTest is Test {
 
     function setUp() public {
         chips = new Chips();
-        sudokuRules = new SudokuRules(address(new SudokuSolveVerifier()));
-        wordleRules = new WordleRules(address(new WordleClueVerifier()), address(new WordleSolveVerifier()));
+        sudokuRules = new SudokuRules(address(new SudokuSolvePlonkVerifier()));
+        wordleRules = new WordleRules(address(new WordleCluePlonkVerifier()), address(new WordleSolvePlonkVerifier()));
         skill = new SkillSettle(address(chips), address(sudokuRules), address(wordleRules));
         pay = new SkillPayoutsHarness();
 
@@ -90,15 +86,11 @@ contract SkillSettleTest is Test {
 
     function _loadSudoku() internal {
         string memory json = vm.readFile("test/foundry/fixtures/sudokuSolveProof.json");
-        uint256[] memory pa = vm.parseJsonUintArray(json, ".pA");
-        uint256[] memory pb0 = vm.parseJsonUintArray(json, ".pB0");
-        uint256[] memory pb1 = vm.parseJsonUintArray(json, ".pB1");
-        uint256[] memory pc = vm.parseJsonUintArray(json, ".pC");
+        uint256[] memory pf = vm.parseJsonUintArray(json, ".proof");
         uint256[] memory ps = vm.parseJsonUintArray(json, ".pubSignals");
+        assertEq(pf.length, 24, "sudoku fixture must have 24 plonk proof fields");
         assertEq(ps.length, 83, "sudoku fixture must have 83 signals");
-        sa = [pa[0], pa[1]];
-        sb = [[pb0[0], pb0[1]], [pb1[0], pb1[1]]];
-        sc = [pc[0], pc[1]];
+        for (uint256 i = 0; i < 24; i++) sProof[i] = pf[i];
         // [nullifier, puzzle[0..80], player]
         sudokuNullifier = ps[0];
         for (uint256 i = 0; i < 81; i++) puzzle[i] = ps[1 + i];
@@ -107,15 +99,11 @@ contract SkillSettleTest is Test {
 
     function _loadWordle() internal {
         string memory json = vm.readFile("test/foundry/fixtures/wordleSolveProof.json");
-        uint256[] memory pa = vm.parseJsonUintArray(json, ".pA");
-        uint256[] memory pb0 = vm.parseJsonUintArray(json, ".pB0");
-        uint256[] memory pb1 = vm.parseJsonUintArray(json, ".pB1");
-        uint256[] memory pc = vm.parseJsonUintArray(json, ".pC");
+        uint256[] memory pf = vm.parseJsonUintArray(json, ".proof");
         uint256[] memory ps = vm.parseJsonUintArray(json, ".pubSignals");
+        assertEq(pf.length, 24, "wordle_solve fixture must have 24 plonk proof fields");
         assertEq(ps.length, 4, "wordle_solve fixture must have 4 signals");
-        wa = [pa[0], pa[1]];
-        wb = [[pb0[0], pb0[1]], [pb1[0], pb1[1]]];
-        wc = [pc[0], pc[1]];
+        for (uint256 i = 0; i < 24; i++) wProof[i] = pf[i];
         wordleCommit = ps[0];
         wordleGuessesCommit = ps[1];
         wordleDictRoot = ps[2];
@@ -144,7 +132,7 @@ contract SkillSettleTest is Test {
     function _openSudoku(SkillSettle.SkillOpenTerms memory t) internal {
         bytes memory sig = _sign(t);
         vm.prank(sudokuPlayer);
-        skill.openSudoku(t, sig, sa, sb, sc, puzzle, uint256(uint160(sudokuPlayer)), sudokuNullifier);
+        skill.openSudoku(t, sig, sProof, puzzle, uint256(uint160(sudokuPlayer)), sudokuNullifier);
     }
 
     function _wordleTerms(bytes32 tableId, uint256 stake, uint256 escrowHouse)
@@ -210,7 +198,7 @@ contract SkillSettleTest is Test {
 
         // ANYONE may relay the REAL solve proof (permissionless); the payout goes to t.player. Relay it
         // from a stranger to prove the front-run resistance: the proof is bound to sudokuPlayer.
-        skill.settleSudoku(tid, sa, sb, sc, puzzle, sudokuNullifier);
+        skill.settleSudoku(tid, sProof, puzzle, sudokuNullifier);
 
         // payout = stake * 1.90 = 380; player net +180
         assertEq(chips.balanceOf(sudokuPlayer), 10_000 - stake + 380, "player paid 1.90x");
@@ -233,18 +221,20 @@ contract SkillSettleTest is Test {
         bytes memory sig = _sign(t);
         // a tampered (non-verifying) solvability proof: the house cannot open without exhibiting a
         // solution — this is what stops it posting an unsolvable/ambiguous board.
-        uint256[2] memory badA = [sa[0] ^ 0xff, sa[1]];
+        uint256[24] memory badProof = sProof;
+        badProof[0] = sProof[0] ^ 0xff;
         vm.prank(sudokuPlayer);
         vm.expectRevert(SkillSettle.BadProof.selector);
-        skill.openSudoku(t, sig, badA, sb, sc, puzzle, uint256(uint160(sudokuPlayer)), sudokuNullifier);
+        skill.openSudoku(t, sig, badProof, puzzle, uint256(uint160(sudokuPlayer)), sudokuNullifier);
     }
 
     function test_sudoku_tamperedProof_failsClosed() public {
         bytes32 tid = keccak256("sudoku-tamper");
         _openSudoku(_sudokuTerms(tid, 200, 200));
-        uint256[2] memory badA = [sa[0] ^ 0xff, sa[1]];
+        uint256[24] memory badProof = sProof;
+        badProof[0] = sProof[0] ^ 0xff;
         vm.expectRevert(SkillSettle.BadProof.selector);
-        skill.settleSudoku(tid, badA, sb, sc, puzzle, sudokuNullifier);
+        skill.settleSudoku(tid, badProof, puzzle, sudokuNullifier);
     }
 
     function test_sudoku_swappedPuzzle_failsClosed() public {
@@ -254,7 +244,7 @@ contract SkillSettleTest is Test {
         uint256[81] memory badPuzzle = puzzle;
         badPuzzle[0] = puzzle[0] == 9 ? 8 : 9;
         vm.expectRevert(SkillSettle.BadPuzzle.selector);
-        skill.settleSudoku(tid, sa, sb, sc, badPuzzle, sudokuNullifier);
+        skill.settleSudoku(tid, sProof, badPuzzle, sudokuNullifier);
     }
 
     function test_sudoku_wrongPlayerBinding_failsClosed() public {
@@ -267,10 +257,10 @@ contract SkillSettleTest is Test {
         t.player = player; // the OTHER (non-fixture) player
         bytes memory sig = _sign(t);
         vm.prank(player);
-        skill.openSudoku(t, sig, sa, sb, sc, puzzle, uint256(uint160(sudokuPlayer)), sudokuNullifier);
+        skill.openSudoku(t, sig, sProof, puzzle, uint256(uint160(sudokuPlayer)), sudokuNullifier);
         // settle with the fixture proof: bound to sudokuPlayer, but the table player is `player` → fails
         vm.expectRevert(SkillSettle.BadProof.selector);
-        skill.settleSudoku(tid, sa, sb, sc, puzzle, sudokuNullifier);
+        skill.settleSudoku(tid, sProof, puzzle, sudokuNullifier);
     }
 
     function test_sudoku_nullifierReplay_failsClosed() public {
@@ -280,9 +270,9 @@ contract SkillSettleTest is Test {
         bytes32 tid2 = keccak256("sudoku-replay-2");
         _openSudoku(_sudokuTerms(tid1, 200, 200));
         _openSudoku(_sudokuTerms(tid2, 200, 200));
-        skill.settleSudoku(tid1, sa, sb, sc, puzzle, sudokuNullifier);
+        skill.settleSudoku(tid1, sProof, puzzle, sudokuNullifier);
         vm.expectRevert(SkillSettle.NullifierSpent.selector);
-        skill.settleSudoku(tid2, sa, sb, sc, puzzle, sudokuNullifier);
+        skill.settleSudoku(tid2, sProof, puzzle, sudokuNullifier);
     }
 
     function test_sudoku_reclaimAfterDeadline_houseKeepsStake() public {
@@ -309,7 +299,7 @@ contract SkillSettleTest is Test {
         bytes memory sig = _sign(t);
         vm.prank(sudokuPlayer);
         vm.expectRevert(SkillSettle.EscrowTooSmall.selector);
-        skill.openSudoku(t, sig, sa, sb, sc, puzzle, uint256(uint160(sudokuPlayer)), sudokuNullifier);
+        skill.openSudoku(t, sig, sProof, puzzle, uint256(uint160(sudokuPlayer)), sudokuNullifier);
     }
 
     function test_open_rejects_forgedHouseSig() public {
@@ -318,7 +308,7 @@ contract SkillSettleTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(uint256(0xBADBAD), skill.openDigest(t));
         vm.prank(sudokuPlayer);
         vm.expectRevert(SkillSettle.BadSig.selector);
-        skill.openSudoku(t, abi.encodePacked(r, s, v), sa, sb, sc, puzzle, uint256(uint160(sudokuPlayer)), sudokuNullifier);
+        skill.openSudoku(t, abi.encodePacked(r, s, v), sProof, puzzle, uint256(uint160(sudokuPlayer)), sudokuNullifier);
     }
 
     // ==================== WORDLE — full trustless permissionless round (M3) ========================
@@ -336,7 +326,7 @@ contract SkillSettleTest is Test {
         // ANYONE submits the real wordle_solve proof — no house co-signature, no house involvement.
         // guessesUsed=2 is forced by the proof; the payout is 3.50x.
         vm.prank(player);
-        skill.settleWordle(tid, wa, wb, wc, wordleGuessesUsed);
+        skill.settleWordle(tid, wProof, wordleGuessesUsed);
 
         // payout = stake * 3.50 = 350; player net +250
         assertEq(chips.balanceOf(player), 10_000 - stake + 350, "player paid 3.50x");
@@ -344,23 +334,24 @@ contract SkillSettleTest is Test {
     }
 
     // Understate guesses-used to grab the 25x solve-in-1 multiplier: the public signal no longer
-    // matches the proof (which proves first-solve at guess 2) → Groth16 verify fails. This is the
+    // matches the proof (which proves first-solve at guess 2) → PLONK verify fails. This is the
     // whole point of the M3 sequence binding — permissionless settle cannot be gamed.
     function test_wordle_understatedGuesses_failsClosed() public {
         bytes32 tid = keccak256("wordle-understate");
         _open(_wordleTerms(tid, 100, 2400));
         vm.prank(player);
         vm.expectRevert(SkillSettle.BadProof.selector);
-        skill.settleWordle(tid, wa, wb, wc, 1); // claim solve-in-1 with a solve-in-2 proof
+        skill.settleWordle(tid, wProof, 1); // claim solve-in-1 with a solve-in-2 proof
     }
 
     function test_wordle_tamperedProof_failsClosed() public {
         bytes32 tid = keccak256("wordle-tamper");
         _open(_wordleTerms(tid, 100, 2400));
-        uint256[2] memory badA = [wa[0] ^ 0xff, wa[1]];
+        uint256[24] memory badProof = wProof;
+        badProof[0] = wProof[0] ^ 0xff;
         vm.prank(player);
         vm.expectRevert(SkillSettle.BadProof.selector);
-        skill.settleWordle(tid, badA, wb, wc, wordleGuessesUsed);
+        skill.settleWordle(tid, badProof, wordleGuessesUsed);
     }
 
     // A proof against a DIFFERENT dictionary root than the one committed on-chain fails: swapping the
@@ -371,7 +362,7 @@ contract SkillSettleTest is Test {
         skill.setWordleDictRoot(wordleDictRoot + 1);
         vm.prank(player);
         vm.expectRevert(SkillSettle.BadProof.selector);
-        skill.settleWordle(tid, wa, wb, wc, wordleGuessesUsed);
+        skill.settleWordle(tid, wProof, wordleGuessesUsed);
     }
 
     function test_wordle_reclaimAfterDeadline_houseKeepsStake() public {

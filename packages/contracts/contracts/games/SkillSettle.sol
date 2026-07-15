@@ -6,14 +6,13 @@ import {SafeTransferLib} from "solady/src/utils/SafeTransferLib.sol";
 import {Ownable} from "solady/src/auth/Ownable.sol";
 import {SkillPayouts} from "./SkillPayouts.sol";
 
-/// Groth16 proof for the ZK-skill circuits (contracts/zk/generated/*Verifier.sol shape). The two
-/// Rules wrappers (SudokuRules, WordleRules) expose the typed helpers below; kept as minimal
-/// interfaces so SkillSettle doesn't pull the verifiers into its own compilation unit.
+/// PLONK proof for the ZK-skill circuits (contracts/zk/generated/*PlonkVerifier.sol shape): 24 field
+/// elements, in snarkjs `plonk.exportSolidityCallData` order. The two Rules wrappers (SudokuRules,
+/// WordleRules) expose the typed helpers below; kept as minimal interfaces so SkillSettle doesn't pull
+/// the verifiers into its own compilation unit.
 interface ISudokuRules {
     function checkSolve(
-        uint256[2] calldata a,
-        uint256[2][2] calldata b,
-        uint256[2] calldata c,
+        uint256[24] calldata proof,
         uint256[81] calldata puzzle,
         uint256 player,
         uint256 nullifier
@@ -22,9 +21,7 @@ interface ISudokuRules {
 
 interface IWordleRules {
     function checkSolve(
-        uint256[2] calldata a,
-        uint256[2][2] calldata b,
-        uint256[2] calldata c,
+        uint256[24] calldata proof,
         uint256 commit,
         uint256 guessesCommit,
         uint256 dictRoot,
@@ -33,7 +30,7 @@ interface IWordleRules {
 }
 
 /// Escrowed settlement backend for the ZK SKILL games — the proof-driven analog of HouseChannel
-/// (whose ZK path is Noir/UltraHonk + conservation). Here a round settles from a Groth16 proof that
+/// (whose ZK path is Noir/UltraHonk + conservation). Here a round settles from a PLONK proof that
 /// the player met the game's win condition against the puzzle/word the house COMMITTED at open:
 ///
 ///   • Sudoku (gameId 31): FULLY TRUSTLESS + permissionless (M3 "role-flip"). At open the HOUSE proves
@@ -201,16 +198,14 @@ contract SkillSettle is Ownable {
     function openSudoku(
         SkillOpenTerms calldata terms,
         bytes calldata houseSig,
-        uint256[2] calldata a,
-        uint256[2][2] calldata b,
-        uint256[2] calldata c,
+        uint256[24] calldata proof,
         uint256[81] calldata puzzle,
         uint256 solPlayer,
         uint256 solNullifier
     ) external {
         if (terms.gameId != SkillPayouts.SUDOKU_GAME_ID) revert BadGame();
         if (keccak256(abi.encode(puzzle)) != terms.puzzleHash) revert BadPuzzle();
-        if (!ISudokuRules(sudokuRules).checkSolve(a, b, c, puzzle, solPlayer, solNullifier)) revert BadProof();
+        if (!ISudokuRules(sudokuRules).checkSolve(proof, puzzle, solPlayer, solNullifier)) revert BadProof();
         _openTable(terms, houseSig);
     }
 
@@ -244,7 +239,7 @@ contract SkillSettle is Ownable {
 
     // ---- settle ----------------------------------------------------------------------------------
 
-    /// Sudoku (gameId 31): permissionless relay, fully trustless. The contract verifies a Groth16 solve
+    /// Sudoku (gameId 31): permissionless relay, fully trustless. The contract verifies a PLONK solve
     /// proof of ANY valid solution to the table's committed `puzzle`, BOUND to the table's `player` via
     /// the proof's public `nullifier` (= Poseidon(solutionDigest ‖ player)) — NO house secret is
     /// involved (M2's house-committed solution/salt is gone). Three properties:
@@ -257,9 +252,7 @@ contract SkillSettle is Ownable {
     /// cannot be griefed. Whoever relays it, the winner is `t.player`.
     function settleSudoku(
         bytes32 tableId,
-        uint256[2] calldata a,
-        uint256[2][2] calldata b,
-        uint256[2] calldata c,
+        uint256[24] calldata proof,
         uint256[81] calldata puzzle,
         uint256 nullifier
     ) external {
@@ -269,7 +262,7 @@ contract SkillSettle is Ownable {
         if (keccak256(abi.encode(puzzle)) != t.puzzleHash) revert BadPuzzle();
         if (spentSudokuNullifier[nullifier]) revert NullifierSpent();
         // bind to the table's player: the proof's public `player` signal MUST equal t.player.
-        if (!ISudokuRules(sudokuRules).checkSolve(a, b, c, puzzle, uint256(uint160(t.player)), nullifier)) {
+        if (!ISudokuRules(sudokuRules).checkSolve(proof, puzzle, uint256(uint160(t.player)), nullifier)) {
             revert BadProof();
         }
         spentSudokuNullifier[nullifier] = true;
@@ -285,12 +278,10 @@ contract SkillSettle is Ownable {
     /// forces guessesUsed to be the first all-green position in the committed sequence, so no house
     /// co-signature is needed: the player cannot understate guesses-used, fake a solve, or use a
     /// non-dictionary answer. `guessesUsed` is passed as the public signal the proof is checked against
-    /// (a mismatch fails the Groth16 verify), and range-checked only to bound the payout table lookup.
+    /// (a mismatch fails the PLONK verify), and range-checked only to bound the payout table lookup.
     function settleWordle(
         bytes32 tableId,
-        uint256[2] calldata a,
-        uint256[2][2] calldata b,
-        uint256[2] calldata c,
+        uint256[24] calldata proof,
         uint256 guessesUsed
     ) external {
         Table storage t = tables[tableId];
@@ -299,7 +290,7 @@ contract SkillSettle is Ownable {
         if (guessesUsed < 1 || guessesUsed > SkillPayouts.WORDLE_MAX_GUESSES) revert BadGuesses();
 
         if (!IWordleRules(wordleRules).checkSolve(
-            a, b, c, t.commit, uint256(t.puzzleHash), wordleDictRoot, guessesUsed
+            proof, t.commit, uint256(t.puzzleHash), wordleDictRoot, guessesUsed
         )) revert BadProof();
 
         uint256 payoutPlayer = SkillPayouts.payout(t.escrowPlayer, SkillPayouts.wordleMultX100(guessesUsed));

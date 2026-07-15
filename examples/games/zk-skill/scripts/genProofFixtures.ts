@@ -1,66 +1,62 @@
-// M1 fixture generator: REAL proof calldata for the foundry Groth16-verification tests.
+// Generator for the wordle_clue + sudoku_solve circuits: exports the on-chain PLONK verifier AND the
+// matching proof fixture from ONE zkey, per circuit, in a single pass.
 //
-// This script does ONLY the proof side: for each circuit it reuses the EXISTING
-// build/<name>/<name>_final.zkey + build/<name>/<name>_js/<name>.wasm (setupCircuit() is
-// cache-aware — it does not re-run `groth16 setup` when the zkey is already on disk), builds
-// the same known-valid witness the M0 vitest suite (test/wordle_clue.test.ts,
-// test/sudoku_solve.test.ts) uses, runs a real groth16 fullProve, sanity-verifies it
-// in-process, and writes the exact Solidity calldata (pA / pB-swapped / pC + the packed
-// public signals) as a small JSON fixture consumed by
-// packages/contracts/test/foundry/{WordleRules,SudokuRules}.t.sol.
+// THE RULE THAT KEEPS THIS SAFE: the committed verifier .sol and the committed fixture JSON must
+// always come from the SAME zkey. A fixture proved against a zkey that is NOT the one the committed
+// verifier was exported from is internally valid (it sanity-verifies in-process against that zkey's
+// own vkey) but MISMATCHED with the on-chain verifier bytecode — exactly the corruption this package
+// hit once already. So this script does BOTH artifacts together and must be run as a UNIT; never
+// regenerate one alone.
 //
-// Deliberately does NOT touch packages/contracts/contracts/zk/generated/*.sol. THE RULE THAT
-// KEEPS THIS SAFE: the committed verifier .sol and the committed fixture JSON must always come
-// from the SAME zkey. Re-running this script against a build/ directory whose zkey is NOT the
-// one the committed verifier was exported from will silently produce a fixture that is
-// internally valid (it sanity-verifies in-process against that zkey's own vkey) but MISMATCHED
-// with the on-chain verifier bytecode — exactly the corruption this package hit once already.
-// If you need to touch the zkey (rm -rf build, bump circom/snarkjs, edit a circuit), regenerate
-// BOTH artifacts in one pass: export the Solidity verifier from the fresh zkey with
-// `snarkjs zkey export solidityverifier <final.zkey> <out.sol>` (rename the contract, overwrite
-// contracts/zk/generated/*.sol), THEN run this script against that SAME build/ to regenerate the
-// matching fixture. Do not run this script alone after a fresh/partial rebuild.
+// Because build/ is gitignored, the zkey is NOT a committed artifact — the committed verifier+fixture
+// pair is the only record of a given setup. `plonk setup` is deterministic given (r1cs, ptau), so
+// re-running this reproduces the same pair as long as the circuit, circom, snarkjs, and the pinned
+// Hermez ptau are unchanged.
+//
+// STALE-ARTIFACT TRAP: setupCircuit() is cache-aware — it reuses build/<name>/<name>_plonk.zkey if
+// present and will NOT notice that the circuit source changed. After editing a circuit (or bumping
+// circom/snarkjs), `rm -rf build/<name>` first, or you will regenerate against the old zkey.
+//
+// TRUSTED SETUP: PLONK against the real universal Hermez ptau — there is NO per-circuit ceremony to
+// run, and no toxic waste (see src/harness.ts).
 //
 // Run: cd examples/games/zk-skill && npx tsx scripts/genProofFixtures.ts
 // (or: pnpm --filter @gibs/zk-skill gen:proof-fixtures)
-//
-// NOTE (dev trusted setup, repeated from src/harness.ts): the ptau + zkey this script reads
-// are a DEV/TEST-ONLY trusted setup for wordle_clue (fixed beacon, single contribution). The
-// sudoku_solve zkey instead uses the real Hermez/perpetual-powers-of-tau `pot15_final.ptau`
-// (downloaded, not generated — generating a fresh power-15 ptau locally is resource-heavy and
-// has previously exhausted the build sandbox), which is an actual audited multi-party trusted
-// setup, not toxic dev entropy. Neither zkey/ptau pairing should be treated as fully
-// production-grade without a real per-circuit ceremony; fine for proving circuit logic
-// verifies on-chain (M1's whole point).
 
-import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { setupCircuit, prove, verify, PACKAGE_ROOT, type CircuitSetup } from '../src/harness.js'
+import {
+  setupCircuit,
+  prove,
+  verify,
+  proofToCalldata,
+  exportSolidityVerifier,
+  writeGenerated,
+  PACKAGE_ROOT,
+  type CircuitSetup,
+} from '../src/harness.js'
 import { buildWordleWitnessInput, scoreGuess, wordToIndices } from '../src/wordle.js'
 import { buildSudokuWitnessInput } from '../src/sudoku.js'
 
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '../../..')
 const FIXTURES_DIR = path.join(REPO_ROOT, 'packages/contracts/test/foundry/fixtures')
+const GENERATED_DIR = path.join(REPO_ROOT, 'packages/contracts/contracts/zk/generated')
 
-/** Build calldata-ready pA/pB(swapped)/pC + decimal public signals from a groth16 proof. */
-function calldataFromProof(proof: any, publicSignals: string[]) {
-  return {
-    pA: [proof.pi_a[0], proof.pi_a[1]] as [string, string],
-    pB0: [proof.pi_b[0][1], proof.pi_b[0][0]] as [string, string],
-    pB1: [proof.pi_b[1][1], proof.pi_b[1][0]] as [string, string],
-    pC: [proof.pi_c[0], proof.pi_c[1]] as [string, string],
-    pubSignals: publicSignals,
-  }
+function generatedHeader(circuit: string): string {
+  return `// SPDX-License-Identifier: GPL-3.0
+// GENERATED FILE — DO NOT EDIT BY HAND.
+// Source: examples/games/zk-skill/circuits/${circuit}.circom (circom -> snarkjs 0.7.6 PLONK).
+// Regenerate: cd examples/games/zk-skill && npx tsx scripts/genProofFixtures.ts
+// (or: pnpm --filter @gibs/zk-skill gen:proof-fixtures)
+// Trusted setup: PLONK over the universal Hermez powersOfTau28_hez_final_16.ptau. PLONK has NO
+// per-circuit setup, so there is no ceremony to re-run when this circuit changes.
+`
 }
 
 function writeFixture(name: string, fixture: object) {
-  mkdirSync(FIXTURES_DIR, { recursive: true })
-  const outPath = path.join(FIXTURES_DIR, name)
-  writeFileSync(outPath, JSON.stringify(fixture, null, 2) + '\n')
-  console.log(`[gen] wrote ${outPath}`) // eslint-disable-line no-console
+  writeGenerated(path.join(FIXTURES_DIR, name), JSON.stringify(fixture, null, 2) + '\n')
 }
 
-async function genWordleFixture(setup: CircuitSetup) {
+async function genWordleClue(setup: CircuitSetup) {
   // Same fixed vector as test/wordle_clue.test.ts.
   const word = wordToIndices('crane')
   const guess = wordToIndices('eerie')
@@ -69,19 +65,24 @@ async function genWordleFixture(setup: CircuitSetup) {
   const witnessInput = await buildWordleWitnessInput({ word, salt, guess, clue })
   const { proof, publicSignals } = await prove(setup, witnessInput)
   const ok = await verify(setup, publicSignals, proof)
-  if (!ok) throw new Error('genWordleFixture: proof failed in-process verify — aborting')
+  if (!ok) throw new Error('genWordleClue: proof failed in-process verify — aborting')
   if (publicSignals.length !== 11) {
-    throw new Error(`genWordleFixture: expected 11 public signals, got ${publicSignals.length}`)
+    throw new Error(`genWordleClue: expected 11 public signals, got ${publicSignals.length}`)
   }
 
+  writeGenerated(
+    path.join(GENERATED_DIR, 'WordleCluePlonkVerifier.sol'),
+    exportSolidityVerifier(setup, 'WordleCluePlonkVerifier', generatedHeader('wordle_clue')),
+  )
   writeFixture('wordleClueProof.json', {
     _comment:
-      'GENERATED by examples/games/zk-skill/scripts/genProofFixtures.ts. A real Groth16 proof for ' +
+      'GENERATED by examples/games/zk-skill/scripts/genProofFixtures.ts. A real PLONK proof for ' +
       'the fixed word="crane"/guess="eerie" vector (see test/wordle_clue.test.ts), proved with the ' +
-      'EXISTING build/wordle_clue/wordle_clue_final.zkey (no trusted-setup re-run). publicSignals / ' +
-      'the packed pub[] order is [commit, guess[0..4], clue[0..4]] (11 signals), matching ' +
-      'circuits/wordle_clue.circom `component main {public [commit, guess, clue]}`. pA/pB/pC are ' +
-      'already in calldata form (pB rows swapped) as WordleClueVerifier.verifyProof expects.',
+      'SAME build/wordle_clue/wordle_clue_plonk.zkey the committed WordleCluePlonkVerifier.sol was ' +
+      'exported from. publicSignals / the packed pub[] order is [commit, guess[0..4], clue[0..4]] ' +
+      '(11 signals), matching circuits/wordle_clue.circom `component main {public [commit, guess, ' +
+      'clue]}`. `proof` is the 24-field PLONK proof in snarkjs exportSolidityCallData order, as ' +
+      'WordleCluePlonkVerifier.verifyProof(uint256[24],uint256[11]) expects.',
     vector: {
       word,
       guess,
@@ -89,11 +90,12 @@ async function genWordleFixture(setup: CircuitSetup) {
       salt: witnessInput.salt,
       commit: witnessInput.commit,
     },
-    ...calldataFromProof(proof, publicSignals),
+    proof: await proofToCalldata(proof, publicSignals),
+    pubSignals: publicSignals,
   })
 }
 
-async function genSudokuFixture(setup: CircuitSetup) {
+async function genSudokuSolve(setup: CircuitSetup) {
   // Same fixed band-rotation vector as test/sudoku_solve.test.ts.
   const SOLUTION: number[] = [
     1, 2, 3, 4, 5, 6, 7, 8, 9,
@@ -117,43 +119,52 @@ async function genSudokuFixture(setup: CircuitSetup) {
   const witnessInput = await buildSudokuWitnessInput({ puzzle: PUZZLE, solution: SOLUTION, player })
   const { proof, publicSignals } = await prove(setup, witnessInput)
   const ok = await verify(setup, publicSignals, proof)
-  if (!ok) throw new Error('genSudokuFixture: proof failed in-process verify — aborting')
+  if (!ok) throw new Error('genSudokuSolve: proof failed in-process verify — aborting')
   if (publicSignals.length !== 83) {
-    throw new Error(`genSudokuFixture: expected 83 public signals, got ${publicSignals.length}`)
+    throw new Error(`genSudokuSolve: expected 83 public signals, got ${publicSignals.length}`)
   }
 
+  writeGenerated(
+    path.join(GENERATED_DIR, 'SudokuSolvePlonkVerifier.sol'),
+    exportSolidityVerifier(setup, 'SudokuSolvePlonkVerifier', generatedHeader('sudoku_solve')),
+  )
   writeFixture('sudokuSolveProof.json', {
     _comment:
-      'GENERATED by examples/games/zk-skill/scripts/genProofFixtures.ts. A real Groth16 proof for ' +
+      'GENERATED by examples/games/zk-skill/scripts/genProofFixtures.ts. A real PLONK proof for ' +
       'the fixed band-rotation solution/puzzle vector (see test/sudoku_solve.test.ts), proved with ' +
-      'the EXISTING build/sudoku_solve/sudoku_solve_final.zkey (no trusted-setup re-run). ' +
-      'publicSignals / the packed pub[] order is [nullifier, puzzle[0..80], player] (83 signals, ' +
-      'snarkjs emits the output nullifier first), matching circuits/sudoku_solve.circom ' +
-      '`component main {public [puzzle, player]}` with `signal output nullifier`. pA/pB/pC are already ' +
-      'in calldata form (pB rows swapped) as SudokuSolveVerifier.verifyProof expects.',
+      'the SAME build/sudoku_solve/sudoku_solve_plonk.zkey the committed ' +
+      'SudokuSolvePlonkVerifier.sol was exported from. publicSignals / the packed pub[] order is ' +
+      '[nullifier, puzzle[0..80], player] (83 signals, snarkjs emits the output nullifier first), ' +
+      'matching circuits/sudoku_solve.circom `component main {public [puzzle, player]}` with ' +
+      '`signal output nullifier`. `proof` is the 24-field PLONK proof in snarkjs ' +
+      'exportSolidityCallData order, as SudokuSolvePlonkVerifier.verifyProof(uint256[24],' +
+      'uint256[83]) expects.',
     vector: {
       puzzle: PUZZLE,
       solution: SOLUTION,
       player: witnessInput.player,
       nullifier: publicSignals[0],
     },
-    ...calldataFromProof(proof, publicSignals),
+    proof: await proofToCalldata(proof, publicSignals),
+    pubSignals: publicSignals,
   })
 }
 
 async function main() {
-  console.log('[gen] wordle_clue: reusing existing zkey...') // eslint-disable-line no-console
-  const wordleSetup = setupCircuit('wordle_clue', 12)
-  await genWordleFixture(wordleSetup)
+  console.log('[gen] wordle_clue: compile + PLONK setup (universal Hermez ptau)...') // eslint-disable-line no-console
+  await genWordleClue(setupCircuit('wordle_clue'))
 
-  console.log('[gen] sudoku_solve: reusing existing zkey...') // eslint-disable-line no-console
-  const sudokuSetup = setupCircuit('sudoku_solve', 15)
-  await genSudokuFixture(sudokuSetup)
+  console.log('[gen] sudoku_solve: compile + PLONK setup (universal Hermez ptau)...') // eslint-disable-line no-console
+  await genSudokuSolve(setupCircuit('sudoku_solve'))
 
   console.log('[gen] done.') // eslint-disable-line no-console
 }
 
-main().catch((e) => {
-  console.error(e) // eslint-disable-line no-console
-  process.exitCode = 1
-})
+// snarkjs leaves its proving worker threads alive, so node never exits on its own — exit explicitly
+// rather than hanging after the artifacts are written.
+main()
+  .then(() => process.exit(0))
+  .catch((e) => {
+    console.error(e) // eslint-disable-line no-console
+    process.exit(1)
+  })

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
-import {SudokuSolveVerifier} from "./generated/SudokuSolveVerifier.sol";
+import {SudokuSolvePlonkVerifier} from "./generated/SudokuSolvePlonkVerifier.sol";
 
-/// On-chain Groth16 verification for the ZK-Sudoku skill game (M3 "role-flip"). This is
+/// On-chain PLONK verification for the ZK-Sudoku skill game (M3 "role-flip"). This is
 /// NOT an IGameRules implementation — that interface is for turn-based channel games
 /// (ZkTable disputes) and does not fit a single-shot skill-game proof.
 ///
@@ -18,29 +18,31 @@ import {SudokuSolveVerifier} from "./generated/SudokuSolveVerifier.sol";
 ///
 /// nullifier = Poseidon(rowDigest[0..8], player), rowDigest[r] = Poseidon(solution row r).
 ///
+/// PROOF SYSTEM: PLONK over the universal Hermez ptau. The circuit and its public-signal
+/// order are unchanged from the groth16 version — only the proving system moved. PLONK has
+/// NO per-circuit trusted setup, so a circuit change no longer requires a phase-2 ceremony
+/// (the groth16 zkeys this replaced had ZERO contributions, i.e. were forgeable). It is also
+/// ~43% CHEAPER to verify here: groth16 costs one EC scalar-mul (~6k gas) per public input
+/// and this circuit has 83, whereas PLONK evaluates public inputs in the field.
+///
 /// Public-signal ORDER (snarkjs emits OUTPUTS first, then public inputs in declaration
 /// order) — must match the circuit's `main` declaration exactly:
 ///   circuits/sudoku_solve.circom  component main {public [puzzle, player]} = SudokuSolve()
 ///   with `signal output nullifier`
 ///   => pub = [nullifier, puzzle[0..80], player]  (83 signals).
 contract SudokuRules {
-    SudokuSolveVerifier public immutable verifier;
+    SudokuSolvePlonkVerifier public immutable verifier;
 
     constructor(address verifier_) {
-        verifier = SudokuSolveVerifier(verifier_);
+        verifier = SudokuSolvePlonkVerifier(verifier_);
     }
 
     /// Raw verify: caller supplies `pub` already packed in circuit order. Prefer
     /// `checkSolve` below unless the packed array is already on hand (e.g. read
     /// verbatim from an off-chain fixture) — packing it by hand here is exactly the
     /// mistake `checkSolve` exists to prevent.
-    function verifySolve(
-        uint256[2] calldata a,
-        uint256[2][2] calldata b,
-        uint256[2] calldata c,
-        uint256[83] calldata pub
-    ) public view returns (bool) {
-        return verifier.verifyProof(a, b, c, pub);
+    function verifySolve(uint256[24] calldata proof, uint256[83] calldata pub) public view returns (bool) {
+        return verifier.verifyProof(proof, pub);
     }
 
     /// Typed helper: packs `pub` in the circuit's exact public-signal order
@@ -48,9 +50,7 @@ contract SudokuRules {
     /// verifies only for the exact (puzzle, player, nullifier) triple it was made for,
     /// so passing the table's `player` binds the proof to that player.
     function checkSolve(
-        uint256[2] calldata a,
-        uint256[2][2] calldata b,
-        uint256[2] calldata c,
+        uint256[24] calldata proof,
         uint256[81] calldata puzzle,
         uint256 player,
         uint256 nullifier
@@ -61,6 +61,6 @@ contract SudokuRules {
             pub[1 + i] = puzzle[i];
         }
         pub[82] = player;
-        return verifier.verifyProof(a, b, c, pub);
+        return verifier.verifyProof(proof, pub);
     }
 }

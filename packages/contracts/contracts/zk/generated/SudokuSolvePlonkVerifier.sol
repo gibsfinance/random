@@ -1,4 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0
+// GENERATED FILE — DO NOT EDIT BY HAND.
+// Source: examples/games/zk-skill/circuits/sudoku_solve.circom (circom -> snarkjs 0.7.6 PLONK).
+// Regenerate: cd examples/games/zk-skill && npx tsx scripts/genProofFixtures.ts
+// (or: pnpm --filter @gibs/zk-skill gen:proof-fixtures)
+// Trusted setup: PLONK over the universal Hermez powersOfTau28_hez_final_16.ptau. PLONK has NO
+// per-circuit setup, so there is no ceremony to re-run when this circuit changes.
 /*
     Copyright 2021 0KIMS association.
 
@@ -21,7 +27,7 @@
 
 pragma solidity >=0.7.0 <0.9.0;
 
-contract SudokuPlonkVerifier {
+contract SudokuSolvePlonkVerifier {
     // Omega
     uint256 constant w1 = 421743594562400382753388642386256516545992082196004333756405989743524594615;    
     // Scalar field size
