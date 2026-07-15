@@ -3,18 +3,26 @@ pragma solidity ^0.8.24;
 
 import {SudokuSolveVerifier} from "./generated/SudokuSolveVerifier.sol";
 
-/// M1: minimal on-chain Groth16 verification for the ZK-Sudoku skill game. This is
+/// On-chain Groth16 verification for the ZK-Sudoku skill game (M3 "role-flip"). This is
 /// NOT an IGameRules implementation — that interface is for turn-based channel games
-/// (ZkTable disputes) and does not fit a single-shot skill-game proof. Money/escrow
-/// wiring (settle-on-verify) is out of scope for M1; see M2.
+/// (ZkTable disputes) and does not fit a single-shot skill-game proof.
 ///
-/// Proves: the caller knows a valid solution to a committed public `puzzle`
-/// (rows/columns/3x3 boxes each a permutation of 1..9, agreeing with every
-/// non-blank puzzle clue), without revealing the solution.
+/// Proves: the prover knows a VALID solution to a committed public `puzzle`
+/// (rows/columns/3x3 boxes each a permutation of 1..9, agreeing with every non-blank
+/// puzzle clue), WITHOUT revealing the solution. The proof no longer references any
+/// house secret (M2's `Poseidon(solution‖salt)==commit` was unprovable for the player
+/// and house-griefable); instead it is bound to a public `player` via a `nullifier`,
+/// so a mempool watcher cannot replay/front-run a solve in a timed race. Solvability of
+/// the puzzle is guaranteed separately by the HOUSE producing a solve proof at open —
+/// see SkillSettle.openSudoku.
 ///
-/// Public-signal ORDER must match the circuit's `main` declaration exactly:
-///   circuits/sudoku_solve.circom:131  component main {public [puzzle, commit]}
-/// i.e. pub = [puzzle[0], ..., puzzle[80], commit]  (82 signals).
+/// nullifier = Poseidon(rowDigest[0..8], player), rowDigest[r] = Poseidon(solution row r).
+///
+/// Public-signal ORDER (snarkjs emits OUTPUTS first, then public inputs in declaration
+/// order) — must match the circuit's `main` declaration exactly:
+///   circuits/sudoku_solve.circom  component main {public [puzzle, player]} = SudokuSolve()
+///   with `signal output nullifier`
+///   => pub = [nullifier, puzzle[0..80], player]  (83 signals).
 contract SudokuRules {
     SudokuSolveVerifier public immutable verifier;
 
@@ -30,25 +38,29 @@ contract SudokuRules {
         uint256[2] calldata a,
         uint256[2][2] calldata b,
         uint256[2] calldata c,
-        uint256[82] calldata pub
+        uint256[83] calldata pub
     ) public view returns (bool) {
         return verifier.verifyProof(a, b, c, pub);
     }
 
-    /// Typed helper: packs `pub` in the circuit's exact public-signal order so
-    /// callers cannot misorder it.
+    /// Typed helper: packs `pub` in the circuit's exact public-signal order
+    /// [nullifier, puzzle[0..80], player] so callers cannot misorder it. The proof
+    /// verifies only for the exact (puzzle, player, nullifier) triple it was made for,
+    /// so passing the table's `player` binds the proof to that player.
     function checkSolve(
         uint256[2] calldata a,
         uint256[2][2] calldata b,
         uint256[2] calldata c,
         uint256[81] calldata puzzle,
-        uint256 commit
+        uint256 player,
+        uint256 nullifier
     ) external view returns (bool) {
-        uint256[82] memory pub;
+        uint256[83] memory pub;
+        pub[0] = nullifier;
         for (uint256 i = 0; i < 81; i++) {
-            pub[i] = puzzle[i];
+            pub[1 + i] = puzzle[i];
         }
-        pub[81] = commit;
+        pub[82] = player;
         return verifier.verifyProof(a, b, c, pub);
     }
 }

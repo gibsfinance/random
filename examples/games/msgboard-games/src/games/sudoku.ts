@@ -1,12 +1,14 @@
 import { type SkillGame, type SkillOutcome, skillOutcome } from '../skill'
 
 /**
- * ZK-Sudoku (gameId 31) — the house commits a puzzle (published clues + Poseidon commitment to a
- * unique solution) before the bet; the player privately solves it and submits a Groth16 proof they
- * know a solution consistent with the committed puzzle (see @gibs/zk-skill circuits/sudoku_solve.circom
- * + contracts/zk/SudokuRules.sol). The solution stays private, so in a timed/multiplayer race a mempool
- * front-runner cannot copy it — the anti-front-run nullifier that binds a proof to one player+round is
- * the M3 hardening item (see docs/superpowers/plans).
+ * ZK-Sudoku (gameId 31) — the house commits a puzzle (published clues) before the bet and proves at
+ * open that it is SOLVABLE (a sudoku_solve proof of a private solution), so it cannot post an
+ * unsolvable/ambiguous board an honest solver would forfeit on. The player then privately solves it and
+ * submits a Groth16 proof they know ANY valid solution to the committed puzzle (see @gibs/zk-skill
+ * circuits/sudoku_solve.circom + contracts/zk/SudokuRules.sol). The proof references NO house secret;
+ * it is bound to the player's own address via a nullifier = Poseidon(solutionDigest ‖ player), so in a
+ * timed/multiplayer race a mempool front-runner cannot copy the solve, and the contract records the
+ * nullifier to block replay/double-claim (M3, shipped).
  *
  * Payout is a flat, PUBLISHED skill multiplier on a valid solve; no solve → loss. The house edge is
  * not in the multiplier — it is in the puzzle difficulty and the time/stake budget, chosen so the
