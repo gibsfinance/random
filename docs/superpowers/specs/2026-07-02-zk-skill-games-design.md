@@ -55,8 +55,18 @@ these on every run.)
   rejected). What that does **not** establish: that the ceremony itself was honest — i.e. that at
   least one of its 54 contributors destroyed their toxic waste. That is a property of the ceremony,
   not of the bytes, and remains a genuine (widely-relied-upon) assumption. Its full contribution
-  chain can be re-derived with `snarkjs powersoftau verify`, which is very slow; we have not run
-  that to completion.
+  chain can be re-derived with:
+
+  ```
+  node node_modules/snarkjs/build/cli.cjs powersoftau verify \
+    build/powersOfTau28_hez_final_16.ptau -v
+  ```
+
+  **Budget ~an hour, and pass `-v`.** Despite the header logging `power: 2**16`, snarkjs hashes the
+  first challenge over the *ceremony* power (2^28 — the original Hermez ceremony this file is
+  truncated from): ~1.34e9 iterations before it even reaches the contribution chain. Without `-v` it
+  prints nothing until it finishes, which is indistinguishable from a hang — we killed it twice on
+  that misreading before letting it run.
 - **Not audited.** Circuits, verifiers, and the settle wiring have had no external review.
 - fflonk was skipped: it needs a ~2^19 ptau (~576MB) and is BETA in snarkjs; PLONK already wins.
 

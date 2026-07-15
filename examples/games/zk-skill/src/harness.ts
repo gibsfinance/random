@@ -63,11 +63,23 @@ const HERMEZ_PTAU_URL = `https://storage.googleapis.com/zkevm/ptau/${HERMEZ_PTAU
  * the setup out from under the committed verifiers.
  *
  * What this does NOT prove: that the ceremony itself was honest (i.e. that at least one of its
- * 54 contributors destroyed their toxic waste). That remains the documented trust assumption
- * above — it is a property of the ceremony, not of the bytes. The file's internal consistency +
- * full contribution chain can be re-derived independently with
- * `snarkjs powersoftau verify build/powersOfTau28_hez_final_16.ptau` (slow — it walks every
- * contribution; expect a long run).
+ * contributors destroyed their toxic waste). That remains the documented trust assumption above —
+ * it is a property of the ceremony, not of the bytes.
+ *
+ * To re-derive the file's internal consistency + full contribution chain independently:
+ *
+ *   node node_modules/snarkjs/build/cli.cjs powersoftau verify \
+ *     build/powersOfTau28_hez_final_16.ptau -v
+ *
+ * READ THIS BEFORE YOU RUN IT, or you will kill it thinking it hung (we did, twice):
+ *   - It takes on the order of an HOUR, not minutes. Despite the header logging "power: 2**16",
+ *     snarkjs hashes the first challenge over the CEREMONY power (2**28 — the original Hermez
+ *     ceremony this file is truncated from), which is ~1.34e9 hash iterations, and only THEN
+ *     starts checking the contribution chain.
+ *   - `-v` is NOT optional for a human: without it the command prints NOTHING at all until it
+ *     finishes, which is indistinguishable from a hang. With `-v` it logs steady progress.
+ *   - Don't pipe it through `tail`/`head` while watching — that buffers and re-creates the same
+ *     "silent hang" illusion. Redirect to a file and tail the file.
  */
 const HERMEZ_PTAU_BLAKE2B =
   '6a6277a2f74e1073601b4f9fed6e1e55226917efb0f0db8a07d98ab01df1ccf4' +
