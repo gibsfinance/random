@@ -17,7 +17,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 // snarkjs ships no type declarations; treat it as `any`.
@@ -52,13 +52,26 @@ export const HERMEZ_PTAU_POWER = 16
 const HERMEZ_PTAU_FILE = `powersOfTau28_hez_final_${HERMEZ_PTAU_POWER}.ptau`
 const HERMEZ_PTAU_URL = `https://storage.googleapis.com/zkevm/ptau/${HERMEZ_PTAU_FILE}`
 /**
- * SHA-256 of the Hermez ptau, pinned so a re-download (or a corrupted/substituted cache) can
- * never silently swap the setup out from under the committed verifiers. This pins the ARTIFACT;
- * it is not itself evidence the ceremony was honest — that is the documented trust assumption
- * above. The file's own internal consistency + contribution chain is checkable independently
- * with `snarkjs powersoftau verify build/powersOfTau28_hez_final_16.ptau`.
+ * blake2b-512 of the Hermez ptau, as PUBLISHED BY iden3/snarkjs for power 16:
+ *   https://github.com/iden3/snarkjs#7-prepare-phase-2  ("powersOfTau28_hez_final_16.ptau")
+ * Verified to match our cached file byte-for-byte.
+ *
+ * Why blake2b and not a digest of our own choosing: this is the algorithm the ceremony's
+ * maintainers publish, so matching it corroborates — against an INDEPENDENT source — that this
+ * file is the genuine artifact, not merely that our copy is internally consistent. Checking it
+ * on every call means neither a corrupted cache nor a substituted re-download can silently swap
+ * the setup out from under the committed verifiers.
+ *
+ * What this does NOT prove: that the ceremony itself was honest (i.e. that at least one of its
+ * 54 contributors destroyed their toxic waste). That remains the documented trust assumption
+ * above — it is a property of the ceremony, not of the bytes. The file's internal consistency +
+ * full contribution chain can be re-derived independently with
+ * `snarkjs powersoftau verify build/powersOfTau28_hez_final_16.ptau` (slow — it walks every
+ * contribution; expect a long run).
  */
-const HERMEZ_PTAU_SHA256 = '1c401abb57c9ce531370f3015c3e75c0892e0f32b8b1e94ace0f6682d9695922'
+const HERMEZ_PTAU_BLAKE2B =
+  '6a6277a2f74e1073601b4f9fed6e1e55226917efb0f0db8a07d98ab01df1ccf4' +
+  '3eb0e8c3159432acd4960e2f29fe84a4198501fa54c8dad9e43297453efec125'
 
 function circomBin(): string {
   return process.env.CIRCOM_BIN ?? 'circom'
@@ -68,8 +81,21 @@ function sh(cmd: string, args: string[]) {
   execFileSync(cmd, args, { stdio: 'pipe' })
 }
 
-function sha256File(p: string): string {
-  return createHash('sha256').update(readFileSync(p)).digest('hex')
+/** blake2b-512 of a file, streamed so the ~76MB ptau never lands in memory whole. */
+function blake2bFile(p: string): string {
+  const h = createHash('blake2b512')
+  const fd = openSync(p, 'r')
+  try {
+    const buf = Buffer.alloc(1 << 20)
+    for (;;) {
+      const n = readSync(fd, buf, 0, buf.length, null)
+      if (n === 0) break
+      h.update(buf.subarray(0, n))
+    }
+  } finally {
+    closeSync(fd)
+  }
+  return h.digest('hex')
 }
 
 export interface CompiledCircuit {
@@ -93,7 +119,7 @@ export function compileCircuit(name: string): CompiledCircuit {
 
 /**
  * The REAL universal Hermez powers-of-tau, cached under build/ (fetched on first use, then
- * integrity-checked against HERMEZ_PTAU_SHA256 on EVERY call — including cache hits, so a
+ * integrity-checked against HERMEZ_PTAU_BLAKE2B on EVERY call — including cache hits, so a
  * corrupted cache is caught rather than silently used).
  *
  * This is a plain fetch of a published ceremony artifact — there is deliberately no local
@@ -108,12 +134,12 @@ export function ensurePtau(): string {
     console.log(`[harness] fetching ${HERMEZ_PTAU_URL} (~76MB, once)...`)
     sh('curl', ['-fsSL', '-o', ptauPath, HERMEZ_PTAU_URL])
   }
-  const got = sha256File(ptauPath)
-  if (got !== HERMEZ_PTAU_SHA256) {
+  const got = blake2bFile(ptauPath)
+  if (got !== HERMEZ_PTAU_BLAKE2B) {
     throw new Error(
-      `harness: ${HERMEZ_PTAU_FILE} failed its integrity check (sha256 ${got}, expected ` +
-        `${HERMEZ_PTAU_SHA256}). Refusing to run a setup against an unverified ptau — delete ` +
-        `${ptauPath} to re-fetch it from ${HERMEZ_PTAU_URL}.`,
+      `harness: ${HERMEZ_PTAU_FILE} failed its integrity check (blake2b ${got}, expected the ` +
+        `iden3/snarkjs-published ${HERMEZ_PTAU_BLAKE2B}). Refusing to run a setup against an ` +
+        `unverified ptau — delete ${ptauPath} to re-fetch it from ${HERMEZ_PTAU_URL}.`,
     )
   }
   return ptauPath

@@ -13,7 +13,8 @@
 > ~43% cheaper to verify sudoku_solve on-chain (~528.8k vs 933,945 gas). Circuits, public-signal orders
 > and every security property are unchanged; proofs are now `uint256[24]`. Remaining honest caveats:
 > the Hermez ptau is trusted as a real multi-party ceremony output (we consume it, we don't generate
-> it; its sha256 is pinned in `harness.ts`), and **none of this is audited**. See
+> it; its blake2b matches the digest iden3/snarkjs publishes, re-checked on every call), and **none of
+> this is audited**. See
 > `docs/superpowers/specs/2026-07-02-zk-skill-games-design.md` § "Proving system".
 
 Follows M2 (`docs/superpowers/plans/zk-skill-m2-report.md`). This closes the two Wordle items M2

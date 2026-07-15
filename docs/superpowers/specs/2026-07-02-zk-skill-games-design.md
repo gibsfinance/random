@@ -47,9 +47,16 @@ these on every run.)
 
 **Honest remaining caveats:**
 - The **Hermez ptau is trusted as a real multi-party ceremony output** — we consume it, we do not
-  generate it. Its sha256 is pinned in `harness.ts` so a re-download cannot silently swap it, and its
-  contribution chain is independently checkable with `snarkjs powersoftau verify`. This is a far
-  weaker assumption than a self-run ceremony, but it is not zero.
+  generate it. What we *have* established: the cached file's **blake2b-512 matches the digest
+  published by iden3/snarkjs** for `powersOfTau28_hez_final_16.ptau`, so it is provably the genuine
+  published artifact and not a substitute — corroborated against an independent source, not merely
+  self-consistent. `harness.ts` re-checks that digest on **every** call (cache hits included) and
+  refuses to run a setup on a mismatch; this is verified by test (flipping one byte of the ptau is
+  rejected). What that does **not** establish: that the ceremony itself was honest — i.e. that at
+  least one of its 54 contributors destroyed their toxic waste. That is a property of the ceremony,
+  not of the bytes, and remains a genuine (widely-relied-upon) assumption. Its full contribution
+  chain can be re-derived with `snarkjs powersoftau verify`, which is very slow; we have not run
+  that to completion.
 - **Not audited.** Circuits, verifiers, and the settle wiring have had no external review.
 - fflonk was skipped: it needs a ~2^19 ptau (~576MB) and is BETA in snarkjs; PLONK already wins.
 
