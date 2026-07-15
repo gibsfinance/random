@@ -1,5 +1,5 @@
 /**
- * settle.test.ts — the ZK skill games' full OFF-CHAIN round, end to end with REAL Groth16 proofs:
+ * settle.test.ts — the ZK skill games' full OFF-CHAIN round, end to end with REAL PLONK proofs:
  * generate the proof(s) → verify → derive the result from the proven play → settle the payout through
  * the canonical @gibs/msgboard-games modules. Proves the circuits (M0), the proving glue, and the
  * payout economics agree on a complete round for each game — the off-chain twin of the on-chain
@@ -30,11 +30,11 @@ const SUDOKU_PUZZLE: number[] = SUDOKU_SOLUTION.map((v, i) =>
 )
 
 describe('ZK skill games — full off-chain round with real proofs', () => {
-  // warm the circuit setups once (compile + groth16 setup is the slow step)
+  // warm the circuit setups once (compile + PLONK setup against the universal ptau is the slow step)
   beforeAll(async () => {
-    setupCircuit('wordle_clue', 12)
-    setupCircuit('wordle_solve', 13)
-    setupCircuit('sudoku_solve', 15)
+    setupCircuit('wordle_clue')
+    setupCircuit('wordle_solve')
+    setupCircuit('sudoku_solve')
   }, 600_000)
 
   it('Wordle: solving in 2 guesses pays 3.50× (each clue proven honest)', async () => {

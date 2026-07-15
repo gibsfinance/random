@@ -13,7 +13,6 @@ import {
   type DictTree,
 } from '../src/index.js'
 
-const PTAU_POWER = 13 // 2^13 = 8192 >= wordle_solve constraints (~4.4k)
 
 // A committed 6-guess sequence that first goes all-green on "crane" at guess #2.
 const WORD = wordToIndices('crane')
@@ -25,7 +24,7 @@ describe('wordle_solve circuit (sequence binding + dictionary membership)', () =
   let dict: DictTree
 
   beforeAll(async () => {
-    setup = setupCircuit('wordle_solve', PTAU_POWER)
+    setup = setupCircuit('wordle_solve')
     dict = await buildDictTree([...TEST_DICTIONARY])
   }, 300_000)
 

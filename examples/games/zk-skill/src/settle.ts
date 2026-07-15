@@ -1,4 +1,4 @@
-// @gibs/zk-skill — the off-chain E2E settle for the ZK skill games: generate REAL Groth16 proofs,
+// @gibs/zk-skill — the off-chain E2E settle for the ZK skill games: generate REAL PLONK proofs,
 // verify them, derive the round RESULT from the proven public signals, and settle the payout through
 // the canonical @gibs/msgboard-games skill modules. This is the proof-driven analog of
 // @gibs/zk-settle's settle.ts (which does the same for the RNG privacy track), and it ties the
@@ -28,22 +28,19 @@ import {
   type SkillOutcome,
 } from '@gibs/msgboard-games'
 
-const PTAU_WORDLE = 12 // 2^12 >= wordle_clue constraints
-const PTAU_WORDLE_SOLVE = 13 // 2^13 >= wordle_solve constraints (~4.4k)
-const PTAU_SUDOKU = 15 // 2^15 >= sudoku_solve constraints
-
 // Filler for the committed guess-sequence's unused (post-solve) slots — a non-word (so it is never a
 // false solve) with valid letters. Only ever appended AFTER the solving guess, so it can't affect the
 // proven first all-green position.
 const WORDLE_FILLER = wordToIndices('xxxxx')
 
 // Compiling + setting up a circuit is the slow step; cache per circuit so a multi-guess Wordle round
-// (one proof per guess) reuses one setup.
+// (one proof per guess) reuses one setup. Every circuit shares the ONE universal Hermez ptau, so
+// there is no per-circuit ptau power to pass or get wrong (see harness.ts).
 const setupCache = new Map<string, CircuitSetup>()
-function setupFor(name: string, ptauPower: number): CircuitSetup {
+function setupFor(name: string): CircuitSetup {
   let s = setupCache.get(name)
   if (!s) {
-    s = setupCircuit(name, ptauPower)
+    s = setupCircuit(name)
     setupCache.set(name, s)
   }
   return s
@@ -116,7 +113,7 @@ export async function playWordleRound(params: {
 }): Promise<WordleRoundResult> {
   const maxGuesses = params.maxGuesses ?? WORDLE_MAX_GUESSES
   if (params.guesses.length > maxGuesses) throw new Error('wordle: more guesses than allowed')
-  const setup = setupFor('wordle_clue', PTAU_WORDLE)
+  const setup = setupFor('wordle_clue')
 
   const clueProofs: WordleClueProof[] = []
   let solvedAt = 0 // 1-based guesses-used; 0 == not solved
@@ -144,7 +141,7 @@ export async function playWordleRound(params: {
     const committed = [...params.guesses]
     while (committed.length < maxGuesses) committed.push(WORDLE_FILLER)
 
-    const solveSetup = setupFor('wordle_solve', PTAU_WORDLE_SOLVE)
+    const solveSetup = setupFor('wordle_solve')
     const input = await buildWordleSolveWitnessInput({
       word: params.word,
       salt: params.salt,
@@ -216,7 +213,7 @@ export async function playSudokuRound(params: {
   /** address the house binds its solvability proof to (irrelevant to solvability); defaults to 1n */
   housePlayer?: bigint
 }): Promise<SudokuRoundResult> {
-  const setup = setupFor('sudoku_solve', PTAU_SUDOKU)
+  const setup = setupFor('sudoku_solve')
 
   // 1. house solvability proof (open): proves the committed puzzle has ≥1 solution.
   const houseInput = await buildSudokuWitnessInput({

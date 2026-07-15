@@ -10,13 +10,12 @@ import {
   type CircuitSetup,
 } from '../src/index.js'
 
-const PTAU_POWER = 12 // 2^12 = 4096 >= 1342 constraints
 
 describe('wordle_clue circuit', () => {
   let setup: CircuitSetup
 
   beforeAll(async () => {
-    setup = setupCircuit('wordle_clue', PTAU_POWER)
+    setup = setupCircuit('wordle_clue')
   }, 300_000)
 
   const word = wordToIndices('crane') // [2,17,0,13,4]

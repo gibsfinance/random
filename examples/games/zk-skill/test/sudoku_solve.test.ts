@@ -9,7 +9,6 @@ import {
   type CircuitSetup,
 } from '../src/index.js'
 
-const PTAU_POWER = 15 // 2^15 = 32768 >= ~22.9k constraints
 
 // A known-valid, fully solved 9x9 grid (band-rotation construction).
 // Every row / column / 3x3 box is a permutation of 1..9.
@@ -44,7 +43,7 @@ describe('sudoku_solve circuit (M3 role-flip: no house secret, player-bound null
   let setup: CircuitSetup
 
   beforeAll(async () => {
-    setup = setupCircuit('sudoku_solve', PTAU_POWER)
+    setup = setupCircuit('sudoku_solve')
   }, 300_000)
 
   it('proves and verifies a valid solution, with 83 public signals [nullifier, puzzle[81], player]', async () => {
