@@ -9,7 +9,7 @@ pragma solidity ^0.8.24;
 ///
 /// Unlike GamePayouts these take no round-random `r`: a skill game's payout is a function of the
 /// VERIFIED result (Wordle: guesses used to reach all-green; Sudoku: whether a valid solve was
-/// proven), which the caller establishes with a Groth16 proof before trusting this math with chips.
+/// proven), which the caller establishes with a PLONK proof before trusting this math with chips.
 library SkillPayouts {
     uint256 internal constant HUNDREDTHS = 100; // 1.00x == 100
 

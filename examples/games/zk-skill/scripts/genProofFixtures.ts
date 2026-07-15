@@ -9,9 +9,14 @@
 // regenerate one alone.
 //
 // Because build/ is gitignored, the zkey is NOT a committed artifact — the committed verifier+fixture
-// pair is the only record of a given setup. `plonk setup` is deterministic given (r1cs, ptau), so
-// re-running this reproduces the same pair as long as the circuit, circom, snarkjs, and the pinned
-// Hermez ptau are unchanged.
+// pair is the only record of a given setup. What reproduces and what does not (both verified):
+//   - the VERIFIER is bit-for-bit reproducible: `plonk setup` is deterministic given (r1cs, ptau), so
+//     an unchanged circuit + circom + snarkjs + the pinned Hermez ptau re-exports an identical .sol.
+//   - the PROOF is NOT: PLONK proving draws random blinding scalars, so every run emits different
+//     proof fields. That is the zero-knowledge property working, not a fault. A regenerated fixture
+//     therefore shows a 24-field diff and still verifies against the unchanged verifier.
+// So: a verifier diff after a no-op regen means something real changed (circuit/toolchain/ptau) and
+// must be explained; a proof-only diff is expected noise.
 //
 // STALE-ARTIFACT TRAP: setupCircuit() is cache-aware — it reuses build/<name>/<name>_plonk.zkey if
 // present and will NOT notice that the circuit source changed. After editing a circuit (or bumping
