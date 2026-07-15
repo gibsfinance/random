@@ -17,27 +17,36 @@ import {WordleSolvePlonkVerifier} from "../../contracts/zk/generated/WordleSolve
 /// per-circuit setup, so that requirement disappears entirely.
 ///
 /// It was also CHEAPER here, inverting the usual "groth16 is cheapest" wisdom. Measured on the
-/// IDENTICAL sudoku_solve circuit/vector/public signals (83) with real proofs, before the migration.
-/// The groth16 verifier + the spike harness are deleted now that the decision is made, so this
-/// baseline is the record (it can no longer be re-measured from this tree):
+/// IDENTICAL sudoku_solve circuit/vector/public signals (83), with real proofs, both memory-hoisted
+/// (see MEASUREMENT DISCIPLINE below). The groth16 verifier is deleted now that the decision is made;
+/// its baseline was RE-MEASURED for this note by temporarily restoring it from commit f60cb5b, so
+/// these are measured facts, not derivations:
 ///
-///   GROTH16 verify: 933,945 gas | proof 256B | code 14,281B | ceremony REQUIRED
-///   PLONK   verify: ~528.8k gas | proof 768B | code 15,550B | ceremony NONE
+///   GROTH16 verify: 743,449 gas | proof 256B | code 14,281B | ceremony REQUIRED
+///   PLONK   verify: ~305k gas   | proof 768B | code 15,550B | ceremony NONE   => ~59% cheaper
 ///
-/// PLONK is ~43% cheaper on sudoku_solve because groth16 does one EC scalar-mul (~6k gas) per public
-/// input and sudoku_solve has 83 (81 puzzle cells + nullifier + player) — ~510k of its 934k. PLONK
-/// evaluates public inputs in the field, so its cost is near-flat in public-input count. Net ~400k
-/// saved per settle even after PLONK's +512B of calldata. The two Wordle circuits have far fewer
-/// public signals (11 and 4), so they were never where groth16 hurt — they move to PLONK for the
-/// TRUST property (no ceremony); their gas is measured here for the record.
+/// PLONK wins because groth16 does one EC scalar-mul (~6k gas) per public input and sudoku_solve has
+/// 83 (81 puzzle cells + nullifier + player) — the dominant term in its 743k. PLONK evaluates public
+/// inputs in the field, so its cost is near-flat in public-input count. PLONK's proof is +512B of
+/// calldata (24 words vs 8) = ~8.2k gas at 16/nonzero-byte, which barely dents a ~438k execution
+/// saving. The two Wordle circuits have far fewer public signals (11 and 4), so they were never where
+/// groth16 hurt — they move to PLONK for the TRUST property (no ceremony); their gas is recorded here
+/// for completeness.
 ///
-/// WHY THE PLONK FIGURES ARE APPROXIMATE (~) AND THE GROTH16 ONE IS NOT: a PLONK proof is randomized
-/// (fresh blinding scalars every run), and verify gas is mildly DATA-dependent, so re-proving the same
-/// statement shifts the number slightly. Measured directly: regenerating only the wordle_solve fixture
-/// moved it 321,089 -> 321,801 (+712) while the two untouched fixtures measured bit-identical. So
-/// treat these as ~1k-band figures, not constants — the tests below print the live number for the
-/// currently committed fixtures on every run. (This also explains the spike's 528,824 vs the current
-/// 528,778 for sudoku_solve: a different random proof, not a code change.)
+/// HISTORICAL NOTE — do not "restore" the old numbers: this file previously recorded 933,945 (groth16)
+/// vs 528,824 (plonk), i.e. "-43%". Both were inflated: the fixtures are STORAGE arrays, and passing
+/// them straight to the verifier SLOADs every word inside the gasleft() window (~2100/cold word).
+/// groth16 read 91 words (~191k) and PLONK read 107 (~225k), so PLONK — having the bigger proof — ate
+/// MORE of the spurious cost and its advantage was UNDERSTATED. Hoisting to memory first removes the
+/// artifact and reproduces the old figures exactly when re-introduced (933,961), so the two sets are
+/// reconciled, not in conflict.
+///
+/// WHY THE PLONK FIGURE IS APPROXIMATE (~) AND THE GROTH16 ONE IS NOT: a PLONK proof is randomized
+/// (fresh blinding scalars every run) and verify gas is mildly DATA-dependent, so re-proving the same
+/// statement shifts the number by up to ~1k. Measured directly: regenerating only the wordle_solve
+/// fixture moved it +712 while the two untouched fixtures measured bit-identical. Treat the PLONK
+/// numbers as a ~1k band, not constants — the tests below print the live figure for the currently
+/// committed fixtures on every run. A groth16 proof is deterministic, hence an exact figure.
 ///
 /// Two numbers matter for a real settle tx:
 ///   1. EXECUTION gas — the verify call itself (measured here via gasleft()).
@@ -87,25 +96,43 @@ contract ProofSystemGasTest is Test {
         return vm.parseJsonUintArray(json, ".pubSignals");
     }
 
+    /// MEASUREMENT DISCIPLINE — read before "simplifying" these into `verifyProof(storageArr, ...)`:
+    /// the fixtures live in `internal` STORAGE arrays, so passing them straight to the verifier SLOADs
+    /// every word INSIDE the gasleft() window: 107 cold words (24 proof + 83 public) x 2100 = ~225k of
+    /// pure test-harness cost attributed to the verifier. Measured directly on sudoku_solve:
+    ///     storage arrays passed directly ... 527,928
+    ///     hoisted to memory first ......... 304,718   <- the verifier
+    ///     storage arrays, pre-warmed ...... 308,933
+    /// So each test hoists into memory FIRST and starts the clock after. This also matches production:
+    /// SkillSettle receives the proof as CALLDATA and forwards it — it never SLOADs a proof.
+    /// (The pre-migration groth16 baseline in the header was measured the un-hoisted way, so it is
+    /// inflated too — see the note there.)
+
     function test_gas_sudokuSolve_verify() public view {
+        uint256[24] memory proof = sudokuProof;
+        uint256[83] memory pub = sudokuPub;
         uint256 g0 = gasleft();
-        bool ok = sudoku.verifyProof(sudokuProof, sudokuPub);
+        bool ok = sudoku.verifyProof(proof, pub);
         uint256 used = g0 - gasleft();
         assertTrue(ok, "sudoku_solve plonk proof must verify");
         console.log("PLONK sudoku_solve verify gas (83 public signals):", used);
     }
 
     function test_gas_wordleClue_verify() public view {
+        uint256[24] memory proof = clueProof;
+        uint256[11] memory pub = cluePub;
         uint256 g0 = gasleft();
-        bool ok = wordleClue.verifyProof(clueProof, cluePub);
+        bool ok = wordleClue.verifyProof(proof, pub);
         uint256 used = g0 - gasleft();
         assertTrue(ok, "wordle_clue plonk proof must verify");
         console.log("PLONK wordle_clue verify gas (11 public signals):", used);
     }
 
     function test_gas_wordleSolve_verify() public view {
+        uint256[24] memory proof = solveProof;
+        uint256[4] memory pub = solvePub;
         uint256 g0 = gasleft();
-        bool ok = wordleSolve.verifyProof(solveProof, solvePub);
+        bool ok = wordleSolve.verifyProof(proof, pub);
         uint256 used = g0 - gasleft();
         assertTrue(ok, "wordle_solve plonk proof must verify");
         console.log("PLONK wordle_solve verify gas (4 public signals):", used);

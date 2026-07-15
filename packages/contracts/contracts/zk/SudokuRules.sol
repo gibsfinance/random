@@ -22,8 +22,9 @@ import {SudokuSolvePlonkVerifier} from "./generated/SudokuSolvePlonkVerifier.sol
 /// order are unchanged from the groth16 version — only the proving system moved. PLONK has
 /// NO per-circuit trusted setup, so a circuit change no longer requires a phase-2 ceremony
 /// (the groth16 zkeys this replaced had ZERO contributions, i.e. were forgeable). It is also
-/// ~43% CHEAPER to verify here: groth16 costs one EC scalar-mul (~6k gas) per public input
-/// and this circuit has 83, whereas PLONK evaluates public inputs in the field.
+/// ~59% CHEAPER to verify here (~305k vs 743,449 gas): groth16 costs one EC scalar-mul (~6k
+/// gas) per public input and this circuit has 83, whereas PLONK evaluates public inputs in the
+/// field. See test/foundry/ProofSystemGas.t.sol for the measurements + method.
 ///
 /// Public-signal ORDER (snarkjs emits OUTPUTS first, then public inputs in declaration
 /// order) — must match the circuit's `main` declaration exactly:
