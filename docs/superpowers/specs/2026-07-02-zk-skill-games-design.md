@@ -27,9 +27,16 @@ with real proofs on the identical sudoku_solve circuit/vector (83 public signals
 
 | circuit | public signals | PLONK verify gas | groth16 baseline | verifier code (EIP-170 limit 24,576 B) |
 |---|---|---|---|---|
-| `sudoku_solve` | 83 | **528,778** | 933,945 (**-43.4%**) | 15,550 B |
-| `wordle_clue`  | 11 | **340,755** | — | 6,868 B |
-| `wordle_solve` |  4 | **321,089** | — | 6,072 B |
+| `sudoku_solve` | 83 | **~528.8k** | 933,945 (**-43%**) | 15,550 B |
+| `wordle_clue`  | 11 | **~340.8k** | — | 6,868 B |
+| `wordle_solve` |  4 | **~321.8k** | — | 6,072 B |
+
+The PLONK figures are approximate (~1k band), the groth16 one is exact-as-measured. A PLONK proof is
+**randomized** — fresh blinding scalars per run — and verify gas is mildly data-dependent, so
+re-proving the same statement shifts the number slightly. Measured directly: regenerating only the
+`wordle_solve` fixture moved it 321,089 → 321,801 (+712), while the two untouched fixtures measured
+bit-identical. `ProofSystemGas.t.sol` prints the live number for the committed fixtures on every run,
+so treat that as the source of truth rather than any figure pasted here.
 
 Groth16 costs one EC scalar-mul (~6k gas) per public input, and sudoku_solve has 83 (81 puzzle cells +
 nullifier + player) — ~510k of its 934k. PLONK evaluates public inputs in the field, so its cost is

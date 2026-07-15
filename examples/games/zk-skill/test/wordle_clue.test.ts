@@ -10,7 +10,6 @@ import {
   type CircuitSetup,
 } from '../src/index.js'
 
-
 describe('wordle_clue circuit', () => {
   let setup: CircuitSetup
 

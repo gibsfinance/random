@@ -10,7 +10,7 @@
 > contributions (a fixed public dev beacon), so the toxic waste was effectively public — anyone could
 > forge a winning proof and drain the house. All three circuits now use **PLONK over the universal
 > Hermez `powersOfTau28_hez_final_16.ptau`**, which has **no per-circuit setup at all**. It is also
-> ~43% cheaper to verify sudoku_solve on-chain (528,778 vs 933,945 gas). Circuits, public-signal orders
+> ~43% cheaper to verify sudoku_solve on-chain (~528.8k vs 933,945 gas). Circuits, public-signal orders
 > and every security property are unchanged; proofs are now `uint256[24]`. Remaining honest caveats:
 > the Hermez ptau is trusted as a real multi-party ceremony output (we consume it, we don't generate
 > it; its sha256 is pinned in `harness.ts`), and **none of this is audited**. See

@@ -9,7 +9,6 @@ import {
   type CircuitSetup,
 } from '../src/index.js'
 
-
 // A known-valid, fully solved 9x9 grid (band-rotation construction).
 // Every row / column / 3x3 box is a permutation of 1..9.
 const SOLUTION: number[] = [

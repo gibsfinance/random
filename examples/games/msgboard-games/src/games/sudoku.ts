@@ -4,7 +4,7 @@ import { type SkillGame, type SkillOutcome, skillOutcome } from '../skill'
  * ZK-Sudoku (gameId 31) — the house commits a puzzle (published clues) before the bet and proves at
  * open that it is SOLVABLE (a sudoku_solve proof of a private solution), so it cannot post an
  * unsolvable/ambiguous board an honest solver would forfeit on. The player then privately solves it and
- * submits a Groth16 proof they know ANY valid solution to the committed puzzle (see @gibs/zk-skill
+ * submits a PLONK proof they know ANY valid solution to the committed puzzle (see @gibs/zk-skill
  * circuits/sudoku_solve.circom + contracts/zk/SudokuRules.sol). The proof references NO house secret;
  * it is bound to the player's own address via a nullifier = Poseidon(solutionDigest ‖ player), so in a
  * timed/multiplayer race a mempool front-runner cannot copy the solve, and the contract records the

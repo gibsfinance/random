@@ -13,7 +13,6 @@ import {
   type DictTree,
 } from '../src/index.js'
 
-
 // A committed 6-guess sequence that first goes all-green on "crane" at guess #2.
 const WORD = wordToIndices('crane')
 const SALT = 424242n
