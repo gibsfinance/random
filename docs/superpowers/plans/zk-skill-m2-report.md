@@ -3,7 +3,21 @@
 **Date:** 2026-07-14
 **Repo:** gibsfinance/random · branch `feat/zk-skill-games`
 **Status:** M2 shipped + tested. Follows M0 (`060fe37`, circuits off-chain) and M1 (`1a08664`, on-chain
-Groth16 verifiers). See `docs/superpowers/specs/2026-07-02-zk-skill-games-design.md` for the design.
+Groth16 verifiers; since migrated to PLONK — see the update below). See
+`docs/superpowers/specs/2026-07-02-zk-skill-games-design.md` for the design.
+
+> **Update 2026-07-15 — migrated to PLONK; NO ceremony is required.** The "real trusted setup" /
+> "dev-beacon toxic-waste setup" item below is **RESOLVED and no longer a caveat**. Groth16 needed a
+> per-circuit phase-2 ceremony re-run on every circuit change, and the zkeys shipped here had ZERO
+> contributions (a fixed public dev beacon), so the toxic waste was effectively public — anyone could
+> forge a winning proof and drain the house. All three circuits now use **PLONK over the universal
+> Hermez `powersOfTau28_hez_final_16.ptau`**, which has **no per-circuit setup at all**. It is also
+> ~43% cheaper to verify sudoku_solve on-chain (528,778 vs 933,945 gas). Circuits, public-signal orders
+> and every security property are unchanged; proofs are now `uint256[24]`. Remaining honest caveats:
+> the Hermez ptau is trusted as a real multi-party ceremony output (we consume it, we don't generate
+> it; its sha256 is pinned in `harness.ts`), and **none of this is audited**. See
+> `docs/superpowers/specs/2026-07-02-zk-skill-games-design.md` § "Proving system".
+
 
 ## What M2 delivers
 
@@ -28,7 +42,7 @@ settle from `raw = roundRandom(...)` via `Game<TParams>`; skill games settle fro
 - `contracts/games/SkillPayouts.sol` — pure library mirroring the TS curves bit-for-bit (parity pinned
   in the foundry suite) + the `isAllGreen` solve predicate.
 - `contracts/games/SkillSettle.sol` — escrowed settlement backend (Chips ERC20, house-signed open
-  terms, per-table escrow reservation — the HouseChannel pattern, but Groth16-skill instead of
+  terms, per-table escrow reservation — the HouseChannel pattern, but ZK-skill instead of
   Noir/UltraHonk-conservation). Two settle paths:
   - **Sudoku (`settleSudoku`)** — FULLY TRUSTLESS + permissionless: verify the solve proof via
     `SudokuRules` against the committed puzzle+commitment → pay `1.90×`. The house cannot block a valid
@@ -41,7 +55,8 @@ settle from `raw = roundRandom(...)` via `Game<TParams>`; skill games settle fro
   fail-closed (non-green clue, fabricated all-green without a matching proof, forged count-sig).
 
 ### 3. Off-chain end-to-end settle (`@gibs/zk-skill`)
-- `src/settle.ts` — `playWordleRound` / `playSudokuRound`: generate REAL Groth16 proof(s), verify,
+- `src/settle.ts` — `playWordleRound` / `playSudokuRound`: generate REAL ZK proof(s) (PLONK since
+  2026-07-15), verify,
   derive the result, and settle the payout through the `@gibs/msgboard-games` modules (the payout math
   is imported, never re-implemented, so off-chain ↔ on-chain ↔ TS cannot drift). Mirrors
   `@gibs/zk-settle`'s `settle.ts`.
@@ -64,13 +79,14 @@ settle from `raw = roundRandom(...)` via `Game<TParams>`; skill games settle fro
    `word+salt` reveal to make a griefed solve auditable on-chain. Its happy-path on-chain test also
    needs an all-green proof fixture (the M1 fixture is a non-solve `crane/eerie` vector) — the
    off-chain suite already proves the full Wordle solve→payout path.
-2. **Circuit hardening** (each is a NEW circuit + its own trusted setup — deferred as a unit rather
-   than rushed, the exact failure mode that bit M1's multi-agent setup):
+2. **Circuit hardening** (each is a NEW circuit; under Groth16 each also needed its OWN phase-2
+   ceremony — deferred as a unit rather than rushed, the exact failure mode that bit M1's multi-agent
+   setup. Under PLONK, since 2026-07-15, a new circuit needs NO new setup):
    - Wordle **dictionary membership** (guess ∈ the word list) — stops "not a word" griefing.
    - Sudoku **`sudoku_valid_puzzle`** uniqueness/solvability proof at commit — stops the house posting
      an unsolvable/ambiguous board.
    - **Anti-front-run / anti-replay nullifier** (`Poseidon(solutionHash ‖ player)`) binding a Sudoku
      proof to one player+round, so a mempool watcher cannot copy a solve in a timed race.
 3. **Session integration** — driving skill rounds through the co-signed `HouseSession`/transcript (the
-   RNG games' channel), and a real multi-party **trusted-setup ceremony** (M2 still uses the M1
-   dev/beacon toxic-waste setup — fine for tests, never for mainnet).
+   RNG games' channel). ~~and a real multi-party **trusted-setup ceremony**~~ — RESOLVED 2026-07-15 by
+   the PLONK migration: there is no per-circuit ceremony to run.

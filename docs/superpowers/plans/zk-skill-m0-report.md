@@ -6,6 +6,14 @@
 **Scope:** M0 only — two circom/Groth16 circuits, proven+verified off-chain via vitest. No
 contracts, no UI, nothing committed to git (per instructions).
 
+> **Update 2026-07-15 — the Groth16 + dev-ptau harness described here is GONE.** All circuits migrated
+> to **PLONK over the universal Hermez `powersOfTau28_hez_final_16.ptau`**, which has **no per-circuit
+> trusted setup**. Every "not a real trusted setup / a real ceremony is an M1 concern" caveat below is
+> **RESOLVED**: there is no ceremony to run, and the dev-beacon apparatus (`DEV_BEACON_HASH`,
+> `powersoftau new/beacon/prepare phase2`) has been deleted from `harness.ts` — `plonk setup` IS the
+> complete setup. `setupCircuit(name)` no longer takes a ptau power. The circuits themselves are
+> unchanged. See `docs/superpowers/specs/2026-07-02-zk-skill-games-design.md` § "Proving system".
+
 ## Status: DONE
 
 ## Toolchain

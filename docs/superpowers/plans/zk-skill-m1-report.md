@@ -7,6 +7,13 @@
 committed verifiers + proof fixtures came from different zkey generations. This was a
 single-owner recovery pass — no other agent touched the repo concurrently.
 
+> **Update 2026-07-15 — superseded in part: the Groth16 verifiers described here are GONE.** All three
+> circuits migrated to **PLONK over the universal Hermez ptau**, which has **no per-circuit trusted
+> setup**, so this report's dev/fixed-beacon setup discussion is historical only. The
+> verifier↔fixture-must-come-from-ONE-zkey rule this recovery established is UNCHANGED and still
+> load-bearing — the generator scripts now enforce it by emitting both artifacts in a single pass. See
+> `docs/superpowers/specs/2026-07-02-zk-skill-games-design.md` § "Proving system".
+
 ## Status: DONE
 
 ## What was wrong, and the fix

@@ -1,22 +1,64 @@
-# Design: ZK skill games — provably-fair Sudoku + Wordle (circom/Groth16)
+# Design: ZK skill games — provably-fair Sudoku + Wordle (circom/PLONK)
 
 **Date:** 2026-07-02
 **Repo:** gibsfinance/random
 **Status:** design proposal → pending approval
+**Updated 2026-07-15:** migrated Groth16 → **PLONK**. See "Proving system" below. The rest of this
+document is the original design and remains accurate: circuits, commitments, public-signal orders and
+the trustlessness model are unchanged by that migration — only the proving system moved.
+
+## Proving system: PLONK (migrated 2026-07-15 from Groth16)
+
+**No trusted-setup ceremony is required.** This supersedes every "needs a real ceremony" caveat below
+and in the M1/M2/M3 reports.
+
+Groth16 requires a **per-circuit phase-2 ceremony, re-run on EVERY circuit change**. Worse, the zkeys
+this repo actually shipped were produced by `snarkjs groth16 setup` with **zero contributions** (the
+harness faked a phase-2 with a fixed public dev beacon), so the toxic waste was effectively public —
+**anyone could forge a winning proof and drain the house**. PLONK consumes the **same universal Hermez
+powers-of-tau** for every circuit and has **no per-circuit setup**, so the requirement disappears:
+`snarkjs plonk setup <r1cs> <hermez.ptau> <zkey>` IS the complete setup, with no contribute/beacon step
+to get wrong and no waste to leak. All three circuits share
+`powersOfTau28_hez_final_16.ptau` (2^16 is sized for sudoku_solve: 22,948 R1CS → 34,245 PLONK
+constraints; a larger ptau works fine for the smaller circuits).
+
+PLONK is also **cheaper here**, inverting the usual "groth16 is cheapest" wisdom. Measured on-chain
+with real proofs on the identical sudoku_solve circuit/vector (83 public signals):
+
+| circuit | public signals | PLONK verify gas | groth16 baseline | verifier code (EIP-170 limit 24,576 B) |
+|---|---|---|---|---|
+| `sudoku_solve` | 83 | **528,778** | 933,945 (**-43.4%**) | 15,550 B |
+| `wordle_clue`  | 11 | **340,755** | — | 6,868 B |
+| `wordle_solve` |  4 | **321,089** | — | 6,072 B |
+
+Groth16 costs one EC scalar-mul (~6k gas) per public input, and sudoku_solve has 83 (81 puzzle cells +
+nullifier + player) — ~510k of its 934k. PLONK evaluates public inputs in the field, so its cost is
+near-flat in public-input count; ~397k net is saved per settle even after PLONK's larger proof (768B
+vs 256B calldata). The Wordle circuits have few public signals, so they moved for the **trust**
+property rather than the gas. (`packages/contracts/test/foundry/ProofSystemGas.t.sol` re-measures
+these on every run.)
+
+**Honest remaining caveats:**
+- The **Hermez ptau is trusted as a real multi-party ceremony output** — we consume it, we do not
+  generate it. Its sha256 is pinned in `harness.ts` so a re-download cannot silently swap it, and its
+  contribution chain is independently checkable with `snarkjs powersoftau verify`. This is a far
+  weaker assumption than a self-run ceremony, but it is not zero.
+- **Not audited.** Circuits, verifiers, and the settle wiring have had no external review.
+- fflonk was skipped: it needs a ~2^19 ptau (~576MB) and is BETA in snarkjs; PLONK already wins.
 
 ## Problem
 
 The catalog is all RNG casino games (Crash, Plinko, Mines, …) made provably-fair by
 commit-before-bet + recompute-settle (+ the Noir settle-privacy and uzkge card tracks). We want a NEW
 category: **provably-fair *skill* games** where the outcome hinges on solving a puzzle, made trustless
-with ZK. Two games, both **circom + Groth16 + snarkjs** with an on-chain Solidity verifier (precedent:
+with ZK. Two games, both **circom + PLONK + snarkjs** with an on-chain Solidity verifier (precedent:
 `contracts/zk/ShuffleVerifier52.sol`). This is a design blueprint from `zksnark-sudoku` (circom) and
 `zordle` (halo2 → we port the idea to circom).
 
 ## The trustlessness model (shared)
 
 Both games extend the platform's existing pattern. Where an RNG game commits a server seed before the
-bet, a skill game **commits the hidden puzzle/answer before the bet**, and a **Groth16 proof replaces
+bet, a skill game **commits the hidden puzzle/answer before the bet**, and a **ZK proof replaces
 "recompute settle"** — it proves the round was scored honestly against that commitment, without
 revealing the secret. So the two trust anchors are:
 1. **Commit-before-bet:** the house posts `commit = Poseidon(secret ‖ salt)` on-chain *before* the
@@ -32,7 +74,7 @@ proven; the edge is transparent in the multiplier table, exactly like the RTP ta
 
 - **Setup:** house commits `C = Poseidon(word ‖ salt)` (word ∈ the dictionary, 5 letters). Player stakes.
 - **Play:** player submits up to 6 guesses. For each guess the house returns the color clue
-  (green/yellow/grey per letter) **plus a Groth16 proof**. Player wins a payout scaled by guesses used
+  (green/yellow/grey per letter) **plus a ZK proof**. Player wins a payout scaled by guesses used
   (fewer guesses → higher multiplier, per a published table); miss all 6 → loss, and the house reveals
   `word,salt` (checked against `C`) so the loss is auditable.
 - **Circuit `wordle_clue`** (prover = house):
@@ -49,7 +91,7 @@ proven; the edge is transparent in the multiplier table, exactly like the RTP ta
 - **Setup:** house commits a puzzle with a **unique** solution: publishes the `puzzle` (clues) and
   `Cs = Poseidon(solution ‖ salt)`; the puzzle's uniqueness + solvability is itself proven once at
   commit (a `sudoku_valid_puzzle` proof), so the house can't post an unsolvable/ambiguous board.
-- **Play:** player solves and submits a Groth16 proof they know the solution — **the solution stays
+- **Play:** player solves and submits a ZK proof they know the solution — **the solution stays
   private** so, in a timed/multiplayer race, mempool front-runners can't copy it. Win = a valid proof
   within the time/stake terms; payout scaled by solve time or a flat skill multiplier (published).
 - **Circuit `sudoku_solve`** (prover = player):
@@ -63,7 +105,8 @@ proven; the edge is transparent in the multiplier table, exactly like the RTP ta
 
 ## On-chain + integration
 
-- **Verifiers:** `circom` → `snarkjs` → generated Solidity `Groth16Verifier` per circuit, committed
+- **Verifiers:** `circom` → `snarkjs` → a generated Solidity PLONK verifier per circuit (renamed off
+  snarkjs's fixed `PlonkVerifier` to avoid collisions), committed
   under `packages/contracts/contracts/zk/generated/` (alongside the existing generated verifiers).
 - **Rules contracts:** `WordleRules.sol` / `SudokuRules.sol` (implementing the repo's `IGameRules`
   pattern) hold the commit, call the verifier on each proof, and drive settle through `HouseChannel`
@@ -81,7 +124,7 @@ proven; the edge is transparent in the multiplier table, exactly like the RTP ta
 - **M0 — circuits + off-chain:** write `wordle_clue`, `sudoku_solve` (+ `sudoku_valid_puzzle`) in
   circom; prove/verify off-chain in Node/vitest against known vectors. Proves the toolchain + the game
   logic. (No contract yet.)
-- **M1 — on-chain verifier:** generate the Groth16 Solidity verifiers; `WordleRules`/`SudokuRules`
+- **M1 — on-chain verifier:** generate the Solidity verifiers; `WordleRules`/`SudokuRules`
   verify a proof on-chain; foundry tests with real proofs.
 - **M2 — game modules + catalog:** the TS game modules, session integration, payout tables, and the
   on-chain settle wiring through `HouseChannel`; end-to-end a full round each.
@@ -90,7 +133,7 @@ proven; the edge is transparent in the multiplier table, exactly like the RTP ta
 
 1. **Sudoku format:** **single-player vs house** — stake, solve within budget, prove → fixed multiplier.
    Rules kept open to a future race-pot mode, but not built now.
-2. **Commitments:** **Poseidon** (circomlib) — cheap in-circuit, the circom/Groth16 standard.
+2. **Commitments:** **Poseidon** (circomlib) — cheap in-circuit, the circom/snarkjs standard.
 3. **Wordle payout:** a fixed table by guesses-used tuned to a target RTP (retunable) — a M2 detail, not M0.
 4. **Build order:** **M0 first** — both circom circuits proven off-chain (vitest), no contracts yet.
 
@@ -102,6 +145,7 @@ Two circom circuits + an off-chain proving harness, TDD with vitest:
   house can't lie about a clue.)
 - `sudoku_solve` — solution ⊨ public puzzle clues + every row/col/3×3 box is a permutation of 1..9 +
   `Poseidon(solution‖salt)==Cs`. (The separate `sudoku_valid_puzzle` uniqueness proof is M1.)
-- Harness: circom compile → dev powers-of-tau → groth16 setup → prove → verify. Tests: valid inputs
+- Harness: circom compile → universal Hermez ptau → `plonk setup` → prove → verify (originally a dev
+  powers-of-tau + groth16 setup; migrated 2026-07-15). Tests: valid inputs
   prove+verify; tampered inputs (wrong clue, wrong commitment, invalid solution) fail (constraint
   violation at witness-gen or verify=false). Peer package `examples/games/zk-skill` (mirrors `zk-settle`).

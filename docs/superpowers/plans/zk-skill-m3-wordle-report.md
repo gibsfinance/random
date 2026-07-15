@@ -4,6 +4,18 @@
 **Repo:** gibsfinance/random · branch `feat/zk-skill-m3-wordle` (worktree; based on M2 `2a9d064`)
 **Scope:** the Wordle half of M3. (Sudoku hardening ships on a sibling branch.)
 
+> **Update 2026-07-15 — migrated to PLONK; NO ceremony is required.** The "real trusted setup" /
+> "dev-beacon toxic-waste setup" item below is **RESOLVED and no longer a caveat**. Groth16 needed a
+> per-circuit phase-2 ceremony re-run on every circuit change, and the zkeys shipped here had ZERO
+> contributions (a fixed public dev beacon), so the toxic waste was effectively public — anyone could
+> forge a winning proof and drain the house. All three circuits now use **PLONK over the universal
+> Hermez `powersOfTau28_hez_final_16.ptau`**, which has **no per-circuit setup at all**. It is also
+> ~43% cheaper to verify sudoku_solve on-chain (528,778 vs 933,945 gas). Circuits, public-signal orders
+> and every security property are unchanged; proofs are now `uint256[24]`. Remaining honest caveats:
+> the Hermez ptau is trusted as a real multi-party ceremony output (we consume it, we don't generate
+> it; its sha256 is pinned in `harness.ts`), and **none of this is audited**. See
+> `docs/superpowers/specs/2026-07-02-zk-skill-games-design.md` § "Proving system".
+
 Follows M2 (`docs/superpowers/plans/zk-skill-m2-report.md`). This closes the two Wordle items M2
 deferred: (1) trustless guess-sequence binding so `settleWordle` needs no house co-signature, and
 (2) dictionary membership.
@@ -28,9 +40,9 @@ separate circuit that proves the whole round outcome for a permissionless settle
     `Σ (i+1)·firstAt[i] === guessesUsed`.
   - `packedWord ∈ dictRoot` (Poseidon(2) Merkle inclusion) — the answer (== the winning guess) is a
     real dictionary word.
-- **Size:** ~1.9k non-linear (~4.4k total) constraints → a **power-13 dev-beacon ptau, generated
-  locally** (fast, no OOM risk; the deterministic-beacon pattern from `harness.ts`). Every Poseidon
-  call is ≤6 inputs.
+- **Size:** ~1.9k non-linear (~4.4k total) constraints. Originally a power-13 dev-beacon ptau
+  generated locally; since 2026-07-15 it uses the **universal Hermez 2^16 ptau** shared by all three
+  circuits, with no per-circuit setup. Every Poseidon call is ≤6 inputs.
 
 ### Why the invariants hold
 - **House cannot deny a real solve / give a dishonest clue** — clue honesty stays in `wordle_clue`;
@@ -40,14 +52,14 @@ separate circuit that proves the whole round outcome for a permissionless settle
   committed word; the player commits guesses blind (before the word is known).
 - **Player cannot understate guesses-used** — the whole ordered sequence is committed and every
   earlier guess is proven non-solving; `guessesUsed` is pinned to the first-solve index, checked as a
-  public signal (a wrong claim fails the Groth16 verify). This is what removes the house co-signature.
+  public signal (a wrong claim fails the ZK verify). This is what removes the house co-signature.
 - **Player cannot pass off a non-dictionary word** — the winning word must be in the committed
   `dictRoot`.
 - **Each clue stays honestly scored** — `wordle_clue` (and its M0/M1 tests + fixture) is untouched.
 
 ### On-chain (permissionless `settleWordle`)
-- Generated verifier `contracts/zk/generated/WordleSolveVerifier.sol` + `WordleRules.checkSolve(...)`.
-- `SkillSettle.settleWordle` now takes just `(tableId, a, b, c, guessesUsed)` — **no `houseSig`, no
+- Generated verifier `contracts/zk/generated/WordleSolvePlonkVerifier.sol` + `WordleRules.checkSolve(...)`.
+- `SkillSettle.settleWordle` now takes just `(tableId, proof, guessesUsed)` — **no `houseSig`, no
   clue/guess arrays**. It verifies the `wordle_solve` proof against `t.commit`, the guesses-commitment
   (stored in the second-commitment slot `t.puzzleHash`), and a global owner-set `wordleDictRoot`, then
   pays `wordleMultX100(guessesUsed)`. Anyone can call it.
@@ -81,4 +93,6 @@ word list (deeper tree); the leaf/packing/hashing scheme is unchanged by depth.
 2. **Adaptive play.** Committing all 6 guesses up front makes the round non-adaptive (a sound but
    different Wordle variant). Adaptive play with the same binding needs a per-turn co-signed transcript
    (the `HouseSession` channel) — the session-integration item already on the M3 list.
-3. **Real trusted setup.** Still the dev/beacon toxic-waste setup — fine for tests, never mainnet.
+3. ~~**Real trusted setup.**~~ **RESOLVED 2026-07-15:** migrated to PLONK over the universal Hermez
+   ptau — there is no per-circuit ceremony, and the dev/beacon toxic-waste setup is gone. The Hermez
+   ceremony itself is still trusted as a real ceremony output, and none of this is audited.
