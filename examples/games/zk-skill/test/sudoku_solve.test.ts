@@ -4,12 +4,12 @@ import {
   isValidSolution,
   prove,
   setupCircuit,
-  sudokuCommit,
+  sudokuNullifier,
   verify,
   type CircuitSetup,
 } from '../src/index.js'
 
-const PTAU_POWER = 15 // 2^15 = 32768 >= 22462 constraints
+const PTAU_POWER = 15 // 2^15 = 32768 >= ~22.9k constraints
 
 // A known-valid, fully solved 9x9 grid (band-rotation construction).
 // Every row / column / 3x3 box is a permutation of 1..9.
@@ -32,26 +32,49 @@ const PUZZLE: number[] = SOLUTION.map((v, i) => {
   return r === 0 || c === 0 ? v : 0
 })
 
+const PLAYER = 0x1234567890abcdefn
+
 describe('sanity: fixed vector', () => {
   it('the fixed vector is a genuinely valid sudoku solution', () => {
     expect(isValidSolution(PUZZLE, SOLUTION)).toBe(true)
   })
 })
 
-describe('sudoku_solve circuit', () => {
+describe('sudoku_solve circuit (M3 role-flip: no house secret, player-bound nullifier)', () => {
   let setup: CircuitSetup
 
   beforeAll(async () => {
     setup = setupCircuit('sudoku_solve', PTAU_POWER)
   }, 300_000)
 
-  const salt = 13371337n
-
-  it('proves and verifies a valid solution', async () => {
-    const input = await buildSudokuWitnessInput({ puzzle: PUZZLE, solution: SOLUTION, salt })
+  it('proves and verifies a valid solution, with 83 public signals [nullifier, puzzle[81], player]', async () => {
+    const input = await buildSudokuWitnessInput({ puzzle: PUZZLE, solution: SOLUTION, player: PLAYER })
     const { proof, publicSignals } = await prove(setup, input)
     const ok = await verify(setup, publicSignals, proof)
     expect(ok).toBe(true)
+    expect(publicSignals).toHaveLength(83)
+    // ordering: nullifier first, then the 81 puzzle cells, then player
+    expect(publicSignals[1]).toBe('1') // puzzle[0]
+    expect(publicSignals[82]).toBe(PLAYER.toString()) // player
+  })
+
+  it('the circuit nullifier == the JS mirror sudokuNullifier(solution, player)', async () => {
+    const input = await buildSudokuWitnessInput({ puzzle: PUZZLE, solution: SOLUTION, player: PLAYER })
+    const { publicSignals } = await prove(setup, input)
+    const expected = await sudokuNullifier(SOLUTION, PLAYER)
+    expect(publicSignals[0]).toBe(expected.toString())
+  })
+
+  it('binds the proof to `player`: a different player yields a different nullifier (anti-front-run)', async () => {
+    const a = await sudokuNullifier(SOLUTION, PLAYER)
+    const b = await sudokuNullifier(SOLUTION, PLAYER + 1n)
+    expect(a).not.toBe(b)
+  })
+
+  it('nullifier is stable for the same solution+player', async () => {
+    const n1 = await sudokuNullifier(SOLUTION, PLAYER)
+    const n2 = await sudokuNullifier(SOLUTION, PLAYER)
+    expect(n1).toBe(n2)
   })
 
   it('rejects a solution that breaks a row/box permutation (blank cell)', async () => {
@@ -63,7 +86,7 @@ describe('sudoku_solve circuit', () => {
     broken[idx] = SOLUTION[4 * 9 + 0]! // duplicates row4's first cell (5)
     expect(isValidSolution(PUZZLE, broken)).toBe(false)
 
-    const input = await buildSudokuWitnessInput({ puzzle: PUZZLE, solution: broken, salt })
+    const input = await buildSudokuWitnessInput({ puzzle: PUZZLE, solution: broken, player: PLAYER })
     await expect(prove(setup, input)).rejects.toThrow()
   })
 
@@ -74,19 +97,17 @@ describe('sudoku_solve circuit', () => {
     disagreeing[0] = 9
     expect(isValidSolution(PUZZLE, disagreeing)).toBe(false)
 
-    const input = await buildSudokuWitnessInput({ puzzle: PUZZLE, solution: disagreeing, salt })
+    const input = await buildSudokuWitnessInput({ puzzle: PUZZLE, solution: disagreeing, player: PLAYER })
     await expect(prove(setup, input)).rejects.toThrow()
   })
 
-  it('rejects a wrong commit', async () => {
-    const input = await buildSudokuWitnessInput({ puzzle: PUZZLE, solution: SOLUTION, salt })
-    const wrongCommit = (BigInt(input.commit) + 1n).toString()
-    await expect(prove(setup, { ...input, commit: wrongCommit })).rejects.toThrow()
-  })
-
-  it('commit is stable for the same solution+salt', async () => {
-    const c1 = await sudokuCommit(SOLUTION, salt)
-    const c2 = await sudokuCommit(SOLUTION, salt)
-    expect(c1).toBe(c2)
+  it('rejects a forged nullifier (a witness whose claimed nullifier != the computed one)', async () => {
+    const input = await buildSudokuWitnessInput({ puzzle: PUZZLE, solution: SOLUTION, player: PLAYER })
+    const { proof, publicSignals } = await prove(setup, input)
+    // tamper the public nullifier: verify must fail (the proof is bound to the real one)
+    const forged = [...publicSignals]
+    forged[0] = (BigInt(forged[0]!) + 1n).toString()
+    const ok = await verify(setup, forged, proof)
+    expect(ok).toBe(false)
   })
 })

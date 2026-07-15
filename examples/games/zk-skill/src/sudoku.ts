@@ -1,13 +1,16 @@
-// Sudoku solution commitment + witness helpers (JS mirror of
+// Sudoku solution nullifier + witness helpers (JS mirror of
 // circuits/sudoku_solve.circom).
 //
-// Commitment scheme (must match the circuit bit-for-bit):
-//   rowDigest[r] = Poseidon(solution[r*9 .. r*9+8])   for r = 0..8   (9 inputs)
-//   commit       = Poseidon(rowDigest[0..8], salt)                  (10 inputs)
-// i.e. a two-level sponge: hash each row of the 9x9 grid with one
-// Poseidon(9) call, then hash the 9 row digests + salt with one
-// Poseidon(10) call. Keeps every Poseidon call within circomlib's <=16
-// input limit while covering all 81 cells + the salt.
+// M3 role-flip: the player's win proof no longer references any house secret
+// (M2's `Poseidon(solution‖salt) == commit` was unprovable for the player and
+// house-griefable). Instead the proof binds all 81 solution cells + the public
+// `player` into a nullifier, so it cannot be replayed / front-run:
+//
+//   rowDigest[r] = Poseidon(solution[r*9 .. r*9+8])    (9 inputs) for r = 0..8
+//   nullifier    = Poseidon(rowDigest[0..8], player)   (10 inputs)
+//
+// i.e. a two-level sponge keeping every Poseidon call within circomlib's <=16
+// input limit. Must match the circuit bit-for-bit.
 
 import { buildPoseidon } from 'circomlibjs'
 
@@ -18,18 +21,30 @@ function getPoseidon() {
   return poseidonPromise
 }
 
-export async function sudokuCommit(solution: number[], salt: bigint): Promise<bigint> {
+/** The 9 per-row Poseidon(9) digests of a solution (the sponge's first level). */
+async function rowDigests(solution: number[]): Promise<bigint[]> {
   if (solution.length !== 81) throw new Error('solution must have 81 cells')
   const poseidon = await getPoseidon()
   const F = poseidon.F
-  const rowDigests: bigint[] = []
+  const digests: bigint[] = []
   for (let r = 0; r < 9; r++) {
     const row = solution.slice(r * 9, r * 9 + 9).map(BigInt)
-    const h = poseidon(row)
-    rowDigests.push(BigInt(F.toString(h)))
+    digests.push(BigInt(F.toString(poseidon(row))))
   }
-  const top = poseidon([...rowDigests, salt])
-  return BigInt(F.toString(top))
+  return digests
+}
+
+/**
+ * The proof's nullifier = Poseidon(rowDigest[0..8], player). Preimage-resistant in
+ * `solution` (a watcher who cannot solve the puzzle cannot compute it) and bound to
+ * `player` so a copied proof cannot be reused for a different player+round. The
+ * contract records spent nullifiers to block replay / double-claim.
+ */
+export async function sudokuNullifier(solution: number[], player: bigint): Promise<bigint> {
+  const poseidon = await getPoseidon()
+  const F = poseidon.F
+  const digests = await rowDigests(solution)
+  return BigInt(F.toString(poseidon([...digests, player])))
 }
 
 function groupIndices(): number[][] {
@@ -73,22 +88,25 @@ export function isValidSolution(puzzle: number[], solution: number[]): boolean {
 
 export interface SudokuWitnessInput {
   puzzle: number[]
-  commit: string
+  player: string
   solution: number[]
-  salt: string
   [key: string]: unknown
 }
 
+/**
+ * Build the circuit witness input for a solve of `puzzle` by `player`. The proof binds
+ * to `player` (an address as a field element) via the nullifier; the same builder is
+ * used both for the HOUSE's solvability proof at open (any player value) and the
+ * PLAYER's win proof (player = the table's player).
+ */
 export async function buildSudokuWitnessInput(params: {
   puzzle: number[]
   solution: number[]
-  salt: bigint
+  player: bigint
 }): Promise<SudokuWitnessInput> {
-  const commit = await sudokuCommit(params.solution, params.salt)
   return {
     puzzle: params.puzzle,
-    commit: commit.toString(),
+    player: params.player.toString(),
     solution: params.solution,
-    salt: params.salt.toString(),
   }
 }

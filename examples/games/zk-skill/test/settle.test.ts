@@ -89,14 +89,21 @@ describe('ZK skill games — full off-chain round with real proofs', () => {
     expect(round.outcome).toEqual({ win: false, playerDelta: -500n, multiplierX100: 0n })
   }, 600_000)
 
-  it('Sudoku: a real solve proof settles the flat 1.90× win', async () => {
+  it('Sudoku: house proves solvability + player proves a solve → flat 1.90× win (player-bound)', async () => {
+    const player = 0xC0FFEEn
     const round = await playSudokuRound({
       puzzle: SUDOKU_PUZZLE,
       solution: SUDOKU_SOLUTION,
-      salt: 13371337n,
+      player,
       stake: 1000n,
     })
+    // the house's solvability proof (open) verified — no unsolvable-puzzle grief
+    expect(round.houseSolvabilityProof.verified).toBe(true)
+    // the player's win proof is bound to `player` via the nullifier (publicSignals[0])
     expect(round.result.solved).toBe(true)
+    expect(round.publicSignals).toHaveLength(83)
+    expect(round.publicSignals[82]).toBe(player.toString())
+    expect(round.nullifier).toBe(round.publicSignals[0])
     expect(round.outcome.multiplierX100).toBe(190n)
     expect(round.outcome.playerDelta).toBe(900n) // 1000*1.90 - 1000
     expect(round.outcome.win).toBe(true)

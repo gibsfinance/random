@@ -1,18 +1,36 @@
 pragma circom 2.1.6;
 
-// ZK-Sudoku: proves the player knows a valid solution to a committed public
-// puzzle, without revealing the solution.
+// ZK-Sudoku solve (M3 "role-flip"). Proves the prover knows a VALID solution to a
+// committed PUBLIC puzzle, WITHOUT revealing the solution, and binds the proof to a
+// public `player` via a nullifier so it cannot be replayed or front-run in a timed
+// race.
 //
-// Public:  puzzle[81] (0=blank, else 1..9), commit
-// Private: solution[81] (each 1..9), salt
+// Public inputs:  puzzle[81] (0 = blank, else 1..9), player
+// Public output:  nullifier
+// Private inputs: solution[81]
 //
-// Commitment scheme (must be reproduced bit-for-bit in JS, see
-// src/sudokuCommit.ts): the 81 solution cells are grouped by ROW (9 rows of
-// 9 cells — cell index = r*9+c). Each row is hashed with a single
-// Poseidon(9) call to get rowDigest[r] (r = 0..8). The 9 row digests plus
-// `salt` are then hashed with one Poseidon(10) call to get `commit`. This
-// keeps every Poseidon call at <=16 inputs (circomlib's limit) using a
-// simple two-level sponge/tree that is trivial to mirror in JS.
+// WHY THIS SHAPE (see docs/superpowers/plans + the design spec):
+//   M2's circuit required Poseidon(solution‖salt) == commit for a HOUSE-committed
+//   `salt`. That was house-exploitable: (a) an honest player cannot reproduce the
+//   house's secret salt, so as specified they literally could not prove; and (b) a
+//   malicious house could commit a value matching no real / an ambiguous / unsolvable
+//   puzzle, so an honest solver forfeited the stake at the deadline. Fix: the win
+//   proof no longer references any house secret. It proves ONLY "solution ⊨ public
+//   puzzle" and any valid solution wins. Solvability is guaranteed separately by the
+//   HOUSE proving a solve of the same puzzle at open (same circuit), so the player is
+//   protected without a uniqueness proof.
+//
+// nullifier scheme (mirror bit-for-bit in src/sudoku.ts):
+//   rowDigest[r] = Poseidon(solution[r*9 .. r*9+8])     (9 inputs)  for r = 0..8
+//   nullifier    = Poseidon(rowDigest[0..8], player)    (10 inputs)
+// Every Poseidon call is <= 16 inputs (circomlib's limit) via a two-level sponge.
+// The nullifier is preimage-resistant in `solution` (a watcher who cannot solve the
+// puzzle cannot compute it) and is bound to `player`, so copying the proof for a
+// different player is impossible and the contract can record it to block replay.
+//
+// Public-signal order (snarkjs emits OUTPUTS first, then public inputs in declaration
+// order): pub = [nullifier, puzzle[0..80], player]  (83 signals). SudokuRules.sol packs
+// exactly this order.
 
 include "circomlib/circuits/poseidon.circom";
 include "circomlib/circuits/comparators.circom";
@@ -20,10 +38,11 @@ include "circomlib/circuits/bitify.circom";
 
 template SudokuSolve() {
     signal input puzzle[81];
-    signal input commit;
+    signal input player;
 
     signal input solution[81];
-    signal input salt;
+
+    signal output nullifier;
 
     // --- 1. each solution[i] in [1,9] ---
     // Num2Bits(4) forces (solution[i]-1) into [0,15]: if solution[i]==0 then solution[i]-1 == p-1,
@@ -109,7 +128,9 @@ template SudokuSolve() {
         }
     }
 
-    // --- 4. commitment: row-wise Poseidon(9) sponge, then Poseidon(10) ---
+    // --- 4. nullifier: row-wise Poseidon(9) sponge, then Poseidon(10) with `player` ---
+    // rowDigest[r] = Poseidon(solution row r); nullifier = Poseidon(rowDigest[0..8], player).
+    // Binds all 81 cells + the player into one field element. No house salt/commit here.
     component rowHash[9];
     signal rowDigest[9];
     for (var r = 0; r < 9; r++) {
@@ -120,12 +141,12 @@ template SudokuSolve() {
         rowDigest[r] <== rowHash[r].out;
     }
 
-    component topHash = Poseidon(10);
+    component nullHash = Poseidon(10);
     for (var r = 0; r < 9; r++) {
-        topHash.inputs[r] <== rowDigest[r];
+        nullHash.inputs[r] <== rowDigest[r];
     }
-    topHash.inputs[9] <== salt;
-    topHash.out === commit;
+    nullHash.inputs[9] <== player;
+    nullifier <== nullHash.out;
 }
 
-component main {public [puzzle, commit]} = SudokuSolve();
+component main {public [puzzle, player]} = SudokuSolve();
