@@ -10,7 +10,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "gen:proof-fixtures": "tsx scripts/genProofFixtures.ts"
+    "gen:proof-fixtures": "tsx scripts/genProofFixtures.ts",
+    "gen:wordle-solve": "tsx scripts/genWordleSolve.ts"
   },
   "dependencies": {
     "@gibs/msgboard-games": "workspace:*",

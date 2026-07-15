@@ -21,13 +21,14 @@ interface ISudokuRules {
 }
 
 interface IWordleRules {
-    function checkClue(
+    function checkSolve(
         uint256[2] calldata a,
         uint256[2][2] calldata b,
         uint256[2] calldata c,
         uint256 commit,
-        uint256[5] calldata guess,
-        uint256[5] calldata clue
+        uint256 guessesCommit,
+        uint256 dictRoot,
+        uint256 guessesUsed
     ) external view returns (bool);
 }
 
@@ -43,12 +44,14 @@ interface IWordleRules {
 ///     solve; the player cannot fake one; no solve by the deadline → loss. (M2 instead had the house
 ///     commit a secret solution+salt, which was unprovable for the player and house-griefable.)
 ///
-///   • Wordle (gameId 30): the player submits an all-green clue proof (a proven SOLVE) AND the house
-///     co-signs the guesses-used (the multiplier scale). The ZK proof stops the house denying a solve
-///     or the player faking one; the house co-sign stops the player UNDERSTATING guesses-used to grab
-///     a richer multiplier — a single clue proof attests honesty, not the guess's POSITION in the
-///     sequence. Trustless guess-sequence binding (so Wordle needs no house co-sign) + the house's
-///     word+salt reveal on a griefed solve are the interactive-channel hardening in M3.
+///   • Wordle (gameId 30): FULLY TRUSTLESS + permissionless (M3). The player commits their ordered
+///     guess sequence up front (guessesCommit, pinned in the house-signed open terms via the second
+///     commitment slot); settle submits ONE wordle_solve proof that binds that committed sequence +
+///     the committed word to a PROVEN first all-green position (guesses-used) with the answer in the
+///     committed dictionary. The ZK proof forces guesses-used, so the house no longer co-signs it — a
+///     player cannot understate guesses-used, fake a solve, or pass off a non-dictionary word. (A
+///     house that withholds its salt so no one can build the proof — a griefed solve — is the one
+///     residual; the word+salt reveal/penalty flow is documented as the remaining M3 item.)
 ///
 /// Chips (ERC20) escrow, house-signed open terms, per-table escrow reservation — mirrors HouseChannel.
 contract SkillSettle is Ownable {
@@ -63,7 +66,6 @@ contract SkillSettle is Ownable {
     error EscrowTooSmall();
     error BadPuzzle();
     error BadProof();
-    error NotAllGreen();
     error BadGuesses();
     error DeadlineNotPassed();
     error NullifierSpent();       // sudoku: a solve proof's nullifier was already used (replay/double-claim)
@@ -77,7 +79,8 @@ contract SkillSettle is Ownable {
         uint256 escrowHouse;  // reserved from housePool at open; covers the max payout profit
         uint8 gameId;
         uint256 commit;       // Poseidon commitment (word/solution) — a circuit public signal
-        bytes32 puzzleHash;   // keccak256(abi.encode(puzzle)) for sudoku; 0 for wordle
+        bytes32 puzzleHash;   // second commitment: keccak256(abi.encode(puzzle)) for sudoku;
+                              // guessesCommit = Poseidon(packedGuess[0..5]) for wordle (as a field elt)
         uint64 deadline;      // block.number by which the player must settle a win, else reclaim
         Status status;
     }
@@ -106,6 +109,10 @@ contract SkillSettle is Ownable {
 
     address public houseKey;
     uint256 public housePool;
+    /// Merkle root of the committed Wordle dictionary (Poseidon(2) nodes, leaf = base-26 packed word).
+    /// A wordle_solve proof must be against THIS root — so the house's answer (== the winning guess) is
+    /// a real word. Global + owner-settable (the dictionary is public and the same for every round).
+    uint256 public wordleDictRoot;
     mapping(bytes32 tableId => Table) public tables;
     /// Sudoku anti-replay/anti-front-run: a solve proof's player-bound nullifier can settle at most
     /// once, so a mempool watcher cannot copy a solve and no winning proof can be double-claimed.
@@ -114,6 +121,7 @@ contract SkillSettle is Ownable {
     event HouseFunded(uint256 amount);
     event HouseWithdrawn(uint256 amount);
     event HouseKeySet(address indexed key);
+    event WordleDictRootSet(uint256 root);
     event Opened(bytes32 indexed tableId, address indexed player, uint8 gameId, uint256 escrowPlayer, uint256 escrowHouse);
     event Settled(bytes32 indexed tableId, uint256 payoutPlayer, uint256 payoutHouse);
     event Reclaimed(bytes32 indexed tableId, uint256 toHouse);
@@ -129,6 +137,13 @@ contract SkillSettle is Ownable {
     function setHouseKey(address key) external onlyOwner {
         houseKey = key;
         emit HouseKeySet(key);
+    }
+
+    /// Set/rotate the committed Wordle dictionary root (see `wordleDictRoot`). Must be set before any
+    /// Wordle round can be settled.
+    function setWordleDictRoot(uint256 root) external onlyOwner {
+        wordleDictRoot = root;
+        emit WordleDictRootSet(root);
     }
 
     function fundHouse(uint256 amount) external onlyOwner {
@@ -263,28 +278,29 @@ contract SkillSettle is Ownable {
         _payout(t, tableId, payoutPlayer);
     }
 
-    /// Wordle (gameId 30): the player submits an all-green clue proof (a proven solve) and the house
-    /// co-signs `guessesUsed` (the multiplier scale). BOTH gates are required — see the contract-level
-    /// note. `houseSig` is over the domain-bound (tableId, guessesUsed) tuple.
+    /// Wordle (gameId 30): permissionless, fully trustless (M3). Anyone (in practice the player)
+    /// submits ONE wordle_solve proof; the contract verifies it against the committed word (t.commit),
+    /// the committed ordered guess sequence (guessesCommit, held in t.puzzleHash), and the committed
+    /// dictionary (wordleDictRoot), then pays the multiplier for the PROVEN `guessesUsed`. The circuit
+    /// forces guessesUsed to be the first all-green position in the committed sequence, so no house
+    /// co-signature is needed: the player cannot understate guesses-used, fake a solve, or use a
+    /// non-dictionary answer. `guessesUsed` is passed as the public signal the proof is checked against
+    /// (a mismatch fails the Groth16 verify), and range-checked only to bound the payout table lookup.
     function settleWordle(
         bytes32 tableId,
         uint256[2] calldata a,
         uint256[2][2] calldata b,
         uint256[2] calldata c,
-        uint256[5] calldata guess,
-        uint256[5] calldata clue,
-        uint256 guessesUsed,
-        bytes calldata houseSig
+        uint256 guessesUsed
     ) external {
         Table storage t = tables[tableId];
         if (t.status != Status.Live) revert BadStatus();
         if (t.gameId != SkillPayouts.WORDLE_GAME_ID) revert BadGame();
         if (guessesUsed < 1 || guessesUsed > SkillPayouts.WORDLE_MAX_GUESSES) revert BadGuesses();
-        if (!SkillPayouts.isAllGreen(clue)) revert NotAllGreen();
 
-        bytes32 countDigest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, keccak256(abi.encode(tableId, guessesUsed))));
-        if (ECDSA.recoverCalldata(countDigest, houseSig) != houseKey) revert BadSig();
-        if (!IWordleRules(wordleRules).checkClue(a, b, c, t.commit, guess, clue)) revert BadProof();
+        if (!IWordleRules(wordleRules).checkSolve(
+            a, b, c, t.commit, uint256(t.puzzleHash), wordleDictRoot, guessesUsed
+        )) revert BadProof();
 
         uint256 payoutPlayer = SkillPayouts.payout(t.escrowPlayer, SkillPayouts.wordleMultX100(guessesUsed));
         _payout(t, tableId, payoutPlayer);

@@ -33,6 +33,7 @@ describe('ZK skill games — full off-chain round with real proofs', () => {
   // warm the circuit setups once (compile + groth16 setup is the slow step)
   beforeAll(async () => {
     setupCircuit('wordle_clue', 12)
+    setupCircuit('wordle_solve', 13)
     setupCircuit('sudoku_solve', 15)
   }, 600_000)
 
@@ -52,6 +53,11 @@ describe('ZK skill games — full off-chain round with real proofs', () => {
     expect(round.outcome.multiplierX100).toBe(350n)
     expect(round.outcome.playerDelta).toBe(2500n) // 1000*3.50 - 1000
     expect(round.outcome.win).toBe(true)
+    // M3: the permissionless settlement proof binds the sequence + dictionary and FORCES guesses-used
+    expect(round.solveProof).toBeDefined()
+    expect(round.solveProof!.verified).toBe(true)
+    expect(round.solveProof!.guessesUsed).toBe(2)
+    expect(round.solveProof!.publicSignals).toHaveLength(4)
   }, 600_000)
 
   it('Wordle: a solve in 1 pays the 25× ceiling', async () => {
@@ -65,6 +71,8 @@ describe('ZK skill games — full off-chain round with real proofs', () => {
     expect(round.result).toEqual({ solved: true, guessesUsed: 1 })
     expect(round.outcome.multiplierX100).toBe(2500n)
     expect(round.outcome.playerDelta).toBe(2400n)
+    expect(round.solveProof!.verified).toBe(true)
+    expect(round.solveProof!.guessesUsed).toBe(1)
   }, 600_000)
 
   it('Wordle: missing all 6 guesses is a loss (and every clue is still proven)', async () => {
@@ -87,6 +95,7 @@ describe('ZK skill games — full off-chain round with real proofs', () => {
     expect(round.clueProofs.some((p) => p.clue.every((t) => t === 2))).toBe(false)
     expect(round.result.solved).toBe(false)
     expect(round.outcome).toEqual({ win: false, playerDelta: -500n, multiplierX100: 0n })
+    expect(round.solveProof).toBeUndefined() // no solve → no settlement proof
   }, 600_000)
 
   it('Sudoku: house proves solvability + player proves a solve → flat 1.90× win (player-bound)', async () => {
