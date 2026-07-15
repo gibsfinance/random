@@ -15,8 +15,11 @@ Groth16 verifiers; since migrated to PLONK — see the update below). See
 > ~43% cheaper to verify sudoku_solve on-chain (~528.8k vs 933,945 gas). Circuits, public-signal orders
 > and every security property are unchanged; proofs are now `uint256[24]`. Remaining honest caveats:
 > the Hermez ptau is trusted as a real multi-party ceremony output (we consume it, we don't generate
-> it; its blake2b matches the digest iden3/snarkjs publishes, re-checked on every call), and **none of
-> this is audited**. See
+> it). Its blake2b matches the digest iden3/snarkjs publishes and is re-checked on every call, and
+> `snarkjs powersoftau verify` was run to completion — `Powers of Tau Ok!`, 55 contributions — so the
+> file is the genuine artifact AND internally sound; whether the ceremony was HONEST (>=1 of the 54
+> contributors destroyed their waste) is unprovable from the bytes and stays an assumption. **None of
+> this is audited.** See
 > `docs/superpowers/specs/2026-07-02-zk-skill-games-design.md` § "Proving system".
 
 

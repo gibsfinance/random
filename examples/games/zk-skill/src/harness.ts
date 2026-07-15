@@ -62,11 +62,14 @@ const HERMEZ_PTAU_URL = `https://storage.googleapis.com/zkevm/ptau/${HERMEZ_PTAU
  * on every call means neither a corrupted cache nor a substituted re-download can silently swap
  * the setup out from under the committed verifiers.
  *
- * What this does NOT prove: that the ceremony itself was honest (i.e. that at least one of its
+ * What this does NOT prove: that the ceremony itself was honest (i.e. that at least one of its 54
  * contributors destroyed their toxic waste). That remains the documented trust assumption above —
- * it is a property of the ceremony, not of the bytes.
+ * it is a property of the ceremony, not of the bytes, and no digest can settle it.
  *
- * To re-derive the file's internal consistency + full contribution chain independently:
+ * Separately VERIFIED (2026-07-15): `snarkjs powersoftau verify` was run to completion on this file
+ * and returned `Powers of Tau Ok!` (exit 0), cryptographically re-deriving the whole chain — 55
+ * contributions: 54 named (weijie #1 .. jarrad #54) plus an unnamed final beacon (#55). So the file
+ * is both the genuine published artifact (digest above) AND internally sound. To reproduce:
  *
  *   node node_modules/snarkjs/build/cli.cjs powersoftau verify \
  *     build/powersOfTau28_hez_final_16.ptau -v

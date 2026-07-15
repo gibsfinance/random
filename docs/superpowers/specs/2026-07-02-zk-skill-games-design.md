@@ -47,15 +47,21 @@ these on every run.)
 
 **Honest remaining caveats:**
 - The **Hermez ptau is trusted as a real multi-party ceremony output** — we consume it, we do not
-  generate it. What we *have* established: the cached file's **blake2b-512 matches the digest
-  published by iden3/snarkjs** for `powersOfTau28_hez_final_16.ptau`, so it is provably the genuine
-  published artifact and not a substitute — corroborated against an independent source, not merely
-  self-consistent. `harness.ts` re-checks that digest on **every** call (cache hits included) and
-  refuses to run a setup on a mismatch; this is verified by test (flipping one byte of the ptau is
-  rejected). What that does **not** establish: that the ceremony itself was honest — i.e. that at
-  least one of its 54 contributors destroyed their toxic waste. That is a property of the ceremony,
-  not of the bytes, and remains a genuine (widely-relied-upon) assumption. Its full contribution
-  chain can be re-derived with:
+  generate it. Two things have been established, both by running them:
+  1. **It is the genuine published artifact.** The cached file's **blake2b-512 matches the digest
+     iden3/snarkjs publishes** for `powersOfTau28_hez_final_16.ptau` — corroborated against an
+     independent source, not merely self-consistent. `harness.ts` re-checks that digest on **every**
+     call (cache hits included) and refuses to run a setup on a mismatch; verified by test (flipping
+     one byte of the ptau is rejected).
+  2. **It is internally sound.** `snarkjs powersoftau verify` was run to completion (~1h) and
+     returned **`Powers of Tau Ok!`** (exit 0), cryptographically re-deriving the whole contribution
+     chain: **55 contributions — 54 named** (`weijie` #1 … `jarrad` #54, incl. `vb`, `jordi`,
+     `brecht`, `zac`, `kobi`) **plus an unnamed final beacon (#55)**.
+
+  What neither establishes — and what no amount of checking the bytes could: that the ceremony was
+  **honest**, i.e. that at least one of those 54 contributors actually destroyed their toxic waste.
+  That is a property of the ceremony, not of the file, and remains a genuine (widely-relied-upon)
+  assumption. The soundness check above is reproducible with:
 
   ```
   node node_modules/snarkjs/build/cli.cjs powersoftau verify \
@@ -64,9 +70,10 @@ these on every run.)
 
   **Budget ~an hour, and pass `-v`.** Despite the header logging `power: 2**16`, snarkjs hashes the
   first challenge over the *ceremony* power (2^28 — the original Hermez ceremony this file is
-  truncated from): ~1.34e9 iterations before it even reaches the contribution chain. Without `-v` it
-  prints nothing until it finishes, which is indistinguishable from a hang — we killed it twice on
-  that misreading before letting it run.
+  truncated from): ~1.34e9 iterations across four blocks (tauG1/tauG2/alphaTauG1/betaTauG1) before it
+  even reaches the contribution chain. Without `-v` it prints nothing until it finishes, which is
+  indistinguishable from a hang — we killed it twice on that misreading before letting it run.
+  Expected final line: `Powers of Tau Ok!`
 - **Not audited.** Circuits, verifiers, and the settle wiring have had no external review.
 - fflonk was skipped: it needs a ~2^19 ptau (~576MB) and is BETA in snarkjs; PLONK already wins.
 
