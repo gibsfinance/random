@@ -7,18 +7,10 @@ import {Ownable} from "solady/src/auth/Ownable.sol";
 import {SkillPayouts} from "./SkillPayouts.sol";
 
 /// PLONK proof for the ZK-skill circuits (contracts/zk/generated/*PlonkVerifier.sol shape): 24 field
-/// elements, in snarkjs `plonk.exportSolidityCallData` order. The two Rules wrappers (SudokuRules,
-/// WordleRules) expose the typed helpers below; kept as minimal interfaces so SkillSettle doesn't pull
-/// the verifiers into its own compilation unit.
-interface ISudokuRules {
-    function checkSolve(
-        uint256[24] calldata proof,
-        uint256[81] calldata puzzle,
-        uint256 player,
-        uint256 nullifier
-    ) external view returns (bool);
-}
-
+/// elements, in snarkjs `plonk.exportSolidityCallData` order. The WordleRules wrapper exposes the typed
+/// helper below; kept as a minimal interface so SkillSettle doesn't pull the verifier into its own
+/// compilation unit. (Sudoku is no longer a wagered game — it moved to the Chips-free SudokuLog timed
+/// leaderboard — so its verifier interface is gone from here.)
 interface IWordleRules {
     function checkSolve(
         uint256[24] calldata proof,
@@ -31,15 +23,12 @@ interface IWordleRules {
 
 /// Escrowed settlement backend for the ZK SKILL games — the proof-driven analog of HouseChannel
 /// (whose ZK path is Noir/UltraHonk + conservation). Here a round settles from a PLONK proof that
-/// the player met the game's win condition against the puzzle/word the house COMMITTED at open:
+/// the player met the game's win condition against the word the house COMMITTED at open.
 ///
-///   • Sudoku (gameId 31): FULLY TRUSTLESS + permissionless (M3 "role-flip"). At open the HOUSE proves
-///     the committed puzzle is SOLVABLE (openSudoku), so it cannot post an unsolvable/ambiguous board
-///     an honest solver would forfeit on. To settle, a solve proof of ANY valid solution to that public
-///     puzzle — bound to the table's player via a nullifier, with NO house secret — pays the flat
-///     multiplier; the nullifier is recorded to block replay/front-run. The house cannot block a valid
-///     solve; the player cannot fake one; no solve by the deadline → loss. (M2 instead had the house
-///     commit a secret solution+salt, which was unprovable for the player and house-griefable.)
+/// This backend now handles ONLY Wordle. Sudoku used to settle here too, but a flat-multiplier bet on
+/// a public, trivially-automatable solve is structurally broken (strictly -EV for the house; the proof
+/// cannot distinguish a fast human from a bot), so it moved to the Chips-free SudokuLog timed
+/// leaderboard — no escrow, just an on-chain solve time.
 ///
 ///   • Wordle (gameId 30): FULLY TRUSTLESS + permissionless (M3). The player commits their ordered
 ///     guess sequence up front (guessesCommit, pinned in the house-signed open terms via the second
@@ -61,12 +50,9 @@ contract SkillSettle is Ownable {
     error Expired();
     error InsufficientPool();
     error EscrowTooSmall();
-    error BadPuzzle();
     error BadProof();
     error BadGuesses();
     error DeadlineNotPassed();
-    error NullifierSpent();       // sudoku: a solve proof's nullifier was already used (replay/double-claim)
-    error UseOpenSudoku();        // sudoku must open via openSudoku (which requires the house solvability proof)
 
     enum Status { None, Live, Settled }
 
@@ -76,8 +62,8 @@ contract SkillSettle is Ownable {
         uint256 escrowHouse;  // reserved from housePool at open; covers the max payout profit
         uint8 gameId;
         uint256 commit;       // Poseidon commitment (word/solution) — a circuit public signal
-        bytes32 puzzleHash;   // second commitment: keccak256(abi.encode(puzzle)) for sudoku;
-                              // guessesCommit = Poseidon(packedGuess[0..5]) for wordle (as a field elt)
+        bytes32 puzzleHash;   // second commitment slot: guessesCommit = Poseidon(packedGuess[0..5]) for
+                              // wordle (as a field elt)
         uint64 deadline;      // block.number by which the player must settle a win, else reclaim
         Status status;
     }
@@ -100,7 +86,6 @@ contract SkillSettle is Ownable {
     uint64 public constant MAX_CLOCK_BLOCKS = 60480;   // ~1 week
 
     address public immutable chips;
-    address public immutable sudokuRules;
     address public immutable wordleRules;
     bytes32 public immutable domainSeparator;
 
@@ -111,9 +96,6 @@ contract SkillSettle is Ownable {
     /// a real word. Global + owner-settable (the dictionary is public and the same for every round).
     uint256 public wordleDictRoot;
     mapping(bytes32 tableId => Table) public tables;
-    /// Sudoku anti-replay/anti-front-run: a solve proof's player-bound nullifier can settle at most
-    /// once, so a mempool watcher cannot copy a solve and no winning proof can be double-claimed.
-    mapping(uint256 nullifier => bool) public spentSudokuNullifier;
 
     event HouseFunded(uint256 amount);
     event HouseWithdrawn(uint256 amount);
@@ -123,9 +105,8 @@ contract SkillSettle is Ownable {
     event Settled(bytes32 indexed tableId, uint256 payoutPlayer, uint256 payoutHouse);
     event Reclaimed(bytes32 indexed tableId, uint256 toHouse);
 
-    constructor(address chips_, address sudokuRules_, address wordleRules_) {
+    constructor(address chips_, address wordleRules_) {
         chips = chips_;
-        sudokuRules = sudokuRules_;
         wordleRules = wordleRules_;
         _initializeOwner(msg.sender);
         domainSeparator = keccak256(abi.encode(keccak256("SkillSettle(v1)"), block.chainid, address(this)));
@@ -174,42 +155,17 @@ contract SkillSettle is Ownable {
     /// The escrow ceiling (×100) for a gameId — the richest payout the house could owe. `escrowHouse`
     /// is validated against it so a winner is always payable.
     function _maxMultX100(uint8 gameId) internal pure returns (uint256) {
-        if (gameId == SkillPayouts.SUDOKU_GAME_ID) return SkillPayouts.SUDOKU_MULT_X100;
         if (gameId == SkillPayouts.WORDLE_GAME_ID) return SkillPayouts.wordleMaxMultX100();
         revert BadGame();
     }
 
     /// Player opens an escrowed skill round: escrows their stake, reserves the house escrow from the
-    /// pool, authorized by the house's signature over `terms`. One player tx. Sudoku (gameId 31) MUST
-    /// instead use `openSudoku`, which additionally requires the house to prove the puzzle is solvable —
-    /// so a malicious house cannot open an unsolvable/ambiguous board an honest solver would forfeit on.
+    /// pool, authorized by the house's signature over `terms`. One player tx.
     function open(SkillOpenTerms calldata terms, bytes calldata houseSig) external {
-        if (terms.gameId == SkillPayouts.SUDOKU_GAME_ID) revert UseOpenSudoku();
         _openTable(terms, houseSig);
     }
 
-    /// Sudoku (gameId 31) open: identical escrow/table setup, but gated on the HOUSE proving the exact
-    /// committed `puzzle` is SOLVABLE (a sudoku_solve proof of ANY valid solution — the solution stays
-    /// private). This is the M3 fix for the M2 grief where a house could commit an unsolvable/ambiguous
-    /// puzzle and pocket the stake at the deadline: if the house cannot exhibit a solution here, it
-    /// cannot open the round, so the player never stakes on a board that has none. `solPlayer`/
-    /// `solNullifier` are the house proof's own binding values (irrelevant to solvability — any pair
-    /// that makes the proof verify for this puzzle establishes ≥1 solution exists).
-    function openSudoku(
-        SkillOpenTerms calldata terms,
-        bytes calldata houseSig,
-        uint256[24] calldata proof,
-        uint256[81] calldata puzzle,
-        uint256 solPlayer,
-        uint256 solNullifier
-    ) external {
-        if (terms.gameId != SkillPayouts.SUDOKU_GAME_ID) revert BadGame();
-        if (keccak256(abi.encode(puzzle)) != terms.puzzleHash) revert BadPuzzle();
-        if (!ISudokuRules(sudokuRules).checkSolve(proof, puzzle, solPlayer, solNullifier)) revert BadProof();
-        _openTable(terms, houseSig);
-    }
-
-    /// Shared escrow/table-setup for an open (used by `open` for Wordle and `openSudoku` for Sudoku).
+    /// Shared escrow/table-setup for an open.
     function _openTable(SkillOpenTerms calldata terms, bytes calldata houseSig) internal {
         if (terms.player != msg.sender) revert NotPlayer();
         if (block.timestamp > terms.expiry) revert Expired();
@@ -238,38 +194,6 @@ contract SkillSettle is Ownable {
     }
 
     // ---- settle ----------------------------------------------------------------------------------
-
-    /// Sudoku (gameId 31): permissionless relay, fully trustless. The contract verifies a PLONK solve
-    /// proof of ANY valid solution to the table's committed `puzzle`, BOUND to the table's `player` via
-    /// the proof's public `nullifier` (= Poseidon(solutionDigest ‖ player)) — NO house secret is
-    /// involved (M2's house-committed solution/salt is gone). Three properties:
-    ///   • the proof verifies only for `t.player`, so a mempool watcher who copies the proof cannot
-    ///     re-aim it at their own table (a different player would need a fresh proof, i.e. the solution);
-    ///   • the payout always goes to `t.player`, so relaying the proof gains a front-runner nothing;
-    ///   • the nullifier is recorded spent, blocking replay / double-claim.
-    /// `puzzle` is bound to the house-signed puzzleHash so it cannot be swapped for an easier board.
-    /// Solvability was already proven by the house at open (see openSudoku), so any-valid-solution-wins
-    /// cannot be griefed. Whoever relays it, the winner is `t.player`.
-    function settleSudoku(
-        bytes32 tableId,
-        uint256[24] calldata proof,
-        uint256[81] calldata puzzle,
-        uint256 nullifier
-    ) external {
-        Table storage t = tables[tableId];
-        if (t.status != Status.Live) revert BadStatus();
-        if (t.gameId != SkillPayouts.SUDOKU_GAME_ID) revert BadGame();
-        if (keccak256(abi.encode(puzzle)) != t.puzzleHash) revert BadPuzzle();
-        if (spentSudokuNullifier[nullifier]) revert NullifierSpent();
-        // bind to the table's player: the proof's public `player` signal MUST equal t.player.
-        if (!ISudokuRules(sudokuRules).checkSolve(proof, puzzle, uint256(uint160(t.player)), nullifier)) {
-            revert BadProof();
-        }
-        spentSudokuNullifier[nullifier] = true;
-
-        uint256 payoutPlayer = SkillPayouts.payout(t.escrowPlayer, SkillPayouts.SUDOKU_MULT_X100);
-        _payout(t, tableId, payoutPlayer);
-    }
 
     /// Wordle (gameId 30): permissionless, fully trustless (M3). Anyone (in practice the player)
     /// submits ONE wordle_solve proof; the contract verifies it against the committed word (t.commit),

@@ -12,9 +12,13 @@ import {SudokuSolvePlonkVerifier} from "./generated/SudokuSolvePlonkVerifier.sol
 /// puzzle clue), WITHOUT revealing the solution. The proof no longer references any
 /// house secret (M2's `Poseidon(solution‖salt)==commit` was unprovable for the player
 /// and house-griefable); instead it is bound to a public `player` via a `nullifier`,
-/// so a mempool watcher cannot replay/front-run a solve in a timed race. Solvability of
-/// the puzzle is guaranteed separately by the HOUSE producing a solve proof at open —
-/// see SkillSettle.openSudoku.
+/// so a mempool watcher cannot replay/front-run a solve in a timed race.
+///
+/// CONSUMER: this wrapper is used by SudokuLog (contracts/games/SudokuLog.sol), the Chips-free
+/// timed leaderboard — Sudoku is a speedrun with a cryptographic finish line, not a wagered game.
+/// (It is intentionally NOT wired into SkillSettle: a flat-multiplier bet on a public,
+/// trivially-automatable solve is strictly -EV for the house, and the proof cannot distinguish a
+/// fast human from a bot. See SudokuLog's header.)
 ///
 /// nullifier = Poseidon(rowDigest[0..8], player), rowDigest[r] = Poseidon(solution row r).
 ///
