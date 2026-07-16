@@ -58,7 +58,7 @@ contract ProofSystemGasTest is Test {
     WordleSolvePlonkVerifier internal wordleSolve;
 
     uint256[24] internal sudokuProof;
-    uint256[83] internal sudokuPub;
+    uint256[4] internal sudokuPub;
 
     uint256[24] internal clueProof;
     uint256[11] internal cluePub;
@@ -74,8 +74,8 @@ contract ProofSystemGasTest is Test {
         uint256[] memory ps;
 
         ps = _loadProof("test/foundry/fixtures/sudokuSolveProof.json", sudokuProof);
-        assertEq(ps.length, 83, "sudoku_solve: expected 83 public signals");
-        for (uint256 i = 0; i < 83; i++) sudokuPub[i] = ps[i];
+        assertEq(ps.length, 4, "sudoku_solve: expected 4 public signals");
+        for (uint256 i = 0; i < 4; i++) sudokuPub[i] = ps[i];
 
         ps = _loadProof("test/foundry/fixtures/wordleClueProof.json", clueProof);
         assertEq(ps.length, 11, "wordle_clue: expected 11 public signals");
@@ -110,12 +110,12 @@ contract ProofSystemGasTest is Test {
 
     function test_gas_sudokuSolve_verify() public view {
         uint256[24] memory proof = sudokuProof;
-        uint256[83] memory pub = sudokuPub;
+        uint256[4] memory pub = sudokuPub;
         uint256 g0 = gasleft();
         bool ok = sudoku.verifyProof(proof, pub);
         uint256 used = g0 - gasleft();
         assertTrue(ok, "sudoku_solve plonk proof must verify");
-        console.log("PLONK sudoku_solve verify gas (83 public signals):", used);
+        console.log("PLONK sudoku_solve verify gas (4 public signals, puzzle packed):", used);
     }
 
     function test_gas_wordleClue_verify() public view {

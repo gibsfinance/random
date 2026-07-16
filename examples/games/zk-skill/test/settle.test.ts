@@ -110,8 +110,8 @@ describe('ZK skill games — full off-chain round with real proofs', () => {
     expect(round.houseSolvabilityProof.verified).toBe(true)
     // the player's win proof is bound to `player` via the nullifier (publicSignals[0])
     expect(round.result.solved).toBe(true)
-    expect(round.publicSignals).toHaveLength(83)
-    expect(round.publicSignals[82]).toBe(player.toString())
+    expect(round.publicSignals).toHaveLength(4)
+    expect(round.publicSignals[3]).toBe(player.toString())
     expect(round.nullifier).toBe(round.publicSignals[0])
     expect(round.outcome.multiplierX100).toBe(190n)
     expect(round.outcome.playerDelta).toBe(900n) // 1000*1.90 - 1000

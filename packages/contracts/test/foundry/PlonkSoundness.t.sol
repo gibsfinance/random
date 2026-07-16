@@ -38,7 +38,7 @@ contract PlonkSoundnessTest is Test {
     WordleSolvePlonkVerifier internal wordleSolve;
 
     uint256[24] internal sudokuProof;
-    uint256[83] internal sudokuPub;
+    uint256[4] internal sudokuPub;
 
     uint256[24] internal clueProof;
     uint256[11] internal cluePub;
@@ -61,8 +61,8 @@ contract PlonkSoundnessTest is Test {
         uint256[] memory ps;
 
         ps = _loadProof("test/foundry/fixtures/sudokuSolveProof.json", sudokuProof);
-        assertEq(ps.length, 83, "sudoku_solve: expected 83 public signals");
-        for (uint256 i = 0; i < 83; i++) sudokuPub[i] = ps[i];
+        assertEq(ps.length, 4, "sudoku_solve: expected 4 public signals");
+        for (uint256 i = 0; i < 4; i++) sudokuPub[i] = ps[i];
 
         ps = _loadProof("test/foundry/fixtures/wordleClueProof.json", clueProof);
         assertEq(ps.length, 11, "wordle_clue: expected 11 public signals");
@@ -149,9 +149,12 @@ contract PlonkSoundnessTest is Test {
     // Perturb each public signal in turn; each alone must break the proof. For sudoku this is the
     // strong claim: all 81 puzzle cells are constrained, so no cell can be swapped for an easier one.
 
+    /// NOTE sudoku's puzzle is PACKED into pub[1..2] (4 bits/cell), so perturbing those two signals
+    /// is what proves all 81 cells are bound — SudokuRules.t.sol's packing-parity + per-cell
+    /// sensitivity tests carry that back to the individual cells.
     function test_everyPublicSignal_isBound_sudokuSolve() public view {
-        for (uint256 i = 0; i < 83; i++) {
-            uint256[83] memory bad = sudokuPub;
+        for (uint256 i = 0; i < 4; i++) {
+            uint256[4] memory bad = sudokuPub;
             bad[i] = bad[i] + 1;
             assertFalse(
                 sudoku.verifyProof(sudokuProof, bad),
@@ -242,7 +245,7 @@ contract PlonkSoundnessTest is Test {
     function test_zeroPublicSignals_rejected() public view {
         uint256[4] memory zero4;
         assertFalse(wordleSolve.verifyProof(solveProof, zero4), "zeroed public signals must not verify");
-        uint256[83] memory zero83;
-        assertFalse(sudoku.verifyProof(sudokuProof, zero83), "zeroed public signals must not verify");
+        uint256[4] memory zero4b;
+        assertFalse(sudoku.verifyProof(sudokuProof, zero4b), "zeroed public signals must not verify");
     }
 }

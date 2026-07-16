@@ -87,10 +87,57 @@ export function isValidSolution(puzzle: number[], solution: number[]): boolean {
 }
 
 export interface SudokuWitnessInput {
-  puzzle: number[]
+  puzzlePacked: [string, string]
   player: string
   solution: number[]
   [key: string]: unknown
+}
+
+/** Cells 0..62 go in packed[0] (63 x 4 = 252 bits); cells 63..80 in packed[1] (18 x 4 = 72 bits). */
+const PACK_SPLIT = 63
+
+/**
+ * Pack the 81-cell puzzle into 2 field elements, 4 bits per cell, little-endian by cell
+ * index. MIRRORED BIT-FOR-BIT in three places that must never drift apart:
+ *   - circuits/sudoku_solve.circom  (unpacks via Num2Bits(252) / Num2Bits(72))
+ *   - SudokuRules.sol `_packPuzzle` (packs on-chain, so callers still pass 81 cells)
+ *   - here
+ * A packing-parity test pins all three together.
+ *
+ * WHY PACK AT ALL: a PLONK zkey stores one Lagrange polynomial per PUBLIC input (5n field
+ * elements each). As 81 separate public inputs the sudoku proving key was 960 MB — 90.7% of
+ * it that one section — which cannot be shipped to a browser, and the PLAYER must prove
+ * (they are the one who knows the solution). Packed, it is 66 MB. See the circuit header.
+ *
+ * WHY TWO ELEMENTS AND NOT ONE: a cell has TEN states (0 = blank, plus 1..9), so the floor is
+ * 81*log2(10) = 269.1 bits > the ~253 usable bits of a BN254 element. The largest base that
+ * fits one element is 8; we need 10. One element is impossible for ANY encoding — base 9
+ * would need 256.8 bits and still cannot represent a blank.
+ */
+export function packPuzzle(puzzle: number[]): [bigint, bigint] {
+  if (puzzle.length !== 81) throw new Error(`packPuzzle: expected 81 cells, got ${puzzle.length}`)
+  let lo = 0n
+  let hi = 0n
+  for (let i = 0; i < puzzle.length; i++) {
+    const cell = puzzle[i]
+    if (cell === undefined || !Number.isInteger(cell) || cell < 0 || cell > 9) {
+      throw new Error(`packPuzzle: cell ${i} must be an integer in [0,9], got ${cell}`)
+    }
+    if (i < PACK_SPLIT) lo |= BigInt(cell) << BigInt(4 * i)
+    else hi |= BigInt(cell) << BigInt(4 * (i - PACK_SPLIT))
+  }
+  return [lo, hi]
+}
+
+/** Inverse of packPuzzle — used by tests to pin the round-trip. */
+export function unpackPuzzle(packed: [bigint, bigint]): number[] {
+  const out: number[] = []
+  for (let i = 0; i < 81; i++) {
+    const word = i < PACK_SPLIT ? packed[0] : packed[1]
+    const shift = BigInt(4 * (i < PACK_SPLIT ? i : i - PACK_SPLIT))
+    out.push(Number((word >> shift) & 0xfn))
+  }
+  return out
 }
 
 /**
@@ -98,14 +145,18 @@ export interface SudokuWitnessInput {
  * to `player` (an address as a field element) via the nullifier; the same builder is
  * used both for the HOUSE's solvability proof at open (any player value) and the
  * PLAYER's win proof (player = the table's player).
+ *
+ * Takes the puzzle as 81 plain cells and packs it here, so callers never handle the
+ * packed encoding — exactly as SudokuRules.checkSolve does on-chain.
  */
 export async function buildSudokuWitnessInput(params: {
   puzzle: number[]
   solution: number[]
   player: bigint
 }): Promise<SudokuWitnessInput> {
+  const [lo, hi] = packPuzzle(params.puzzle)
   return {
-    puzzle: params.puzzle,
+    puzzlePacked: [lo.toString(), hi.toString()],
     player: params.player.toString(),
     solution: params.solution,
   }

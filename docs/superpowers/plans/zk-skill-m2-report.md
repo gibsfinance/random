@@ -12,7 +12,7 @@ Groth16 verifiers; since migrated to PLONK — see the update below). See
 > contributions (a fixed public dev beacon), so the toxic waste was effectively public — anyone could
 > forge a winning proof and drain the house. All three circuits now use **PLONK over the universal
 > Hermez `powersOfTau28_hez_final_16.ptau`**, which has **no per-circuit setup at all**. It is also
-> ~59% cheaper to verify sudoku_solve on-chain (~305k vs 743,449 gas, both memory-hoisted). Circuits, public-signal orders
+> ~64% cheaper to verify sudoku_solve on-chain (~265k vs 743,449 gas, both memory-hoisted; the puzzle is now packed into 2 public signals, which also cut the proving key 960 MB -> 66 MB). Circuits, public-signal orders
 > and every security property are unchanged; proofs are now `uint256[24]`. Remaining honest caveats:
 > the Hermez ptau is trusted as a real multi-party ceremony output (we consume it, we don't generate
 > it). Its blake2b matches the digest iden3/snarkjs publishes and is re-checked on every call, and

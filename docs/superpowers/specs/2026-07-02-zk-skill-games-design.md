@@ -23,11 +23,11 @@ to get wrong and no waste to leak. All three circuits share
 constraints; a larger ptau works fine for the smaller circuits).
 
 PLONK is also **cheaper here**, inverting the usual "groth16 is cheapest" wisdom. Measured on-chain
-with real proofs on the identical sudoku_solve circuit/vector (83 public signals):
+with real proofs on the identical sudoku_solve circuit/vector:
 
 | circuit | public signals | PLONK verify gas | groth16 baseline | verifier code (EIP-170 limit 24,576 B) |
 |---|---|---|---|---|
-| `sudoku_solve` | 83 | **~305k** | 743,449 (**−59%**) | 15,550 B |
+| `sudoku_solve` | 4 | **~265k** | 743,449 (**−64%**) | 6,108 B |
 | `wordle_clue`  | 11 | **~267k** | — | 6,868 B |
 | `wordle_solve` |  4 | **~263k** | — | 6,072 B |
 
@@ -51,6 +51,50 @@ Two measurement caveats, both established by running them:
   while the two untouched fixtures measured bit-identical. A groth16 proof is deterministic.
   `ProofSystemGas.t.sol` prints the live figure every run — treat that as the source of truth over any
   number pasted here.
+
+### The puzzle is packed: 83 public signals → 4
+
+`sudoku_solve` originally passed the 81-cell puzzle as 81 separate **public inputs** (83 signals). That
+is what a snarkjs PLONK zkey charges most for: it stores **one Lagrange polynomial per public input**,
+each `5n × 32` bytes. Measured on the committed zkey — section 13 was **870,318,080 B of a 959,618,176 B
+file (90.7%)**, and the model `nPublic × 5n × 32` reproduced `wordle_clue` (11) and `wordle_solve` (4)
+to the byte. The 960 MB key was driven by the **public-input count**, not circuit complexity (~23k
+constraints).
+
+That is the exact mirror of the on-chain cost: groth16 charges ~6k gas per public input (hence PLONK's
+−59% verify win above), while PLONK charges ~10.5 MB of **proving key** per public input. The original
+encoding paid both.
+
+Two changes, verified end-to-end (identical nullifier to the pre-packing circuit; every negative still
+rejected — see `test/sudoku_solve.test.ts` + `SudokuRules.t.sol`):
+
+| | before | after |
+|---|---|---|
+| proving key | 960 MB | **66 MB** (−93%) |
+| public signals | 83 | **4** |
+| PLONK constraints | 35,055 (domain 2^16) | **28,332 (domain 2^15)** |
+| prove time | 44.9 s | **14.7 s** |
+| verify gas | 304,551 | **264,560** |
+| verifier code | 15,550 B | **6,108 B** |
+
+1. **Pack the puzzle into 2 field elements** (4 bits/cell). Two, not one: a cell has **ten** states
+   (0=blank plus 1..9), so `81 × log₂10 = 269.1` bits is the information-theoretic floor against ~253
+   usable bits — the largest base fitting one element is 8, so one element is impossible for *any*
+   encoding (base 9 would need 256.8 bits *and* still couldn't represent a blank).
+2. **One-hot encode the solution.** The obvious permutation check (27 groups × 9 values × 9 cells =
+   2,187 `IsEqual`) landed at 35,055 constraints — just **2,287 over the 2^15 = 32,768 cliff**, forcing
+   `n=65536` and doubling every section. One-hot makes each group check a *linear* sum, clearing the
+   cliff and halving the key again. It also subsumes the old `Num2Bits(4)`/`LessThan(4)` range check:
+   exactly-one + weighted-sum forces `solution[i] ∈ [1,9]` by construction.
+
+**Why this mattered:** browser proving is mandatory for Sudoku — the **player** is the one who knows the
+solution — and 960 MB cannot ship to a browser. 66 MB + 14.7 s can. This also removed the need for a
+native prover, which was a dead end anyway: rapidsnark and ark-circom are **Groth16-only**, so the PLONK
+migration had closed that door.
+
+Callers are unaffected: `SudokuRules.checkSolve` still takes 81 plain cells and packs on-chain. The
+packing is mirrored in three places (circuit / `SudokuRules.sol` / `src/sudoku.ts`) and pinned by
+parity + per-cell-sensitivity tests on both sides.
 
 Groth16 costs one EC scalar-mul (~6k gas) per public input, and sudoku_solve has 83 (81 puzzle cells +
 nullifier + player) — ~510k of its 934k. PLONK evaluates public inputs in the field, so its cost is

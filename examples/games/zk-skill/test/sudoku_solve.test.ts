@@ -2,9 +2,11 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import {
   buildSudokuWitnessInput,
   isValidSolution,
+  packPuzzle,
   prove,
   setupCircuit,
   sudokuNullifier,
+  unpackPuzzle,
   verify,
   type CircuitSetup,
 } from '../src/index.js'
@@ -45,15 +47,49 @@ describe('sudoku_solve circuit (M3 role-flip: no house secret, player-bound null
     setup = setupCircuit('sudoku_solve')
   }, 300_000)
 
-  it('proves and verifies a valid solution, with 83 public signals [nullifier, puzzle[81], player]', async () => {
+  it('proves and verifies a valid solution, with 4 public signals [nullifier, puzzlePacked[2], player]', async () => {
     const input = await buildSudokuWitnessInput({ puzzle: PUZZLE, solution: SOLUTION, player: PLAYER })
     const { proof, publicSignals } = await prove(setup, input)
     const ok = await verify(setup, publicSignals, proof)
     expect(ok).toBe(true)
-    expect(publicSignals).toHaveLength(83)
-    // ordering: nullifier first, then the 81 puzzle cells, then player
-    expect(publicSignals[1]).toBe('1') // puzzle[0]
-    expect(publicSignals[82]).toBe(PLAYER.toString()) // player
+    expect(publicSignals).toHaveLength(4)
+    // ordering: nullifier first, then the 2 packed puzzle words, then player
+    const [lo, hi] = packPuzzle(PUZZLE)
+    expect(publicSignals[1]).toBe(lo.toString()) // puzzlePacked[0]
+    expect(publicSignals[2]).toBe(hi.toString()) // puzzlePacked[1]
+    expect(publicSignals[3]).toBe(PLAYER.toString()) // player
+  })
+
+  // The packing is mirrored in THREE places (circuit / SudokuRules.sol / here). These pin the JS
+  // side; SudokuRules.t.sol pins the on-chain side against these same public signals.
+  it('packPuzzle round-trips through unpackPuzzle', () => {
+    expect(unpackPuzzle(packPuzzle(PUZZLE))).toEqual(PUZZLE)
+    expect(unpackPuzzle(packPuzzle(SOLUTION))).toEqual(SOLUTION)
+  })
+
+  it('packPuzzle is sensitive to every one of the 81 cells', () => {
+    const [lo0, hi0] = packPuzzle(PUZZLE)
+    for (let i = 0; i < 81; i++) {
+      const p = [...PUZZLE]
+      const cell = p[i] as number
+      p[i] = cell === 9 ? 8 : cell + 1
+      const [lo, hi] = packPuzzle(p)
+      expect(lo !== lo0 || hi !== hi0, `cell ${i} does not affect the packing`).toBe(true)
+    }
+  })
+
+  it('packPuzzle stays inside the field (each word < 2^252)', () => {
+    // the circuit decomposes with Num2Bits(252)/Num2Bits(72); exceeding those is unprovable
+    const worst = new Array(81).fill(9)
+    const [lo, hi] = packPuzzle(worst)
+    expect(lo < 2n ** 252n).toBe(true)
+    expect(hi < 2n ** 72n).toBe(true)
+  })
+
+  it('packPuzzle rejects an out-of-range cell rather than corrupting its neighbour', () => {
+    const bad = [...PUZZLE]
+    bad[5] = 10
+    expect(() => packPuzzle(bad)).toThrow(/\[0,9\]/)
   })
 
   it('the circuit nullifier == the JS mirror sudokuNullifier(solution, player)', async () => {

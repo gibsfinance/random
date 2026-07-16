@@ -125,8 +125,8 @@ async function genSudokuSolve(setup: CircuitSetup) {
   const { proof, publicSignals } = await prove(setup, witnessInput)
   const ok = await verify(setup, publicSignals, proof)
   if (!ok) throw new Error('genSudokuSolve: proof failed in-process verify — aborting')
-  if (publicSignals.length !== 83) {
-    throw new Error(`genSudokuSolve: expected 83 public signals, got ${publicSignals.length}`)
+  if (publicSignals.length !== 4) {
+    throw new Error(`genSudokuSolve: expected 4 public signals, got ${publicSignals.length}`)
   }
 
   writeGenerated(
@@ -139,13 +139,17 @@ async function genSudokuSolve(setup: CircuitSetup) {
       'the fixed band-rotation solution/puzzle vector (see test/sudoku_solve.test.ts), proved with ' +
       'the SAME build/sudoku_solve/sudoku_solve_plonk.zkey the committed ' +
       'SudokuSolvePlonkVerifier.sol was exported from. publicSignals / the packed pub[] order is ' +
-      '[nullifier, puzzle[0..80], player] (83 signals, snarkjs emits the output nullifier first), ' +
-      'matching circuits/sudoku_solve.circom `component main {public [puzzle, player]}` with ' +
-      '`signal output nullifier`. `proof` is the 24-field PLONK proof in snarkjs ' +
-      'exportSolidityCallData order, as SudokuSolvePlonkVerifier.verifyProof(uint256[24],' +
-      'uint256[83]) expects.',
+      '[nullifier, puzzlePacked[0], puzzlePacked[1], player] (4 signals, snarkjs emits the output ' +
+      'nullifier first), matching circuits/sudoku_solve.circom `component main {public ' +
+      '[puzzlePacked, player]}` with `signal output nullifier`. The 81-cell puzzle is PACKED into ' +
+      '2 field elements (4 bits/cell) — see the circuit header for why (a PLONK zkey costs one ' +
+      'Lagrange polynomial per public input; 83 signals meant a 960 MB proving key, vs 66 MB ' +
+      'packed). `vector.puzzle` is the unpacked 81 cells; SudokuRules.checkSolve takes those and ' +
+      'packs on-chain. `proof` is the 24-field PLONK proof in snarkjs exportSolidityCallData ' +
+      'order, as SudokuSolvePlonkVerifier.verifyProof(uint256[24],uint256[4]) expects.',
     vector: {
       puzzle: PUZZLE,
+      puzzlePacked: witnessInput.puzzlePacked,
       solution: SOLUTION,
       player: witnessInput.player,
       nullifier: publicSignals[0],

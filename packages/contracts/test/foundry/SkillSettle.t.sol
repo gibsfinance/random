@@ -38,7 +38,8 @@ contract SkillSettleTest is Test {
     address internal house;
     address internal player = address(uint160(uint256(keccak256("skill-player"))));
 
-    // sudoku fixture (83 signals: nullifier, puzzle[0..80], player). The win proof is BOUND to the
+    // sudoku fixture (4 signals: nullifier, puzzlePacked[0..1], player — the 81-cell puzzle is packed
+    // 4 bits/cell; see SudokuRules.sol). The win proof is BOUND to the
     // player it was proved for — the fixed fixture player 0xabab..ab — so the sudoku table player must
     // be that address for the proof to verify (this binding is exactly the anti-front-run property).
     uint256[24] internal sProof;
@@ -89,12 +90,15 @@ contract SkillSettleTest is Test {
         uint256[] memory pf = vm.parseJsonUintArray(json, ".proof");
         uint256[] memory ps = vm.parseJsonUintArray(json, ".pubSignals");
         assertEq(pf.length, 24, "sudoku fixture must have 24 plonk proof fields");
-        assertEq(ps.length, 83, "sudoku fixture must have 83 signals");
+        assertEq(ps.length, 4, "sudoku fixture must have 4 signals");
         for (uint256 i = 0; i < 24; i++) sProof[i] = pf[i];
-        // [nullifier, puzzle[0..80], player]
+        // [nullifier, puzzlePacked[0], puzzlePacked[1], player] — the puzzle is packed, so the 81
+        // cells come from the fixture's vector. SkillSettle still passes 81 cells; SudokuRules packs.
         sudokuNullifier = ps[0];
-        for (uint256 i = 0; i < 81; i++) puzzle[i] = ps[1 + i];
-        sudokuPlayer = address(uint160(ps[82]));
+        sudokuPlayer = address(uint160(ps[3]));
+        uint256[] memory cells = vm.parseJsonUintArray(json, ".vector.puzzle");
+        assertEq(cells.length, 81, "sudoku fixture vector.puzzle must have 81 cells");
+        for (uint256 i = 0; i < 81; i++) puzzle[i] = cells[i];
     }
 
     function _loadWordle() internal {
