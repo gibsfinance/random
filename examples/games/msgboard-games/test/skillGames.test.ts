@@ -1,17 +1,22 @@
 /**
- * skillGames.test.ts — the ZK skill games' PUBLISHED payout curves (Wordle by guesses-used, Sudoku
- * flat) are: (a) correct at every reachable result, (b) escrow-safe — settle never pays above the
- * declared ceiling, and (c) FAIRNESS — under each game's documented reference outcome distribution the
- * realized RTP is ≤ 100% (never player-favourable) and inside the published band. Unlike the RNG games
- * these are skill games, so RTP is a function of a *reference* player distribution, not a fixed roll
- * probability — a skilled player can beat it; the house is protected only against the average player.
+ * skillGames.test.ts — the ZK skill games.
+ *
+ * WORDLE is a wagered game: its PUBLISHED payout curve by guesses-used is (a) correct at every
+ * reachable result, (b) escrow-safe — settle never pays above the declared ceiling, and (c) FAIR —
+ * under the documented reference outcome distribution the realized RTP is ≤ 100% (never
+ * player-favourable) and inside the published band. Unlike the RNG games RTP is a function of a
+ * *reference* player distribution, not a fixed roll probability — a skilled player can beat it; the
+ * house is protected only against the average player.
+ *
+ * SUDOKU is NOT a wager — it is a timed leaderboard (see games/sudoku.ts for why). Its tests cover the
+ * elapsed-time math and the deterministic ranking of on-chain solve entries, not any payout/RTP.
  */
 import { describe, it, expect } from 'vitest'
 import {
   rtpBps,
   wordle, WORDLE_GAME_ID, WORDLE_MAX_GUESSES, WORDLE_MULT_X100, WORDLE_REFERENCE_WEIGHTS,
   wordleMultiplierX100,
-  sudoku, SUDOKU_GAME_ID, SUDOKU_MULT_X100, SUDOKU_REFERENCE_SOLVE_RATE_BPS, sudokuMultiplierX100,
+  SUDOKU_GAME_ID, sudokuElapsed, sudokuLeaderboard, type SudokuSolveEntry,
   skillOutcome,
 } from '../src'
 
@@ -76,32 +81,53 @@ describe('ZK-Wordle (gameId 30)', () => {
   })
 })
 
-describe('ZK-Sudoku (gameId 31)', () => {
-  it('has the expected gameId and flat escrow ceiling', () => {
-    expect(sudoku.gameId).toBe(31)
+describe('ZK-Sudoku (gameId 31) — timed leaderboard, NOT a wager', () => {
+  const entry = (over: Partial<SudokuSolveEntry>): SudokuSolveEntry => ({
+    puzzleId: 1n, player: 0xaaan, nullifier: 0n, solvedAt: 100n, elapsed: 100n, ...over,
+  })
+
+  it('has the expected gameId and is not a wagered SkillGame (no stake/multiplier/escrow)', () => {
     expect(SUDOKU_GAME_ID).toBe(31)
-    expect(sudoku.maxMultiplierX100({})).toBe(SUDOKU_MULT_X100)
   })
 
-  it('pays the flat multiplier on a solve, loses stake on no solve', () => {
-    const win = sudoku.settleRound(1000n, {}, { solved: true })
-    expect(win).toEqual({ win: true, playerDelta: 900n, multiplierX100: 190n })
-    const loss = sudoku.settleRound(1000n, {}, { solved: false })
-    expect(loss).toEqual({ win: false, playerDelta: -1000n, multiplierX100: 0n })
-    expect(sudokuMultiplierX100({ solved: false })).toBe(0n)
+  it('elapsed = solvedAt - openedAt, and rejects a solve logged before open', () => {
+    expect(sudokuElapsed(1000n, 1042n)).toBe(42n)
+    expect(sudokuElapsed(1000n, 1000n)).toBe(0n)
+    expect(() => sudokuElapsed(1000n, 999n)).toThrow(/precedes openedAt/)
   })
 
-  it('FUNDS-SAFETY: a solve never pays above the escrow ceiling', () => {
-    expect(sudoku.settleRound(1000n, {}, { solved: true }).multiplierX100)
-      .toBeLessThanOrEqual(sudoku.maxMultiplierX100({}))
+  it('ranks fastest elapsed first and assigns 1-based ranks', () => {
+    const board = sudokuLeaderboard([
+      entry({ player: 0xaaan, elapsed: 300n, nullifier: 1n }),
+      entry({ player: 0xbbbn, elapsed: 120n, nullifier: 2n }),
+      entry({ player: 0xcccn, elapsed: 205n, nullifier: 3n }),
+    ])
+    expect(board.map((r) => [r.player, r.rank])).toEqual([
+      [0xbbbn, 1], [0xcccn, 2], [0xaaan, 3],
+    ])
   })
 
-  it('FAIRNESS: RTP at the reference solve rate is ≤ 100% (and any rate < 1/1.90 keeps an edge)', () => {
-    // RTP(bps) = solveRate(bps) × multX100 / 100
-    const rtp = (SUDOKU_REFERENCE_SOLVE_RATE_BPS * SUDOKU_MULT_X100) / 100n
-    expect(rtp).toBe(9500n) // 0.50 × 1.90 = 0.95
-    expect(rtp).toBeLessThanOrEqual(10_000n)
-    // the break-even solve rate is 1/1.90 = 52.63% → 5263 bps; the reference sits safely below it.
-    expect(SUDOKU_REFERENCE_SOLVE_RATE_BPS).toBeLessThan((10_000n * 100n) / SUDOKU_MULT_X100)
+  it('breaks elapsed ties by earlier solvedAt, then by player — a total, deterministic order', () => {
+    const board = sudokuLeaderboard([
+      entry({ player: 0xbbbn, elapsed: 100n, solvedAt: 100n, nullifier: 2n }),
+      entry({ player: 0xaaan, elapsed: 100n, solvedAt: 100n, nullifier: 1n }), // same elapsed+solvedAt → player tiebreak
+      entry({ player: 0xcccn, elapsed: 100n, solvedAt: 90n,  nullifier: 3n }), // earliest solvedAt → rank 1
+    ])
+    expect(board.map((r) => r.player)).toEqual([0xcccn, 0xaaan, 0xbbbn])
+  })
+
+  it('dedupes a player to their BEST solve, and rejects mixing puzzles', () => {
+    const board = sudokuLeaderboard([
+      entry({ player: 0xaaan, elapsed: 300n, nullifier: 1n }),
+      entry({ player: 0xaaan, elapsed: 150n, nullifier: 2n }), // same player, faster → kept
+    ])
+    expect(board).toHaveLength(1)
+    expect(board[0]!.elapsed).toBe(150n)
+    expect(board[0]!.rank).toBe(1)
+
+    expect(sudokuLeaderboard([])).toEqual([])
+    expect(() =>
+      sudokuLeaderboard([entry({ puzzleId: 1n }), entry({ puzzleId: 2n })]),
+    ).toThrow(/mixed puzzleIds/)
   })
 })
