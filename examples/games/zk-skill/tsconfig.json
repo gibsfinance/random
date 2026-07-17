@@ -10,5 +10,8 @@
     "noUncheckedIndexedAccess": true,
     "types": ["node"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  // Browser-only modules (DOM/WebWorker APIs, no node types) are typechecked by tsconfig.browser.json.
+  // Excluding them here keeps this node-oriented config (types: ["node"], no DOM lib) clean.
+  "exclude": ["src/browser"]
 }
