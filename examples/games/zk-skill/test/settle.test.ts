@@ -98,23 +98,28 @@ describe('ZK skill games — full off-chain round with real proofs', () => {
     expect(round.solveProof).toBeUndefined() // no solve → no settlement proof
   }, 600_000)
 
-  it('Sudoku: house proves solvability + player proves a solve → flat 1.90× win (player-bound)', async () => {
+  it('Sudoku: a player proves a solve → a player-bound, timed leaderboard entry (no wager)', async () => {
     const player = 0xC0FFEEn
+    const openedAt = 1_000_000n
+    const solvedAt = 1_000_042n
     const round = await playSudokuRound({
       puzzle: SUDOKU_PUZZLE,
       solution: SUDOKU_SOLUTION,
       player,
-      stake: 1000n,
+      puzzleId: 31n,
+      openedAt,
+      solvedAt,
     })
-    // the house's solvability proof (open) verified — no unsolvable-puzzle grief
-    expect(round.houseSolvabilityProof.verified).toBe(true)
-    // the player's win proof is bound to `player` via the nullifier (publicSignals[0])
-    expect(round.result.solved).toBe(true)
+    // the player's solve proof verified and is bound to `player` via the nullifier (publicSignals[0])
+    expect(round.verified).toBe(true)
     expect(round.publicSignals).toHaveLength(4)
     expect(round.publicSignals[3]).toBe(player.toString())
     expect(round.nullifier).toBe(round.publicSignals[0])
-    expect(round.outcome.multiplierX100).toBe(190n)
-    expect(round.outcome.playerDelta).toBe(900n) // 1000*1.90 - 1000
-    expect(round.outcome.win).toBe(true)
+    // the on-chain SudokuLog.Solved leaderboard entry this solve would produce
+    expect(round.entry.puzzleId).toBe(31n)
+    expect(round.entry.player).toBe(player)
+    expect(round.entry.nullifier).toBe(BigInt(round.nullifier))
+    expect(round.entry.solvedAt).toBe(solvedAt)
+    expect(round.entry.elapsed).toBe(42n) // solvedAt - openedAt
   }, 600_000)
 })

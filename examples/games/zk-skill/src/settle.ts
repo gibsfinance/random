@@ -20,11 +20,11 @@ import {
 import { buildSudokuWitnessInput } from './sudoku.js'
 import {
   wordle,
-  sudoku,
   WORDLE_MAX_GUESSES,
+  sudokuElapsed,
   type WordleParams,
   type WordleResult,
-  type SudokuResult,
+  type SudokuSolveEntry,
   type SkillOutcome,
 } from '@gibs/msgboard-games'
 
@@ -178,54 +178,44 @@ export async function playWordleRound(params: {
 }
 
 export interface SudokuRoundResult {
-  /** the house's solvability proof of the SAME public puzzle (guarantees ≥1 solution exists) */
-  houseSolvabilityProof: { proof: unknown; publicSignals: string[]; verified: boolean }
-  /** the player's win proof, bound to `player` via the nullifier (publicSignals[0]) */
+  /**
+   * The player's solve proof, bound to `player` via the nullifier (publicSignals[0]) — exactly the
+   * calldata SudokuLog.logSolve verifies. ANY valid solution to the public puzzle proves out.
+   */
   proof: unknown
   publicSignals: string[]
   nullifier: string
-  result: SudokuResult
-  outcome: SkillOutcome
+  verified: boolean
+  /** The on-chain leaderboard entry SudokuLog would emit (`Solved`) for this solve. */
+  entry: SudokuSolveEntry
 }
 
 /**
- * Play + settle one full ZK-Sudoku round with the M3 "role-flip" flow:
+ * Play one ZK-Sudoku speedrun solve — the off-chain twin of SudokuLog.sol, a TIMED LEADERBOARD rather
+ * than a wager (see @gibs/msgboard-games/games/sudoku for why a flat-multiplier bet on a public,
+ * trivially-automatable solve is strictly -EV for the house and unmeasurable by the proof). The house
+ * has already published the puzzle at `openedAt` (SudokuLog.openPuzzle); here the PLAYER proves they
+ * know a VALID solution to that SAME public puzzle (sudoku_solve.circom), bound to their OWN `player`
+ * address via the nullifier — NOT to any house secret. A verifying proof yields the on-chain `Solved`
+ * leaderboard entry with the elapsed solve time (`solvedAt - openedAt`); `player` binds the proof, so a
+ * mempool watcher cannot copy someone else's solve and re-log it under their own address.
  *
- *   1. The HOUSE proves SOLVABILITY of the public `puzzle` at open (a sudoku_solve proof of
- *      `houseSolution`), so a malicious house cannot post an unsolvable/ambiguous board that an honest
- *      solver would forfeit on. This reuses the same circuit — the solution stays private.
- *   2. The PLAYER proves they know a VALID solution to the SAME public puzzle (sudoku_solve.circom),
- *      bound to their OWN `player` address via the nullifier — NOT to any house secret. ANY valid
- *      solution wins. A verifying proof is a win → flat multiplier; an invalid solution fails
- *      witness-gen / verify → loss.
- *
- * `houseSolution` and `solution` may be the same grid (unique puzzle) or different valid grids
- * (ambiguous puzzle) — any valid solution wins, so uniqueness is not required for fairness once the
- * house has proven solvability. `player` binds the win proof; a mempool watcher cannot copy it.
+ * There is no house solvability proof (SudokuLog does not require one): with nothing escrowed, an
+ * unsolvable board grieves no one — a player who cannot solve it simply never logs an entry.
  */
 export async function playSudokuRound(params: {
   puzzle: number[]
   solution: number[]
   player: bigint
-  stake: bigint
-  /** the house's own valid solution used only to prove solvability at open; defaults to `solution` */
-  houseSolution?: number[]
-  /** address the house binds its solvability proof to (irrelevant to solvability); defaults to 1n */
-  housePlayer?: bigint
+  puzzleId: bigint
+  /** block timestamp the house published the puzzle at (SudokuLog.openPuzzle) — the leaderboard start */
+  openedAt: bigint
+  /** block timestamp the solve is logged at (SudokuLog.logSolve) — the leaderboard finish */
+  solvedAt: bigint
 }): Promise<SudokuRoundResult> {
   const setup = setupFor('sudoku_solve')
 
-  // 1. house solvability proof (open): proves the committed puzzle has ≥1 solution.
-  const houseInput = await buildSudokuWitnessInput({
-    puzzle: params.puzzle,
-    solution: params.houseSolution ?? params.solution,
-    player: params.housePlayer ?? 1n,
-  })
-  const houseProved = await prove(setup, houseInput)
-  const houseVerified = await verify(setup, houseProved.publicSignals, houseProved.proof)
-  if (!houseVerified) throw new Error('sudoku: house solvability proof failed to verify')
-
-  // 2. player win proof: a valid solution to the SAME public puzzle, bound to `player`.
+  // The player proves a valid solution to the public puzzle, bound to `player` via the nullifier.
   const input = await buildSudokuWitnessInput({
     puzzle: params.puzzle,
     solution: params.solution,
@@ -233,18 +223,15 @@ export async function playSudokuRound(params: {
   })
   const { proof, publicSignals } = await prove(setup, input)
   const verified = await verify(setup, publicSignals, proof)
-  const result: SudokuResult = { solved: verified }
-  const outcome = sudoku.settleRound(params.stake, {}, result)
-  return {
-    houseSolvabilityProof: {
-      proof: houseProved.proof,
-      publicSignals: houseProved.publicSignals,
-      verified: houseVerified,
-    },
-    proof,
-    publicSignals,
-    nullifier: publicSignals[0]!,
-    result,
-    outcome,
+  if (!verified) throw new Error('sudoku: solve proof failed to verify')
+
+  const nullifier = publicSignals[0]!
+  const entry: SudokuSolveEntry = {
+    puzzleId: params.puzzleId,
+    player: params.player,
+    nullifier: BigInt(nullifier),
+    solvedAt: params.solvedAt,
+    elapsed: sudokuElapsed(params.openedAt, params.solvedAt),
   }
+  return { proof, publicSignals, nullifier, verified, entry }
 }
