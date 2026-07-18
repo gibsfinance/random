@@ -13,7 +13,7 @@ import {
   buildDictTree,
   buildWordleSolveWitnessInput,
   guessesCommit as computeGuessesCommit,
-  TEST_DICTIONARY,
+  WORDLE_VALID_GUESSES,
   WORDLE_SOLVE_MAX_GUESSES,
   type DictTree,
 } from './wordleSolve.js'
@@ -48,10 +48,13 @@ function setupFor(name: string): CircuitSetup {
 
 const isAllGreen = (clue: Clue[]): boolean => clue.length === 5 && clue.every((t) => t === 2)
 
-// The committed test dictionary tree is the same for every round; build it once.
+// The committed dictionary tree is the same for every round; build it once. This is the REAL
+// production dictionary (the full 12,972-word canonical Wordle valid-guess list) at PROD_DICT_DEPTH,
+// so `solveProof.dictRoot` is the exact root a mainnet setWordleDictRoot commits — a round proof here
+// verifies against the committed on-chain dictRoot with no toy-dictionary substitution.
 let defaultDictPromise: Promise<DictTree> | undefined
 function defaultDict(): Promise<DictTree> {
-  defaultDictPromise ??= buildDictTree([...TEST_DICTIONARY])
+  defaultDictPromise ??= buildDictTree([...WORDLE_VALID_GUESSES])
   return defaultDictPromise
 }
 

@@ -26,7 +26,11 @@ import {
   PACKAGE_ROOT,
 } from '../src/harness.js'
 import { wordToIndices } from '../src/wordle.js'
-import { buildDictTree, buildWordleSolveWitnessInput, TEST_DICTIONARY } from '../src/wordleSolve.js'
+import {
+  buildDictTree,
+  buildWordleSolveWitnessInput,
+  WORDLE_VALID_GUESSES,
+} from '../src/wordleSolve.js'
 
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '../../..')
 const FIXTURES_DIR = path.join(REPO_ROOT, 'packages/contracts/test/foundry/fixtures')
@@ -49,7 +53,10 @@ async function main() {
   const setup = setupCircuit('wordle_solve')
 
   // Fixture vector: word="crane"; committed 6-guess sequence solves at guess #2 → guesses-used=2 (3.50×).
-  const dict = await buildDictTree([...TEST_DICTIONARY])
+  // Built against the REAL production dictionary (full 12,972-word canonical Wordle valid-guess list) at
+  // PROD_DICT_DEPTH=14, so the fixture's `dictRoot` IS the exact root a mainnet setWordleDictRoot must
+  // commit — the foundry WordleRules/SkillSettle tests then verify against the real committed root.
+  const dict = await buildDictTree([...WORDLE_VALID_GUESSES])
   const word = wordToIndices('crane')
   const salt = 424242n
   const guesses = ['slate', 'crane', 'ghost', 'dozen', 'jumbo', 'unfit'].map(wordToIndices)

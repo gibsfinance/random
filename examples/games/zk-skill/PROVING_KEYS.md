@@ -13,7 +13,7 @@ They are produced by `src/harness.ts` (`setupCircuit`) and live **gitignored** u
 ```
 build/sudoku_solve/sudoku_solve_plonk.zkey           (~66 MB)
 build/sudoku_solve/sudoku_solve_js/sudoku_solve.wasm (~4 MB)
-build/wordle_solve/wordle_solve_plonk.zkey           (~16 MB)
+build/wordle_solve/wordle_solve_plonk.zkey           (~31 MB, real 12,972-word dict at depth 14)
 build/wordle_solve/wordle_solve_js/wordle_solve.wasm
 build/wordle_clue/wordle_clue_plonk.zkey             (~6 MB)
 build/wordle_clue/wordle_clue_js/wordle_clue.wasm

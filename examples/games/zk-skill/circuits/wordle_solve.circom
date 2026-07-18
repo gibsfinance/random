@@ -150,4 +150,6 @@ template WordleSolve(maxGuesses, dictDepth) {
     }
 }
 
-component main {public [commit, guessesCommit, dictRoot, guessesUsed]} = WordleSolve(6, 4);
+// dictDepth = 14 → up to 2^14 = 16,384 dictionary leaves, enough for the full 12,972-word canonical
+// original-Wordle valid-guess list (see src/dictionaries/wordle-valid-guesses.ts + PROD_DICT_DEPTH).
+component main {public [commit, guessesCommit, dictRoot, guessesUsed]} = WordleSolve(6, 14);

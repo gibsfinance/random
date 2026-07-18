@@ -178,6 +178,98 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      // ZK SKILL games (Sudoku timed leaderboard + Wordle house game) — deploy to 943/369 like the
+      // other games contracts, so pin Shanghai (no MCOPY/TSTORE) to match foundry.toml and the
+      // HouseChannel/Chips overrides. The current bytecode is MCOPY-free even under the cancun
+      // default, but pinning keeps a later edit from silently emitting MCOPY that reverts on 943.
+      'contracts/zk/generated/SudokuSolvePlonkVerifier.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/zk/generated/WordleCluePlonkVerifier.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/zk/generated/WordleSolvePlonkVerifier.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/zk/SudokuRules.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/zk/WordleRules.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/games/SkillPayouts.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/games/SudokuLog.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/games/SkillSettle.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
       'contracts/test/SessionStateHarness.sol': {
         version: '0.8.25',
         settings: {

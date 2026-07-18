@@ -25,16 +25,31 @@
 
 import { buildPoseidon } from 'circomlibjs'
 import { wordToIndices } from './wordle.js'
+import { WORDLE_VALID_GUESSES } from './dictionaries/wordle-valid-guesses.js'
+
+export { WORDLE_VALID_GUESSES }
 
 export const WORDLE_SOLVE_MAX_GUESSES = 6
-/** Merkle depth of the (test) dictionary tree: 2^4 = 16 leaves. */
-export const DICT_DEPTH = 4
 
 /**
- * The committed TEST dictionary (16 valid 5-letter words → a depth-4 Merkle tree). A production
- * deployment commits a full word list (thousands of words) and a deeper tree; this representative set
- * is enough to prove the membership constraint end to end and keeps the fixtures small/deterministic.
- * `crane`/`proxy` are the words the settle e2e/fixtures solve on, so they MUST stay in the set.
+ * PRODUCTION Merkle depth of the dictionary tree: 2^14 = 16,384 leaves — the depth the DEPLOYED
+ * circuit (`component main = WordleSolve(6, 14)`), the committed on-chain verifier, and the committed
+ * `dictRoot` are all built against. 14 is the smallest depth that holds the full 12,972-word canonical
+ * original-Wordle valid-guess list (WORDLE_VALID_GUESSES).
+ *
+ * This is the ONE depth every proof in this package uses. The circuit is fixed-depth, so a proof built
+ * at any other depth cannot verify against the deployed verifier — do NOT introduce a second depth.
+ */
+export const DICT_DEPTH = 14
+/** Explicit alias for the production depth, for call sites that want the intent spelled out. */
+export const PROD_DICT_DEPTH = DICT_DEPTH
+
+/**
+ * A small TEST dictionary (16 valid 5-letter words) for fast, deterministic unit tests. It is committed
+ * at the SAME production depth (DICT_DEPTH = 14) as the real dictionary — only the word COUNT is small,
+ * which keeps the fixtures/tests focused; the Merkle depth (and thus the proving cost) matches
+ * production exactly. `crane`/`proxy` are the words the settle e2e/fixtures solve on, so they MUST stay
+ * in the set. The DEPLOYED dictionary is WORDLE_VALID_GUESSES (see genWordleSolve.ts / settle.ts).
  */
 export const TEST_DICTIONARY: readonly string[] = [
   'crane', 'proxy', 'slate', 'ghost', 'dozen', 'jumbo', 'unfit', 'humid',
