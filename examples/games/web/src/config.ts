@@ -33,6 +33,22 @@ export type GameDeployment = {
    *  Sessions use `makeDomain(chainId, houseChannel)` so co-signed states bind to the on-chain
    *  settlement contract (the player's worst case is always "reclaim my stake" via disputeFromOpen). */
   houseChannel?: viem.Hex
+  /** SudokuLog contract — the ZK skill-game leaderboard (append-only best-time log per puzzle). */
+  sudokuLog?: viem.Hex
+  /** SudokuRules contract — the on-chain Sudoku validity/scoring rules the leaderboard defers to. */
+  sudokuRules?: viem.Hex
+  /** PLONK verifier for the Sudoku solve proof (proves a valid solution without revealing it). */
+  sudokuSolveVerifier?: viem.Hex
+  /** SkillSettle contract — settles Chips wagers on skill-game outcomes (Chips-chain only). */
+  skillSettle?: viem.Hex
+  /** WordleRules contract — the on-chain Wordle validity/scoring rules (Chips-chain only). */
+  wordleRules?: viem.Hex
+  /** PLONK verifier for the Wordle clue proof (proves the per-guess colouring is honest). */
+  wordleClueVerifier?: viem.Hex
+  /** PLONK verifier for the Wordle solve proof (proves knowledge of the secret word). */
+  wordleSolveVerifier?: viem.Hex
+  /** Scan skill-game events from here (the skill contracts' deploy block) to keep scans cheap. */
+  skillDeployBlock?: string
 }
 
 /**
@@ -82,6 +98,16 @@ export const deployments: GameDeployment[] = [
     chips: '0xA5276259e544C86438566cB28cc87daCce060910',
     // patched HouseChannel (gameId-binding + disputeFromOpen + gameId-in-Opened), deployed 943 @ block 24708662
     houseChannel: '0x74bbc31e77c02593c0a7aad0cadadb5b6bff3948',
+    // ZK skill games — full real-dictionary set (Sudoku leaderboard + Wordle over Chips escrow).
+    sudokuLog: '0xf700e0c1fd235719738cca1cdef6f41bfaef163c',
+    sudokuRules: '0x6f9045512ddd9d5a8db4c90377cb4eb052fd940f',
+    sudokuSolveVerifier: '0x713885e0b207f617af1c5c8b9a9d2e65f331883f',
+    skillSettle: '0x76b357071bb2d0ede364365d3a4e2055ceb0ee02',
+    wordleRules: '0x85b9e49a762b7ab7263205d120737f0daa8228c0',
+    wordleClueVerifier: '0xa80c8388defd3de0d36b3146fc05a32a7f77fcdc',
+    wordleSolveVerifier: '0x68550dd2163ced8676bdf5a920dafe09052808ca',
+    // SudokuLog deploy block, pinned via getCode binary search (code first present @ 24898763).
+    skillDeployBlock: '24898763',
   },
   // Deployed by the 2026-06-11 mainnet bring-up (gate run + ink-pools; e2e/scripts/369-deployment.json).
   // deployBlock = the web pools' ink block so the site and the cast watcher count heats
@@ -109,5 +135,11 @@ export const deployments: GameDeployment[] = [
     explorer: 'https://scan.pulsechain.com/#',
     archive: 'https://archive.msgboard.xyz',
     boardRpc: 'https://one.valve.city/rpc/vk_demo/evm/369',
+    // ZK skill games — Sudoku leaderboard only on mainnet (no Chips here → no Wordle/SkillSettle).
+    sudokuLog: '0x939cbb0f10b5f9e76861a179fbe666e1cae50ba7',
+    sudokuRules: '0x76b357071bb2d0ede364365d3a4e2055ceb0ee02',
+    sudokuSolveVerifier: '0xf700e0c1fd235719738cca1cdef6f41bfaef163c',
+    // SudokuLog deploy block, pinned via getCode binary search (code first present @ 27063003).
+    skillDeployBlock: '27063003',
   },
 ]

@@ -14,3 +14,28 @@ export const gameEvent = onchainTable('game_event', (t) => ({
   txHash: t.hex().notNull(),
   logIndex: t.integer().notNull(),
 }))
+
+// One row per ZK-Sudoku `Solved` log — the on-chain leaderboard the frontend queries (rank by
+// `elapsed` per puzzle). Indexed on both chains, so rows are keyed by chainId. `player` and
+// `nullifier` are ZK identity/anti-replay commitments (uint256), stored as decimal strings.
+export const sudokuSolve = onchainTable('sudoku_solve', (t) => ({
+  id: t.text().primaryKey(), // `${chainId}-${txHash}-${logIndex}` — unique per log; idempotent
+  chainId: t.integer().notNull(),
+  puzzleId: t.bigint().notNull(),
+  player: t.text().notNull(), // uint256 ZK player commitment, as a decimal string
+  nullifier: t.text().notNull(), // uint256 anti-replay nullifier, as a decimal string
+  solvedAt: t.bigint().notNull(),
+  elapsed: t.bigint().notNull(),
+  blockNumber: t.bigint().notNull(),
+  txHash: t.hex().notNull(),
+}))
+
+// One row per ZK-Sudoku `PuzzleOpened` log — when each puzzle went live, per chain.
+export const sudokuPuzzle = onchainTable('sudoku_puzzle', (t) => ({
+  id: t.text().primaryKey(), // `${chainId}-${puzzleId}` — one puzzle per chain; idempotent
+  chainId: t.integer().notNull(),
+  puzzleId: t.bigint().notNull(),
+  openedAt: t.bigint().notNull(),
+  blockNumber: t.bigint().notNull(),
+  txHash: t.hex().notNull(),
+}))
