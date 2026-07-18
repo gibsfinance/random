@@ -301,12 +301,18 @@ importers:
       '@gibs/zk-cards-core':
         specifier: workspace:*
         version: link:../zk-core
+      '@gibs/zk-skill':
+        specifier: workspace:*
+        version: link:../zk-skill
       react:
         specifier: ^18.3.1
         version: 18.3.1
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
+      snarkjs:
+        specifier: ^0.7.6
+        version: 0.7.6
       viem:
         specifier: ^2.25.0
         version: 2.52.2(typescript@5.8.3)

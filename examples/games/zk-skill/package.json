@@ -8,7 +8,9 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./browser": "./src/browser/index.ts"
+    "./browser": "./src/browser/index.ts",
+    "./browser/prover.worker": "./src/browser/prover.worker.ts",
+    "./sudoku": "./src/sudoku.ts"
   },
   "scripts": {
     "test": "vitest run",

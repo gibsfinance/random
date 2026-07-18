@@ -135,11 +135,17 @@ export const deployments: GameDeployment[] = [
     explorer: 'https://scan.pulsechain.com/#',
     archive: 'https://archive.msgboard.xyz',
     boardRpc: 'https://one.valve.city/rpc/vk_demo/evm/369',
-    // ZK skill games — Sudoku leaderboard only on mainnet (no Chips here → no Wordle/SkillSettle).
+    // ZK skill games — both live on mainnet. Sudoku leaderboard (Chips-free) + the Wordle house on a
+    // fresh mainnet Chips (a mintable game unit, not a backed currency; house pool 500k CHIPS).
     sudokuLog: '0x939cbb0f10b5f9e76861a179fbe666e1cae50ba7',
     sudokuRules: '0x76b357071bb2d0ede364365d3a4e2055ceb0ee02',
     sudokuSolveVerifier: '0xf700e0c1fd235719738cca1cdef6f41bfaef163c',
-    // SudokuLog deploy block, pinned via getCode binary search (code first present @ 27063003).
+    chips: '0xa3ae98a68bd6851d983b411a4c65b45afef66756',
+    skillSettle: '0xb009bd8b849dd33d9c5081ec6e53f29a947f6832',
+    wordleRules: '0xcd57eee1c31045d0d63153cf1d7c74a69402a8cb',
+    wordleClueVerifier: '0x7ab56dc2921cf6de7552278237bb8b4c63e423e1',
+    wordleSolveVerifier: '0x2cf3a381ae662a06e478491d73bf5d7fd4ebca0e',
+    // Skill contracts' deploy block, pinned via getCode binary search (Sudoku code first present @ 27063003).
     skillDeployBlock: '27063003',
   },
 ]
