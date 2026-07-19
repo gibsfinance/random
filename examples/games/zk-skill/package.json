@@ -10,7 +10,9 @@
     ".": "./src/index.ts",
     "./browser": "./src/browser/index.ts",
     "./browser/prover.worker": "./src/browser/prover.worker.ts",
-    "./sudoku": "./src/sudoku.ts"
+    "./sudoku": "./src/sudoku.ts",
+    "./wordle": "./src/wordle.ts",
+    "./wordleSolve": "./src/wordleSolve.ts"
   },
   "scripts": {
     "test": "vitest run",

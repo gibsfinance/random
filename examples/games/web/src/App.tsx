@@ -33,6 +33,7 @@ import { CascadeScreen } from './components/CascadeScreen'
 import { LotteryScreen } from './components/LotteryScreen'
 import { HiLoWarScreen } from './components/HiLoWarScreen'
 import { SudokuScreen } from './components/SudokuScreen'
+import { WordleScreen } from './components/WordleScreen'
 import { LiveFeed } from './components/LiveFeed'
 import { Menu } from './components/Menu'
 
@@ -74,6 +75,7 @@ const GAMES = [
   { id: 'lottery', label: '🎰 Lottery' },
   { id: 'hilo', label: '⚔️ Hi-Lo War' },
   { id: 'sudoku', label: '🧩 ZK Sudoku' },
+  { id: 'wordle', label: '🟩 ZK Wordle' },
   { id: 'live', label: '🟢 Live' },
 ] as const
 type Tab = (typeof GAMES)[number]['id']
@@ -445,6 +447,14 @@ export const App = () => {
       )}
       {tab === 'sudoku' && (
         <SudokuScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'wordle' && (
+        <WordleScreen
           deployment={deployment}
           walletClient={wallet.walletClient}
           trustAcknowledged={trustAcknowledged}
