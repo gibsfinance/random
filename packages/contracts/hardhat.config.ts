@@ -259,6 +259,17 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      'contracts/games/WordleLog.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
       'contracts/games/SkillSettle.sol': {
         version: '0.8.25',
         settings: {
@@ -583,7 +594,9 @@ const config: HardhatUserConfig = {
     },
   },
   sourcify: {
-    enabled: false,
+    enabled: true,
+    apiUrl: 'https://sourcify.dev/server',
+    browserUrl: 'https://repo.sourcify.dev',
   },
   gasReporter: {
     enabled: true,

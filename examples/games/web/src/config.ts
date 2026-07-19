@@ -39,8 +39,9 @@ export type GameDeployment = {
   sudokuRules?: viem.Hex
   /** PLONK verifier for the Sudoku solve proof (proves a valid solution without revealing it). */
   sudokuSolveVerifier?: viem.Hex
-  /** SkillSettle contract — settles Chips wagers on skill-game outcomes (Chips-chain only). */
-  skillSettle?: viem.Hex
+  /** WordleLog contract — the non-wagered "play with friends" ZK-Wordle record (challenge + solve
+   *  leaderboard by guesses-used; no Chips, no house, no escrow — the retired wager was SkillSettle). */
+  wordleLog?: viem.Hex
   /** WordleRules contract — the on-chain Wordle validity/scoring rules (Chips-chain only). */
   wordleRules?: viem.Hex
   /** PLONK verifier for the Wordle clue proof (proves the per-guess colouring is honest). */
@@ -102,7 +103,7 @@ export const deployments: GameDeployment[] = [
     sudokuLog: '0xf700e0c1fd235719738cca1cdef6f41bfaef163c',
     sudokuRules: '0x6f9045512ddd9d5a8db4c90377cb4eb052fd940f',
     sudokuSolveVerifier: '0x713885e0b207f617af1c5c8b9a9d2e65f331883f',
-    skillSettle: '0x76b357071bb2d0ede364365d3a4e2055ceb0ee02',
+    wordleLog: '0xcd57eee1c31045d0d63153cf1d7c74a69402a8cb',
     wordleRules: '0x85b9e49a762b7ab7263205d120737f0daa8228c0',
     wordleClueVerifier: '0xa80c8388defd3de0d36b3146fc05a32a7f77fcdc',
     wordleSolveVerifier: '0x68550dd2163ced8676bdf5a920dafe09052808ca',
@@ -135,13 +136,13 @@ export const deployments: GameDeployment[] = [
     explorer: 'https://scan.pulsechain.com/#',
     archive: 'https://archive.msgboard.xyz',
     boardRpc: 'https://one.valve.city/rpc/vk_demo/evm/369',
-    // ZK skill games — both live on mainnet. Sudoku leaderboard (Chips-free) + the Wordle house on a
-    // fresh mainnet Chips (a mintable game unit, not a backed currency; house pool 500k CHIPS).
+    // ZK skill games — both live on mainnet, both non-wagered. Sudoku timed leaderboard (SudokuLog) +
+    // Wordle "play with friends" (WordleLog: open a hidden-word challenge, friends submit ZK solve
+    // proofs, ranked by guesses-used). No Chips/house/escrow.
     sudokuLog: '0x939cbb0f10b5f9e76861a179fbe666e1cae50ba7',
     sudokuRules: '0x76b357071bb2d0ede364365d3a4e2055ceb0ee02',
     sudokuSolveVerifier: '0xf700e0c1fd235719738cca1cdef6f41bfaef163c',
-    chips: '0xa3ae98a68bd6851d983b411a4c65b45afef66756',
-    skillSettle: '0xb009bd8b849dd33d9c5081ec6e53f29a947f6832',
+    wordleLog: '0x202255faa269a3d59ed45bd583539b9bd759b32b',
     wordleRules: '0xcd57eee1c31045d0d63153cf1d7c74a69402a8cb',
     wordleClueVerifier: '0x7ab56dc2921cf6de7552278237bb8b4c63e423e1',
     wordleSolveVerifier: '0x2cf3a381ae662a06e478491d73bf5d7fd4ebca0e',
