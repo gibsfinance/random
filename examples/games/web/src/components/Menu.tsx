@@ -21,7 +21,14 @@ export const Menu = ({
   const [open, setOpen] = useState(false)
   const [highlight, setHighlight] = useState(value)
   const rootRef = useRef<HTMLSpanElement>(null)
+  const panelRef = useRef<HTMLSpanElement>(null)
   const items: MenuOption[] = options.map((o) => (typeof o === 'string' ? { label: o } : o))
+
+  // Keep the highlighted option in view when the (now height-capped) panel scrolls.
+  useEffect(() => {
+    if (!open) return
+    panelRef.current?.children[highlight]?.scrollIntoView({ block: 'nearest' })
+  }, [open, highlight])
 
   useEffect(() => {
     if (!open) return
@@ -87,7 +94,7 @@ export const Menu = ({
         </span>
       </button>
       {open && (
-        <span className="menu-panel" role="listbox" aria-label={label}>
+        <span className="menu-panel" role="listbox" aria-label={label} ref={panelRef}>
           {items.map((option, i) => (
             <button
               key={option.label}

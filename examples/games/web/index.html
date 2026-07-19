@@ -122,13 +122,21 @@
         position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
         min-width: 100%;
         display: flex; flex-direction: column;
+        /* Cap the panel so a long game list scrolls instead of running the whole viewport. */
+        max-height: min(60vh, 22rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
         background: linear-gradient(180deg, var(--felt-700), var(--felt-800));
         border: 1px solid var(--brass-soft);
         border-radius: 4px;
         box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
         padding: 0.25rem;
         animation: rise 0.14s ease both;
+        scrollbar-width: thin;
+        scrollbar-color: var(--brass-soft) transparent;
       }
+      .menu-panel::-webkit-scrollbar { width: 8px; }
+      .menu-panel::-webkit-scrollbar-thumb { background: var(--brass-soft); border-radius: 4px; }
       .menu-option {
         text-align: left; white-space: nowrap;
         background: transparent; color: var(--cream);
