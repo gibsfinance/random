@@ -304,6 +304,9 @@ importers:
       '@gibs/zk-skill':
         specifier: workspace:*
         version: link:../zk-skill
+      buffer:
+        specifier: ^6.0.3
+        version: 6.0.3
       react:
         specifier: ^18.3.1
         version: 18.3.1

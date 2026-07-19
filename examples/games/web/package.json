@@ -16,19 +16,20 @@
     "dev:walkthrough": "tsx scripts/dev-walkthrough.ts"
   },
   "dependencies": {
-    "@gibs/games-core": "workspace:*",
     "@gibs/coinflip": "workspace:*",
-    "@gibs/raffle": "workspace:*",
-    "@gibs/random": "workspace:*",
+    "@gibs/games-core": "workspace:*",
+    "@gibs/hilo-war": "workspace:*",
     "@gibs/msgboard-games": "workspace:*",
     "@gibs/msgboard-settle": "workspace:*",
     "@gibs/pow-grinder": "workspace:*",
-    "@gibs/hilo-war": "workspace:*",
+    "@gibs/raffle": "workspace:*",
+    "@gibs/random": "workspace:*",
     "@gibs/zk-cards-core": "workspace:*",
     "@gibs/zk-skill": "workspace:*",
-    "snarkjs": "^0.7.6",
+    "buffer": "^6.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "snarkjs": "^0.7.6",
     "viem": "^2.25.0"
   },
   "devDependencies": {
