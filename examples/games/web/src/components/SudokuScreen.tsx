@@ -59,7 +59,6 @@ const Board = ({
       gridTemplateRows: 'repeat(9, 2.4rem)',
       gap: 0,
       width: 'max-content',
-      border: '2px solid var(--line)',
       background: 'var(--felt-700)',
     }}
   >
@@ -68,6 +67,9 @@ const Board = ({
       const c = i % 9
       const isClue = clues[i]
       const bad = conflicts.has(i)
+      // 3-colour the nine 3x3 boxes diagonally → three distinct colour groupings across the board.
+      const boxGroup = (Math.floor(r / 3) + Math.floor(c / 3)) % 3
+      const groupTint = ['rgba(184, 134, 11, 0.10)', 'rgba(60, 150, 105, 0.15)', 'rgba(95, 125, 175, 0.13)'][boxGroup]
       return (
         <input
           key={i}
@@ -83,17 +85,22 @@ const Board = ({
           style={{
             width: '2.4rem',
             height: '2.4rem',
+            borderRadius: 0, // square cells so the 3x3 box rules read as one continuous line
             textAlign: 'center',
             fontFamily: 'var(--mono)',
             fontSize: '1.1rem',
             fontWeight: isClue ? 700 : 500,
             color: bad ? 'var(--bad)' : isClue ? 'var(--cream)' : 'var(--brass)',
-            background: isClue ? 'var(--felt-600)' : 'transparent',
-            border: '1px solid var(--line)',
-            borderTop: r % 3 === 0 ? '2px solid var(--line)' : undefined,
-            borderLeft: c % 3 === 0 ? '2px solid var(--line)' : undefined,
-            borderRight: c === 8 ? '2px solid var(--line)' : undefined,
-            borderBottom: r === 8 ? '2px solid var(--line)' : undefined,
+            background: isClue
+              ? `linear-gradient(rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0.30)), ${groupTint}`
+              : groupTint,
+            // Each cell paints only its top + left edge (plus the board's right/bottom rim), so no
+            // two cells ever double a line. Thin green for the minor grid, a thick solid brass rule
+            // on every 3x3 box boundary → clearly joined group lines.
+            borderTop: r % 3 === 0 ? '3px solid var(--brass-soft)' : '1px solid var(--line)',
+            borderLeft: c % 3 === 0 ? '3px solid var(--brass-soft)' : '1px solid var(--line)',
+            borderRight: c === 8 ? '3px solid var(--brass-soft)' : 'none',
+            borderBottom: r === 8 ? '3px solid var(--brass-soft)' : 'none',
             outline: 'none',
           }}
         />
