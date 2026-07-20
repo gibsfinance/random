@@ -57,7 +57,7 @@ prefer revealing (cost: `stake`) over bailing (cost: `stake + bond`) — any `bo
 the tie; size it ≥ the taker's claim gas plus a margin (e.g. 10–20% of stake).
 
 ### Variant B — fully off-chain offers, hidden guesses
-No escrow at post time (offers are free to spray): maker's offer = commit + 3009
+No escrow at post time (offers are free to spray): maker's offer = commit + a 3009/7598
 `receiveWithAuthorization` on msgboard. To close the free option, the **taker's guess is
 hidden too**: take = `hash(guess, salt2)` + taker's authorization. Killing an offer now can't
 be selective — the maker doesn't know whether they're dodging a loss, so cancellation is just
@@ -88,11 +88,16 @@ settlement transcripts (`settleWithProof`).
 
 ## Token / contract notes
 
-- **Variant A needs no 3009 at all** — plain escrow (`transferFrom` after a one-time approve,
-  or native value). This drops the Chips-token change from the critical path entirely.
-- Variant B needs an EIP-3009 token (Chips extension; USDC-proven pattern) and MUST use
-  `receiveWithAuthorization` (payee-only execution — a mempool observer can't burn the auth)
-  with the authorization nonce bound to the offer id.
+- **Variant A needs no authorization standard at all** — plain escrow (`transferFrom` after a
+  one-time approve, or native value). This drops the Chips-token change from the critical path
+  entirely.
+- Variant B needs signed transfer authorizations: implement **ERC-3009 with the ERC-7598
+  extension** (the upgraded form — authorization functions take a generic `bytes signature`
+  validated via ERC-1271 instead of only ECDSA `(v,r,s)`; live in USDC v2.2, fully
+  backward-compatible). 7598 is not optional for us: **cosign is Safe-first, and a Safe signs
+  via ERC-1271, not ECDSA** — plain 3009 would lock every Safe/smart account out of making or
+  taking offers. MUST use `receiveWithAuthorization` (payee-only execution — a mempool
+  observer can't burn the auth) with the authorization nonce bound to the offer id.
 - `FlipBook` state per offer: `{maker, commit, stake, bond, taker, guess, takenAt}` — one
   struct, deleted on settle. All histories live on msgboard + logs.
 
@@ -104,4 +109,4 @@ settlement transcripts (`settleWithProof`).
 2. Web: coinflip screen becomes an offer book — post / browse / take / reveal, msgboard as
    the discovery + audit layer (reuse the wordle screens' msgboard transport).
 3. Badge: coinflip 🛡️ → 🤝. The Numbers stays 🛡️.
-4. Later, if offer-spray matters: Chips + 3009 and the variant-B path.
+4. Later, if offer-spray matters: Chips + 3009/7598 and the variant-B path.
