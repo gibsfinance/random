@@ -1,133 +1,107 @@
-# P2P coin flip — players as their own validators (design spec)
+# P2P coin flip — a two-sided guessing game (design spec)
 
-Status: agreed direction 2026-07-20. Upgrade path for the coin flip: drop the validator set;
-the two players **are** the validators. Each commits their own randomness and posts a pre-signed
-forfeit authorization (EIP-3009) up front, so bailing on the reveal pays the other player.
-msgboard carries all coordination; the happy path is **one on-chain transaction total** (the
-winner's settle). No third party, no house, no validator-honesty assumption.
+Status: agreed direction 2026-07-20 (v2 — reframed from symmetric commit-reveal to a
+maker/taker guessing game). No validators, no house, no joint entropy: **one side commits a
+hidden choice, the other side tries to guess it.** Matching pennies with stakes.
 
-## Why this works (and what the validator set was actually for)
+## The core insight
 
-Validator entropy is commit-reveal by neutral third parties. Its two jobs:
+A coin flip between two parties doesn't need a random *beacon* at all — it needs a *guessing
+game*:
 
-1. **Entropy nobody controls** — for a 2-party game, the players' own commit-reveal already
-   provides this: `outcome = f(secret_A, secret_B)` is unpredictable to each party alone.
-2. **Liveness** — someone always reveals, so the draw can't be held hostage. This is the only
-   job that actually needs *someone else* — unless refusing to reveal is made strictly
-   unprofitable. That's what the forfeit bond does.
+- **Maker** commits `commit = keccak(offerId, choice, salt)` for a hidden `choice ∈ {0,1}` and
+  posts it with a signed stake authorization as a standing **offer**.
+- **Taker** picks the offer up by staking and stating a `guess ∈ {0,1}`. The guess IS the
+  taker's entire move — there is nothing for the taker to reveal later.
+- Maker reveals `(choice, salt)`; taker wins iff `guess == choice`.
 
-So: entropy from the players, liveness from economics. Validators removed.
+Fairness needs **no trusted randomness anywhere**: a taker who guesses uniformly at random wins
+exactly 50% against *any* maker strategy, and a maker who chooses uniformly concedes exactly
+50% against any taker. Each side's EV is protected by their own coin, not the counterparty's.
+(This is the mixed-strategy equilibrium of matching pennies.) msgboard carries the offer book;
+every offer, take, and reveal is a PoW-stamped, publicly auditable post.
 
-## Protocol
+It also changes the product shape: instead of a negotiated session, the flip becomes an
+**order book** — makers post standing offers, takers browse and pick up. A maker is a
+mini-house by choice.
 
-Roles: players A and B. Token: an EIP-3009 token (see [token requirements](#token)).
-All off-chain messages are PoW-stamped msgboard posts (ordering + timestamping + public audit).
+## The load-bearing trap: the free option
 
-### 1. OPEN (off-chain, msgboard)
-- A and B agree `terms = {gameId, token, stake, bond, revealDeadline, challengeWindow}`.
-  `gameId = keccak(A, B, salt)` — unique per flip.
-- Each posts `commit_i = keccak(gameId, i, secret_i)` (domain-bound: a commit can't be replayed
-  across games or copied from the other player).
-- Each signs and posts an **EIP-3009 `receiveWithAuthorization`**:
-  `{from: player_i, to: FlipSettle, value: stake + bond, validAfter: 0,
-    validBefore: revealDeadline + challengeWindow + claimWindow, nonce: keccak(gameId, i)}`
-  - `receiveWithAuthorization` (not `transferWithAuthorization`): only the payee contract can
-    execute it, so a mempool observer can't front-run/burn the authorization.
-  - The `nonce` binds the authorization to this game; the token's 3009 nonce registry makes it
-    single-use.
-  - Nothing is escrowed yet. No gas has been spent by anyone.
+If offers can be withdrawn *selectively*, the maker gets a last look: see a losing guess
+coming (in the mempool or on msgboard), kill the offer (via 3009 `cancelAuthorization`, or by
+draining the balance so the authorization pull reverts), and let only winning guesses land.
+A maker with a free option plays only flips they have already won. **Every pickup-style design
+must close this.** Two sound closures:
 
-### 2. REVEAL (off-chain, msgboard)
-- Both post `secret_i` before `revealDeadline`.
-- `outcome = keccak(gameId, secret_A, secret_B) & 1` → winner. Both players (and any reader)
-  can verify commits and compute the winner instantly.
+### Variant A — escrowed offers (preferred)
+Maker locks `stake + bond` in `FlipBook` when posting the offer. The offer physically cannot
+be yanked after a take:
 
-### 3. SETTLE (on-chain, one tx, winner pays gas)
-- Winner calls `FlipSettle.settle(terms, commit_A, commit_B, secret_A, secret_B, auth_A, auth_B)`.
-- Contract: verifies both commits, recomputes the outcome, pulls `stake + bond` from both via
-  the two 3009 authorizations, pays the winner `2·stake`, **returns both bonds** (each player
-  gets their bond back — the bond only ever moves on a forfeit).
-- The loser never sends a transaction and never needs gas. The flip's full transcript (terms,
-  commits, auths, reveals) sits on msgboard for anyone to audit.
+1. **POST** (1 tx, maker): `post(commit, stake, bond, takeDeadline)` — escrow `stake + bond`.
+   Offer mirrored to msgboard for discovery. Maker may `cancel()` any time **before** a take
+   (free withdrawal of an untaken offer is fine — it can't be selective, nothing has happened).
+2. **TAKE** (1 tx, taker): `take(offerId, guess)` — taker stakes `stake` in the same tx, guess
+   is public calldata. Atomic: once this lands the maker is locked in.
+3. **REVEAL** (1 tx, maker): `reveal(offerId, choice, salt)` within `revealWindow` — contract
+   checks the commit, pays the winner `2·stake`, refunds the maker's bond.
+4. **FORFEIT** (1 tx, taker): after `revealWindow` with no reveal, `claim(offerId)` pays the
+   taker `2·stake + bond`. No challenge window needed — the reveal was due **on-chain**, so
+   absence is directly observable. (Contrast the symmetric design in v1, which needed an
+   optimistic counter-reveal window because reveals lived off-chain.)
 
-### 4. FORFEIT (the bail path — optimistic, with a challenge window)
-The contract cannot see msgboard, so it can't verify "B never revealed" directly. Absence is
-proven optimistically:
+Liveness is **one-sided**: only the maker ever reveals, so only the maker posts a bond. The
+taker cannot grief at all — their move completes atomically at take time.
 
-- After `revealDeadline`, A calls
-  `FlipSettle.claimForfeit(terms, commit_A, commit_B, secret_A, auth_A, auth_B)` —
-  revealing A's own secret on-chain and opening a claim.
-- **Challenge window** (`challengeWindow`, e.g. 24h): B can call
-  `counterReveal(gameId, secret_B)`. If B does, the contract has both secrets → it settles as a
-  normal fair flip (step 3 economics; both bonds returned). An honest-but-offline B loses
-  nothing but the counter-reveal gas — which the forfeiting rules can even reimburse from A's
-  claim deposit.
-- If the window lapses unanswered: contract pulls both authorizations, pays A
-  `2·stake + B's bond`, returns A's bond. Bailing cost B their stake **and** their bond.
+Bond math (the even-money indifference trap): a maker who sees a losing take must strictly
+prefer revealing (cost: `stake`) over bailing (cost: `stake + bond`) — any `bond > 0` breaks
+the tie; size it ≥ the taker's claim gas plus a margin (e.g. 10–20% of stake).
 
-Note the claim itself is a commitment: A must reveal `secret_A` to open it, so A can't use a
-forfeit claim to fish — if B counter-reveals, the flip settles on exactly the numbers both
-committed to in OPEN. Neither path lets anyone change or re-roll anything.
+### Variant B — fully off-chain offers, hidden guesses
+No escrow at post time (offers are free to spray): maker's offer = commit + 3009
+`receiveWithAuthorization` on msgboard. To close the free option, the **taker's guess is
+hidden too**: take = `hash(guess, salt2)` + taker's authorization. Killing an offer now can't
+be selective — the maker doesn't know whether they're dodging a loss, so cancellation is just
+noise, not an option. Cost: the taker must reveal later, so reveal-liveness and bonds become
+two-sided again (maker reveals `choice`, then taker reveals `guess`; either bail forfeits to
+the other via the v1 challenge-window machinery).
 
-## The two traps (why the naive version is broken)
+**Trade-off summary:** A = 3 on-chain txs and locked capital per open offer, but one-sided
+liveness and directly-observable forfeit. B = zero-cost standing offers, but two-sided bonds
+and an optimistic forfeit path. Ship A first; B is the scaling refinement if offer-spray
+matters.
 
-### Trap 1 — even-money indifference
-At even money, a losing player's reveal costs them `stake`, and (bond-less) bailing also costs
-`stake`. Indifferent → some fraction of losers grief for spite/latency. The **bond** breaks the
-tie: bailing costs `stake + bond`, revealing a loss costs `stake`. Revealing strictly dominates
-for any `bond > 0`; size it to also cover the counterparty's claim-path gas plus a margin
-(e.g. `bond = 10–20% of stake`, floor of ~2× the claim gas at prevailing prices).
+## Why this doesn't generalize to the raffle
 
-### Trap 2 — last-revealer grind (why this doesn't generalize to the raffle)
-In a 2-party flip the reveal outcome is fully determined at commit time — withholding can't
-*steer* the result, only forfeit it, and the bond makes that a strict loss. But with N parties
-and a shared pot, a withholder chooses between `outcome(with my secret)` and
-`outcome(without me)` — a free extra sample whose value scales with pot size, so bonds would
-have to scale with the pot to stay safe. That's why the **raffle keeps the validator set** (or
-graduates to per-entrant bonds ≥ pot-fraction EV, which stops being fun). This upgrade is
-scoped to 2-party games; the flip is the clean fit.
+The guessing game is inherently two-sided. An N-party draw still needs entropy no participant
+controls (or per-entrant bonds that scale with the pot to deter the last-revealer grind —
+withholding as a choice between `outcome(with me)` and `outcome(without me)`). The Numbers
+keeps its validator set; its badge stays 🛡️. The coinflip's badge flips 🛡️ → 🤝.
 
 ## Where ZK does and doesn't enter
 
-Honest accounting: the flip itself needs **no ZK** — one-shot secrets are revealed at the end,
-so transparent commit-reveal is a complete proof. The badge stays 🤝 (two-party sealed
-randomness), now with zero third parties. ZK enters later exactly where something must stay
-hidden while proven: multiplayer hidden state (Hold'em track) and optional succinct settlement
-(`settleWithProof`-style compression of transcripts).
+No ZK is load-bearing here: the maker's secret is one-shot and revealed at the end, so a
+transparent hash commit is a complete proof, and the taker's move (variant A) is public by
+construction. This is the same shape as the Wordle protocol — commit, opposing move, reveal —
+the coinflip is a 1-bit Wordle. ZK remains reserved for state that must stay hidden *while
+being proven about* (the Hold'em / mental-poker track), and optionally for compressing
+settlement transcripts (`settleWithProof`).
 
-## Token requirements {#token}
+## Token / contract notes
 
-- Needs an EIP-3009 token. **Chips is ours** — add the 3009 extension (`receiveWithAuthorization`
-  + authorization-nonce registry; OpenZeppelin-compatible, USDC-proven pattern).
-- Native PLS / WPLS: no 3009. Fallback for arbitrary ERC-20s: one-time `approve(FlipSettle)` +
-  a game-scoped EIP-712 `StakeAuth` verified by the contract itself (same signature UX, pull via
-  `transferFrom`). 3009 is preferred because it needs no prior approval tx at all.
-
-## Contract sketch
-
-```
-FlipSettle
-  settle(terms, commitA, commitB, secretA, secretB, authA, authB)
-    – verify commits, recompute outcome, pull both (stake+bond) via 3009,
-      pay winner 2·stake, refund both bonds. gameId consumed.
-  claimForfeit(terms, commitA, commitB, secretClaimer, authClaimer, authDefaulter)
-    – require now > revealDeadline; verify claimer's commit; store claim; start window.
-  counterReveal(gameId, secret)
-    – within window: verify commit → settle as fair flip.
-  finalizeForfeit(gameId)
-    – after window: pay claimer 2·stake + defaulter's bond; refund claimer's bond.
-```
-
-State per game: one storage slot (claim hash + deadline), only touched on the forfeit path.
-Happy path is stateless — `settle` verifies everything from calldata and the token's 3009
-nonce registry provides replay protection.
+- **Variant A needs no 3009 at all** — plain escrow (`transferFrom` after a one-time approve,
+  or native value). This drops the Chips-token change from the critical path entirely.
+- Variant B needs an EIP-3009 token (Chips extension; USDC-proven pattern) and MUST use
+  `receiveWithAuthorization` (payee-only execution — a mempool observer can't burn the auth)
+  with the authorization nonce bound to the offer id.
+- `FlipBook` state per offer: `{maker, commit, stake, bond, taker, guess, takenAt}` — one
+  struct, deleted on settle. All histories live on msgboard + logs.
 
 ## Migration
 
-1. Chips + 3009 extension (contract change, testnet first).
-2. `FlipSettle` contract + unit tests incl. both traps (indifference bond math, front-run of
-   `transferWithAuthorization` vs `receiveWithAuthorization`, challenge-window griefing).
-3. Web: coinflip screen gains the OPEN/REVEAL msgboard handshake (reuse the tables' co-sign
-   session plumbing + the wordle screens' msgboard transport).
-4. Badge: coinflip 🛡️ → 🤝. The Numbers stays 🛡️ (structurally multi-party; see Trap 2).
-```
+1. `FlipBook` (variant A) contract + tests: commit binding (offerId-domain-separated), the
+   free-option closures (cancel-after-take must be impossible), bond-indifference math,
+   reveal-window boundary conditions.
+2. Web: coinflip screen becomes an offer book — post / browse / take / reveal, msgboard as
+   the discovery + audit layer (reuse the wordle screens' msgboard transport).
+3. Badge: coinflip 🛡️ → 🤝. The Numbers stays 🛡️.
+4. Later, if offer-spray matters: Chips + 3009 and the variant-B path.
