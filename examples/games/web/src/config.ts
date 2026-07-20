@@ -50,6 +50,11 @@ export type GameDeployment = {
   wordleSolveVerifier?: viem.Hex
   /** Scan skill-game events from here (the skill contracts' deploy block) to keep scans cheap. */
   skillDeployBlock?: string
+  /** FlipBook contract — the P2P guessing-game coinflip offer book (matching pennies; no house,
+   *  no validators — see examples/games/P2P_COINFLIP_DESIGN.md). Native-PLS stakes. */
+  flipBook?: viem.Hex
+  /** Scan FlipBook offer events from here (its deploy block) to keep scans cheap. */
+  flipBookDeployBlock?: string
 }
 
 /**
@@ -109,6 +114,9 @@ export const deployments: GameDeployment[] = [
     wordleSolveVerifier: '0x68550dd2163ced8676bdf5a920dafe09052808ca',
     // SudokuLog deploy block, pinned via getCode binary search (code first present @ 24898763).
     skillDeployBlock: '24898763',
+    // P2P guessing-game coinflip offer book (deployed + all 4 paths exercised on-chain 2026-07-20).
+    flipBook: '0xb009bd8b849dd33d9c5081ec6e53f29a947f6832',
+    flipBookDeployBlock: '24921235',
   },
   // Deployed by the 2026-06-11 mainnet bring-up (gate run + ink-pools; e2e/scripts/369-deployment.json).
   // deployBlock = the web pools' ink block so the site and the cast watcher count heats
@@ -148,5 +156,8 @@ export const deployments: GameDeployment[] = [
     wordleSolveVerifier: '0x2cf3a381ae662a06e478491d73bf5d7fd4ebca0e',
     // Skill contracts' deploy block, pinned via getCode binary search (Sudoku code first present @ 27063003).
     skillDeployBlock: '27063003',
+    // P2P guessing-game coinflip offer book (deployed + exercised on-chain 2026-07-20; Sourcify exact_match).
+    flipBook: '0x603e32ddaf5f4b6ada77e04bb7c44c4603f59eee',
+    flipBookDeployBlock: '27080922',
   },
 ]
