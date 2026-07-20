@@ -9,26 +9,106 @@ export const isTrustAcknowledged = (chainId: number) => localStorage.getItem(ack
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
 /**
+ * Which fairness assumption a game actually rests on — the "1 honest validator" line is only true
+ * for the two entropy-validator games (coin flip / the numbers). The tables are commit-before-bet +
+ * co-signed recompute (no validators), and the ZK games trust only the proof. Keyed per game in App.
+ */
+export type TrustModel = 'validator' | 'cosigned' | 'zk'
+
+// Ack is per (chain, model): the claim differs per model, so acknowledging one shouldn't silently
+// vouch for another. Coin flip's validator set ≠ Sudoku's zero-knowledge proof.
+const modelAckKey = (chainId: number, model: TrustModel) => `${ackKey(chainId)}:${model}`
+
+export const isTrustAcknowledgedFor = (chainId: number, model: TrustModel) =>
+  localStorage.getItem(modelAckKey(chainId, model)) === 'true'
+
+/**
  * The disclosed trust assumption, compacted to a single "provably fair" strip: the load-bearing
- * sentence is always visible; the full explanation + the validator set (shortened, linked) live
- * behind the info dot so they don't stack a wall of text above the table. Entering a game stays
- * disabled until the player taps "Got it" (the spec's open item: the assumption must be surfaced).
+ * sentence is always visible; the full explanation lives behind the info dot so it doesn't stack a
+ * wall of text above the table. The sentence + detail are chosen by the game's actual trust model
+ * (validator randomness / co-signed tables / zero-knowledge). Entering a game stays disabled until
+ * the player taps "Got it" (the spec's open item: the assumption must be surfaced).
  */
 export const TrustBanner = ({
   deployment,
+  model,
   onAcknowledged,
 }: {
   deployment: GameDeployment
+  model: TrustModel
   onAcknowledged: () => void
 }) => {
-  const [acknowledged, setAcknowledged] = useState(() => isTrustAcknowledged(deployment.chainId))
+  const storeKey = modelAckKey(deployment.chainId, model)
+  const [acknowledged, setAcknowledged] = useState(() => localStorage.getItem(storeKey) === 'true')
   const n = deployment.canonicalSubset.length
 
   const acknowledge = () => {
-    localStorage.setItem(ackKey(deployment.chainId), 'true')
+    localStorage.setItem(storeKey, 'true')
     setAcknowledged(true)
     onAcknowledged()
   }
+
+  const line =
+    model === 'validator' ? (
+      <>
+        Provably fair — a draw is safe as long as <strong>one</strong> of the {n} validators is honest
+      </>
+    ) : model === 'zk' ? (
+      <>
+        Provably fair — every solve is checked by a <strong>zero-knowledge proof</strong>, so no house, server, or
+        validator can forge or block it
+      </>
+    ) : (
+      <>
+        Provably fair — the seed is <strong>sealed before you bet</strong> and co-signed over MsgBoard; your own
+        browser re-runs every result
+      </>
+    )
+
+  const detail =
+    model === 'validator' ? (
+      <>
+        <p>
+          Every draw is decided by secrets held by the validators below — never by the house, the other
+          player, or this website. <strong>One honest validator beats any cartel.</strong> The contracts pin
+          the validator set when you enter, so it can't be swapped afterwards, and every settled round below
+          comes with a receipt you can verify yourself. Don't trust this set? Anyone can ink secrets and
+          contribute randomness — even you — and if the honest one is <em>you</em>, the draw is safe for you
+          by construction.
+        </p>
+        <p className="trust-validators">
+          Validators:{' '}
+          {deployment.canonicalSubset.map((v, i) => (
+            <span key={v}>
+              {i > 0 && ' · '}
+              {deployment.explorer ? (
+                <a className="mono" href={`${deployment.explorer}/address/${v}`} target="_blank" rel="noreferrer">
+                  {short(v)}
+                </a>
+              ) : (
+                <span className="mono">{short(v)}</span>
+              )}
+            </span>
+          ))}
+        </p>
+      </>
+    ) : model === 'zk' ? (
+      <p>
+        This table trusts <strong>no one</strong> — not the house, not a validator set, not this website. You
+        solve the puzzle and your browser produces a <strong>zero-knowledge proof</strong> that the solution is
+        valid, tied to your address. The proof is checked by the on-chain verifier (and by any reader off
+        MsgBoard); it reveals nothing but its own validity. A wrong or missing solve simply can't produce a
+        passing proof — there is nothing to grind and nothing to take on faith.
+      </p>
+    ) : (
+      <p>
+        No randomness validators here: the house commits its seed chain <strong>before the first hand</strong>{' '}
+        and you commit yours, so neither side can grind the outcome once you've bet. Each hand reveals the next
+        sealed seed, <strong>co-signed by you and the house</strong> off chain over MsgBoard — no gas per play —
+        and your browser recomputes every result from the revealed seeds. Every settled round leaves a receipt
+        you can replay; if the transcript doesn't match, it's provably crooked.
+      </p>
+    )
 
   return (
     <div className="trust-strip">
@@ -36,32 +116,8 @@ export const TrustBanner = ({
         ✦
       </span>
       <span className="trust-line">
-        Provably fair — a draw is safe as long as <strong>one</strong> of the {n} validators is honest
-        <InfoDot label="how the fairness works">
-          <p>
-            Every draw is decided by secrets held by the validators below — never by the house, the other
-            player, or this website. <strong>One honest validator beats any cartel.</strong> The contracts pin
-            the validator set when you enter, so it can't be swapped afterwards, and every settled round below
-            comes with a receipt you can verify yourself. Don't trust this set? Anyone can ink secrets and
-            contribute randomness — even you — and if the honest one is <em>you</em>, the draw is safe for you
-            by construction.
-          </p>
-          <p className="trust-validators">
-            Validators:{' '}
-            {deployment.canonicalSubset.map((v, i) => (
-              <span key={v}>
-                {i > 0 && ' · '}
-                {deployment.explorer ? (
-                  <a className="mono" href={`${deployment.explorer}/address/${v}`} target="_blank" rel="noreferrer">
-                    {short(v)}
-                  </a>
-                ) : (
-                  <span className="mono">{short(v)}</span>
-                )}
-              </span>
-            ))}
-          </p>
-        </InfoDot>
+        {line}
+        <InfoDot label="how the fairness works">{detail}</InfoDot>
       </span>
       {acknowledged ? (
         <span className="rules-ack">✓ understood</span>

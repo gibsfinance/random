@@ -3,7 +3,7 @@ import * as viem from 'viem'
 import { deployments } from './config'
 import { useWallet } from './hooks/useWallet'
 import { useChainData } from './hooks/useChainData'
-import { TrustBanner, isTrustAcknowledged } from './components/TrustBanner'
+import { TrustBanner, isTrustAcknowledgedFor, type TrustModel } from './components/TrustBanner'
 import { CoinFlipScreen } from './components/CoinFlipScreen'
 import { RaffleScreen } from './components/RaffleScreen'
 import { DiceScreen } from './components/DiceScreen'
@@ -80,6 +80,14 @@ const GAMES = [
 ] as const
 type Tab = (typeof GAMES)[number]['id']
 
+// The fairness assumption each table actually rests on. Only coin flip + the numbers draw from the
+// validator set; the tables are commit-before-bet + co-signed recompute; the ZK games trust only the
+// proof. 'live' is a feed, not a game, so it shows no trust strip.
+const VALIDATOR_GAMES = new Set<Tab>(['coinflip', 'raffle'])
+const ZK_GAMES = new Set<Tab>(['sudoku', 'wordle'])
+const trustModelFor = (tab: Tab): TrustModel | null =>
+  tab === 'live' ? null : VALIDATOR_GAMES.has(tab) ? 'validator' : ZK_GAMES.has(tab) ? 'zk' : 'cosigned'
+
 // Deep-link state: the active game (and chain) live in the URL query so a refresh, share, or bookmark
 // lands back on the same table instead of resetting to Coin Flip.
 const readParams = () => new URLSearchParams(window.location.search)
@@ -107,9 +115,17 @@ export const App = () => {
   }, [tab, deployment])
   const wallet = useWallet(deployment?.chainId ?? 31337)
   const data = useChainData(deployment ?? null, wallet.address)
+  const trustModel = trustModelFor(tab)
+  // Gate reflects the CURRENT game's (chain, model) ack — re-sync when either changes so switching
+  // from an acknowledged table to a fresh model re-locks (and the banner re-prompts) correctly.
   const [trustAcknowledged, setTrustAcknowledged] = useState(() =>
-    deployment ? isTrustAcknowledged(deployment.chainId) : false,
+    deployment && trustModel ? isTrustAcknowledgedFor(deployment.chainId, trustModel) : true,
   )
+  useEffect(() => {
+    setTrustAcknowledged(
+      deployment && trustModel ? isTrustAcknowledgedFor(deployment.chainId, trustModel) : true,
+    )
+  }, [deployment, trustModel])
   // Collapsed by default — show the tables, not a wall of text. We remember if a player opened it.
   const [pitchOpen, setPitchOpen] = useState(() => localStorage.getItem(PITCH_KEY) === 'false')
 
@@ -127,7 +143,7 @@ export const App = () => {
   }
 
   return (
-    <div>
+    <div className="app">
       <div className="marquee">
         <div>
           <h1>
@@ -218,7 +234,13 @@ export const App = () => {
         />
         <span className="blockline">block {data.blockNumber.toString()}</span>
       </div>
-      <TrustBanner deployment={deployment} onAcknowledged={() => setTrustAcknowledged(true)} />
+      {trustModel && (
+        <TrustBanner
+          deployment={deployment}
+          model={trustModel}
+          onAcknowledged={() => setTrustAcknowledged(true)}
+        />
+      )}
       {tab === 'coinflip' && (
         <CoinFlipScreen
           deployment={deployment}

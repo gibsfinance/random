@@ -45,7 +45,19 @@
         background-attachment: fixed;
         min-height: 100vh;
       }
-      #root { max-width: 920px; margin: 0 auto; padding: 1.25rem 1.25rem 4rem; }
+      /* Fill the viewport so the felt + footer always reach the bottom, even when a game's
+         content is short — a flex column with the colophon pushed down (margin-top:auto below). */
+      #root {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 1.25rem 1.25rem 4rem;
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+      }
+      /* App wrapper fills #root so the footer (margin-top:auto) can pin to the viewport bottom. */
+      .app { flex: 1 0 auto; display: flex; flex-direction: column; }
 
       /* ---------- type ---------- */
       h1 {
@@ -310,7 +322,9 @@
         border: 1px solid #8a6f15;
         border-radius: 50%;
       }
-      .colophon { margin-top: 3rem; padding-top: 0.8rem; border-top: 1px solid var(--line); font: 500 0.78rem var(--sans); color: #79927f; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+      /* margin-top:auto pins the footer to the viewport bottom on short pages; on tall pages it
+         collapses and the border-top + padding keep the separation. */
+      .colophon { margin-top: auto; padding-top: 0.8rem; border-top: 1px solid var(--line); font: 500 0.78rem var(--sans); color: #79927f; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
       .colophon a { color: var(--brass-soft); }
 
       /* ---------- ticket tabs ---------- */
@@ -463,6 +477,24 @@
       .info-dot:hover .info-pop,
       .info-dot:focus-within .info-pop { visibility: visible; opacity: 1; }
       h2 .info-pop { font-family: var(--sans); font-weight: 400; }
+
+      /* ---------- responsive: phones / narrow ---------- */
+      @media (max-width: 600px) {
+        #root { padding: 0.85rem 0.85rem 2.25rem; }
+        h1 { font-size: 1.6rem; }
+        h2 { font-size: 1.1rem; margin-top: 1.6rem; }
+        .strapline { letter-spacing: 0.14em; font-size: 0.72rem; }
+        .marquee { padding: 0.7rem 0 0.75rem; margin-bottom: 0.8rem; gap: 0.6rem; }
+        .card { padding: 0.85rem 0.9rem; }
+        .pitch > summary { padding: 0.7rem 0.85rem; }
+        .pitch .pitch-body { padding: 0 0.85rem 0.8rem; }
+        /* The info popover is fixed-ish width on desktop; keep it inside the viewport on phones. */
+        .info-pop { max-width: min(88vw, 20rem); }
+      }
+      /* Respect reduced-motion: the rise/fade-in animations are decorative. */
+      @media (prefers-reduced-motion: reduce) {
+        * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
+      }
     </style>
   </head>
   <body>
