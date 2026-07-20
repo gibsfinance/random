@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 
-export type MenuOption = { label: string; icon?: string }
+export type MenuOption = {
+  label: string
+  icon?: string
+  /** Small right-aligned emoji badge (e.g. the game's trust-model icon) with a hover title. */
+  badge?: string
+  badgeTitle?: string
+}
 
 /**
  * The house menu — a div-reveal replacement for native <select> (the venue doesn't do
@@ -72,6 +78,11 @@ export const Menu = ({
     <>
       {option.icon && <img className="menu-icon" src={option.icon} alt="" loading="lazy" />}
       <span>{option.label}</span>
+      {option.badge && (
+        <span className="menu-badge" title={option.badgeTitle} aria-label={option.badgeTitle}>
+          {option.badge}
+        </span>
+      )}
     </>
   )
 

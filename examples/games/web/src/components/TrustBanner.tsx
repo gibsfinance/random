@@ -22,6 +22,13 @@ const modelAckKey = (chainId: number, model: TrustModel) => `${ackKey(chainId)}:
 export const isTrustAcknowledgedFor = (chainId: number, model: TrustModel) =>
   localStorage.getItem(modelAckKey(chainId, model)) === 'true'
 
+/** One icon per fairness model — shown as the strip's seal and as a badge beside each game in the menu. */
+export const TRUST_ICON: Record<TrustModel, { icon: string; title: string }> = {
+  validator: { icon: '🛡️', title: 'validator randomness — safe if one validator is honest' },
+  cosigned: { icon: '🤝', title: 'sealed seed, co-signed over MsgBoard, replayed by your browser' },
+  zk: { icon: '🔏', title: 'zero-knowledge proven — no one to trust' },
+}
+
 /**
  * The disclosed trust assumption, compacted to a single "provably fair" strip: the load-bearing
  * sentence is always visible; the full explanation lives behind the info dot so it doesn't stack a
@@ -51,17 +58,15 @@ export const TrustBanner = ({
   const line =
     model === 'validator' ? (
       <>
-        Provably fair — a draw is safe as long as <strong>one</strong> of the {n} validators is honest
+        Provably fair — safe as long as <strong>one</strong> of the {n} validators is honest
       </>
     ) : model === 'zk' ? (
       <>
-        Provably fair — every solve is checked by a <strong>zero-knowledge proof</strong>, so no house, server, or
-        validator can forge or block it
+        Provably fair — every solve is proven in <strong>zero knowledge</strong>; no one to trust
       </>
     ) : (
       <>
-        Provably fair — the seed is <strong>sealed before you bet</strong> and co-signed over MsgBoard; your own
-        browser re-runs every result
+        Provably fair — seed <strong>sealed before you bet</strong>, co-signed, replayed by your browser
       </>
     )
 
@@ -112,8 +117,8 @@ export const TrustBanner = ({
 
   return (
     <div className="trust-strip">
-      <span className="trust-seal" aria-hidden>
-        ✦
+      <span className="trust-seal" title={TRUST_ICON[model].title} aria-hidden>
+        {TRUST_ICON[model].icon}
       </span>
       <span className="trust-line">
         {line}

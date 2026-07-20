@@ -3,7 +3,7 @@ import * as viem from 'viem'
 import { deployments } from './config'
 import { useWallet } from './hooks/useWallet'
 import { useChainData } from './hooks/useChainData'
-import { TrustBanner, isTrustAcknowledgedFor, type TrustModel } from './components/TrustBanner'
+import { TrustBanner, isTrustAcknowledgedFor, TRUST_ICON, type TrustModel } from './components/TrustBanner'
 import { CoinFlipScreen } from './components/CoinFlipScreen'
 import { RaffleScreen } from './components/RaffleScreen'
 import { DiceScreen } from './components/DiceScreen'
@@ -228,7 +228,10 @@ export const App = () => {
       <div className="tabs">
         <Menu
           label="game"
-          options={GAMES.map((g) => g.label)}
+          options={GAMES.map((g) => {
+            const m = trustModelFor(g.id)
+            return { label: g.label, badge: m ? TRUST_ICON[m].icon : undefined, badgeTitle: m ? TRUST_ICON[m].title : undefined }
+          })}
           value={Math.max(0, GAMES.findIndex((g) => g.id === tab))}
           onChange={(i) => setTab(GAMES[i]!.id)}
         />

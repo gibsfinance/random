@@ -159,6 +159,7 @@
       .menu-option.highlight { background: var(--felt-600); filter: none; }
       .menu-option.selected { color: var(--brass); font-weight: 700; }
       .menu-icon { width: 1.1em; height: 1.1em; border-radius: 50%; vertical-align: -0.18em; margin-right: 0.45em; }
+      .menu-badge { margin-left: auto; padding-left: 0.7rem; font-size: 0.85em; opacity: 0.75; }
       .menu-trigger .menu-icon, .menu-option .menu-icon { margin-right: 0; }
       .menu-trigger, .menu-option { gap: 0.5rem; }
       .menu-option { display: inline-flex; align-items: center; }
@@ -417,7 +418,9 @@
         font: 500 0.88rem var(--sans); color: var(--cream-dim);
       }
       .trust-seal { color: var(--brass); font-size: 1.05rem; line-height: 1; filter: drop-shadow(0 0 6px rgba(201, 162, 39, 0.35)); }
-      .trust-line { display: inline-flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+      /* Plain inline flow — inline-flex made every text fragment + <strong> its own flex item,
+         which hard-broke the sentence mid-phrase across 3 lines. */
+      .trust-line { display: inline; min-width: 0; }
       .trust-line strong { color: var(--cream); }
       .trust-ack, .trust-strip .rules-ack { margin-left: auto; }
       .trust-ack { padding: 0.34rem 0.85rem; font-size: 0.82rem; }
