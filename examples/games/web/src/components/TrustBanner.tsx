@@ -13,7 +13,7 @@ const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
  * for the two entropy-validator games (coin flip / the numbers). The tables are commit-before-bet +
  * co-signed recompute (no validators), and the ZK games trust only the proof. Keyed per game in App.
  */
-export type TrustModel = 'validator' | 'cosigned' | 'zk'
+export type TrustModel = 'validator' | 'cosigned' | 'zk' | 'p2p'
 
 // Ack is per (chain, model): the claim differs per model, so acknowledging one shouldn't silently
 // vouch for another. Coin flip's validator set ≠ Sudoku's zero-knowledge proof.
@@ -27,6 +27,7 @@ export const TRUST_ICON: Record<TrustModel, { icon: string; title: string }> = {
   validator: { icon: '🛡️', title: 'validator randomness — safe if one validator is honest' },
   cosigned: { icon: '🤝', title: 'sealed seed, co-signed over MsgBoard, replayed by your browser' },
   zk: { icon: '🔏', title: 'zero-knowledge proven — no one to trust' },
+  p2p: { icon: '🎭', title: 'peer-vs-peer guessing duel — your own coin protects your odds' },
 }
 
 /**
@@ -63,6 +64,10 @@ export const TrustBanner = ({
     ) : model === 'zk' ? (
       <>
         Provably fair — every solve is proven in <strong>zero knowledge</strong>; no one to trust
+      </>
+    ) : model === 'p2p' ? (
+      <>
+        Provably fair — a pure guessing duel; <strong>your own coin</strong> protects your odds, not theirs
       </>
     ) : (
       <>
@@ -104,6 +109,15 @@ export const TrustBanner = ({
         valid, tied to your address. The proof is checked by the on-chain verifier (and by any reader off
         MsgBoard); it reveals nothing but its own validity. A wrong or missing solve simply can't produce a
         passing proof — there is nothing to grind and nothing to take on faith.
+      </p>
+    ) : model === 'p2p' ? (
+      <p>
+        This table has <strong>no randomness at all</strong> — no validators, no house, no shared seed. It's matching
+        pennies: a maker escrows a stake behind a hidden heads/tails commit, you match the stake and{' '}
+        <strong>call their coin</strong>. Calling at random wins exactly half against <em>any</em> strategy, so your
+        odds come from your own coin — nothing your opponent (or this website) does can tilt them. The escrow makes
+        offers un-yankable once taken, and a maker who refuses to reveal a loss forfeits their stake <em>and</em> a
+        bond to you. Every offer, take, and reveal is a public transaction you can audit.
       </p>
     ) : (
       <p>

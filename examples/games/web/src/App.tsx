@@ -4,7 +4,7 @@ import { deployments } from './config'
 import { useWallet } from './hooks/useWallet'
 import { useChainData } from './hooks/useChainData'
 import { TrustBanner, isTrustAcknowledgedFor, TRUST_ICON, type TrustModel } from './components/TrustBanner'
-import { CoinFlipScreen } from './components/CoinFlipScreen'
+import { FlipBookScreen } from './components/FlipBookScreen'
 import { RaffleScreen } from './components/RaffleScreen'
 import { DiceScreen } from './components/DiceScreen'
 import { DiceX2Screen } from './components/DiceX2Screen'
@@ -80,13 +80,23 @@ const GAMES = [
 ] as const
 type Tab = (typeof GAMES)[number]['id']
 
-// The fairness assumption each table actually rests on. Only coin flip + the numbers draw from the
-// validator set; the tables are commit-before-bet + co-signed recompute; the ZK games trust only the
-// proof. 'live' is a feed, not a game, so it shows no trust strip.
-const VALIDATOR_GAMES = new Set<Tab>(['coinflip', 'raffle'])
+// The fairness assumption each table actually rests on. Only the numbers still draws from the
+// validator set; the coin flip is now the P2P guessing duel (FlipBook — no randomness anywhere);
+// the tables are commit-before-bet + co-signed recompute; the ZK games trust only the proof.
+// 'live' is a feed, not a game, so it shows no trust strip.
+const VALIDATOR_GAMES = new Set<Tab>(['raffle'])
+const P2P_GAMES = new Set<Tab>(['coinflip'])
 const ZK_GAMES = new Set<Tab>(['sudoku', 'wordle'])
 const trustModelFor = (tab: Tab): TrustModel | null =>
-  tab === 'live' ? null : VALIDATOR_GAMES.has(tab) ? 'validator' : ZK_GAMES.has(tab) ? 'zk' : 'cosigned'
+  tab === 'live'
+    ? null
+    : VALIDATOR_GAMES.has(tab)
+      ? 'validator'
+      : P2P_GAMES.has(tab)
+        ? 'p2p'
+        : ZK_GAMES.has(tab)
+          ? 'zk'
+          : 'cosigned'
 
 // Deep-link state: the active game (and chain) live in the URL query so a refresh, share, or bookmark
 // lands back on the same table instead of resetting to Coin Flip.
@@ -184,13 +194,14 @@ export const App = () => {
         <summary>How the back room stays honest — and cheap</summary>
         <div className="pitch-body">
           <p className="hero-pitch">
-            Two kinds of tables, one promise: <strong>the draw is sealed before you play</strong>, and your own
-            browser re-runs the count on every result. The coin flip and the numbers draw their seed from validator
+            Every table, one promise: <strong>the draw is sealed before you play</strong>, and your own
+            browser re-runs the count on every result. The numbers draws its seed from validator
             secrets locked on{' '}
             <a href="https://msgboard.xyz" target="_blank" rel="noreferrer">
               chain
             </a>
-            ; the dice, limbo, crash, plinko, wheel, monte, keno, mines, baccarat, dragon tiger, towers, chicken,
+            ; the coin flip needs no seed at all — a peer's sealed choice against your open call, escrowed on chain;
+            the dice, limbo, crash, plinko, wheel, monte, keno, mines, baccarat, dragon tiger, towers, chicken,
             firewalk, heist, hi-lo, greed dice and the rest lock their seed before the first hand and settle
             off chain, co-signed, with the trail posted to MsgBoard. A trust-me casino asks you to believe the odds;
             this room hands you the books.
@@ -245,9 +256,8 @@ export const App = () => {
         />
       )}
       {tab === 'coinflip' && (
-        <CoinFlipScreen
+        <FlipBookScreen
           deployment={deployment}
-          data={data}
           walletClient={wallet.walletClient}
           trustAcknowledged={trustAcknowledged}
           myAddress={wallet.address}
