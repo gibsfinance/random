@@ -281,6 +281,29 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      // EAS solve resolvers — deploy to 943/369 like the games, so pin Shanghai (no MCOPY/TSTORE).
+      'contracts/eas/SudokuSolveResolver.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
+      'contracts/eas/WordleSolveResolver.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
       'contracts/test/SessionStateHarness.sol': {
         version: '0.8.25',
         settings: {

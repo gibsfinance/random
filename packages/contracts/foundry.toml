@@ -50,7 +50,7 @@ no_match_contract = '^ZkTable$'
 # HoldemShareDispute.t.sol shells out (vm.ffi) to the real off-chain secp256k1 prover; it runs
 # under the dedicated `ffi` profile (FOUNDRY_PROFILE=ffi ... --ffi), excluded here so the default
 # `forge test` (no --ffi) stays green.
-skip = ['test/foundry/ShuffleVerifier52.t.sol', 'test/foundry/ShuffleVerifier52Positive.t.sol', 'test/foundry/RevealVerifierBabyJubJub.t.sol', 'test/foundry/DiceSettleVerifier.t.sol', 'test/foundry/SettleWithProof.t.sol', 'test/foundry/HoldemShareDispute.t.sol']
+skip = ['test/foundry/ShuffleVerifier52.t.sol', 'test/foundry/ShuffleVerifier52Positive.t.sol', 'test/foundry/RevealVerifierBabyJubJub.t.sol', 'test/foundry/DiceSettleVerifier.t.sol', 'test/foundry/SettleWithProof.t.sol', 'test/foundry/HoldemShareDispute.t.sol', 'test/foundry/SolveResolvers.t.sol']
 
 # M2 (zk mode-2) integration test (SettleWithProof) reads the proof fixture + the
 # etched verifier-runtime fixture. (The reveal-snark tamper test keeps ./test/fixtures.)
@@ -107,6 +107,7 @@ skip = [
   # secp256k1 EllipticCurve.sol (reached via RevealShareDLEQ) needs viaIR:true.
   'test/foundry/RevealShareDLEQ.t.sol',
   'test/foundry/HoldemShareDispute.t.sol',
+  'test/foundry/SolveResolvers.t.sol',
   'test/foundry/HoldemTableNShowdown.t.sol',
   'test/foundry/MockRandom.sol',
   # M2 verifier tests: the generated verifier needs solc >= 0.8.26 (zkverify profile) and
@@ -195,6 +196,7 @@ skip = [
   # secp256k1 EllipticCurve.sol (reached via RevealShareDLEQ) needs viaIR:true.
   'test/foundry/RevealShareDLEQ.t.sol',
   'test/foundry/HoldemShareDispute.t.sol',
+  'test/foundry/SolveResolvers.t.sol',
 ]
 
 [profile.zkverify.fuzz]
@@ -259,6 +261,7 @@ skip = [
   # secp256k1 EllipticCurve.sol (reached via RevealShareDLEQ) needs viaIR:true.
   'test/foundry/RevealShareDLEQ.t.sol',
   'test/foundry/HoldemShareDispute.t.sol',
+  'test/foundry/SolveResolvers.t.sol',
 ]
 
 [profile.zkm2.fuzz]
@@ -298,7 +301,76 @@ skip = [
   'test/foundry/RevealVerifierBabyJubJub.t.sol',
   'test/foundry/DiceSettleVerifier.t.sol',
   'test/foundry/SettleWithProof.t.sol',
+  'test/foundry/SolveResolvers.t.sol',
 ]
 
 [profile.ffi.fuzz]
+runs = 512
+
+# Dedicated profile for the EAS solve-resolver suite (SolveResolvers.t.sol): it deploys the REAL
+# EAS + SchemaRegistry from @ethereum-attestation-service/eas-contracts, which pin solc 0.8.27
+# exactly, so it cannot share the default 0.8.25 unit. evm_version stays shanghai (943/369 are
+# pre-cancun) — OZ is pinned to 5.0.2 in package.json precisely because newer OZ Strings pulls the
+# mcopy-using Bytes.sol, which cannot compile for shanghai. Run:
+#   FOUNDRY_PROFILE=eas forge test --match-path 'test/foundry/SolveResolvers.t.sol'
+[profile.eas]
+src = 'test/foundry'
+test = 'test/foundry'
+out = 'forge-out-eas'
+cache_path = 'forge-cache-eas'
+libs = ['../../lib', 'node_modules']
+solc = '0.8.27'
+via_ir = true
+optimizer = true
+optimizer_runs = 1000
+evm_version = 'shanghai'
+remappings = [
+  'forge-std/=../../lib/forge-std/src/',
+  'solady/=node_modules/solady/',
+  '@ethereum-attestation-service/=node_modules/@ethereum-attestation-service/',
+  '@openzeppelin/=node_modules/@openzeppelin/',
+]
+fs_permissions = [
+  { access = 'read', path = './test/fixtures' },
+  { access = 'read-write', path = './test/foundry/fixtures' },
+]
+no_match_contract = '^ZkTable$'
+# Compile ONLY the resolver suite + its imports in this 0.8.27 unit.
+skip = [
+  'test/foundry/CardCascadePayouts.t.sol',
+  'test/foundry/Chips.t.sol',
+  'test/foundry/CoinFlip.t.sol',
+  'test/foundry/DiceSettleVerifier.t.sol',
+  'test/foundry/GamePayouts.t.sol',
+  'test/foundry/HiLoWarRules.t.sol',
+  'test/foundry/HoldemShareDispute.t.sol',
+  'test/foundry/HoldemTableN.t.sol',
+  'test/foundry/HoldemTableNInvariant.t.sol',
+  'test/foundry/HoldemTableNShowdown.t.sol',
+  'test/foundry/HouseBankroll.t.sol',
+  'test/foundry/HouseChannel.t.sol',
+  'test/foundry/LadderRules.t.sol',
+  'test/foundry/MinesRules.t.sol',
+  'test/foundry/MockRandom.sol',
+  'test/foundry/PlonkSoundness.t.sol',
+  'test/foundry/ProofSystemGas.t.sol',
+  'test/foundry/Raffle.t.sol',
+  'test/foundry/RaffleInvariant.t.sol',
+  'test/foundry/RevealShareDLEQ.t.sol',
+  'test/foundry/RevealVerifierBabyJubJub.t.sol',
+  'test/foundry/SessionStateDigest.t.sol',
+  'test/foundry/SettleWithProof.t.sol',
+  'test/foundry/SettleWithSeeds.t.sol',
+  'test/foundry/ShuffleVerifier52.t.sol',
+  'test/foundry/ShuffleVerifier52Positive.t.sol',
+  'test/foundry/SkillSettle.t.sol',
+  'test/foundry/SudokuLog.t.sol',
+  'test/foundry/SudokuRules.t.sol',
+  'test/foundry/TablePayouts.t.sol',
+  'test/foundry/WordleRules.t.sol',
+  'test/foundry/ZkTable.t.sol',
+  'test/foundry/ZkTableInvariant.t.sol',
+]
+
+[profile.eas.fuzz]
 runs = 512

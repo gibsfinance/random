@@ -11,7 +11,8 @@
     "@nomicfoundation/hardhat-toolbox-viem": "^3.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.13",
     "@nomicfoundation/hardhat-viem": "^2.0.6",
-    "@openzeppelin/contracts": "^5.2.0",
+    "@openzeppelin/contracts": "5.0.2",
+    "@provex/eas": "1.9.2",
     "@solidstate/hardhat-4byte-uploader": "^1.2.3",
     "@types/chai": "^4.2.22",
     "@types/mocha": "^10.0.10",
@@ -32,6 +33,7 @@
     "lib"
   ],
   "dependencies": {
+    "@ethereum-attestation-service/eas-contracts": "1.8.0",
     "@scure/bip32": "^1.6.2",
     "@scure/bip39": "^1.5.4",
     "@types/chai-as-promised": "^8.0.2",

@@ -55,6 +55,16 @@ export type GameDeployment = {
   flipBook?: viem.Hex
   /** Scan FlipBook offer events from here (its deploy block) to keep scans cheap. */
   flipBookDeployBlock?: string
+  /** The Provex-controlled EAS instance (EAS has no canonical PulseChain deployment; @provex/eas). */
+  eas?: viem.Hex
+  /** Proof-gated EAS resolver for sudoku_solve attestations (contracts/eas/SudokuSolveResolver.sol). */
+  sudokuSolveResolver?: viem.Hex
+  /** The registered sudoku-solve schema UID on THIS chain's SchemaRegistry (revocable=false). */
+  sudokuSchemaUid?: viem.Hex
+  /** Proof-gated EAS resolver for wordle_solve attestations (contracts/eas/WordleSolveResolver.sol). */
+  wordleSolveResolver?: viem.Hex
+  /** The registered wordle-solve schema UID on THIS chain's SchemaRegistry (revocable=false). */
+  wordleSchemaUid?: viem.Hex
 }
 
 /**
@@ -116,6 +126,12 @@ export const deployments: GameDeployment[] = [
     // P2P guessing-game coinflip offer book (deployed + all 4 paths exercised on-chain 2026-07-20).
     flipBook: '0xb009bd8b849dd33d9c5081ec6e53f29a947f6832',
     flipBookDeployBlock: '24921235',
+    // EAS leaderboard layer (deployed + schemas registered 2026-07-20; SolveResolvers.t.sol).
+    eas: '0x9e84Aa4BD0C1931A34B14C1EC918A53C33e2B0F8',
+    sudokuSolveResolver: '0x0e58f22a9fd1c7260d0add6eea809f49bf6fc75c',
+    sudokuSchemaUid: '0x0de9a3bb2e72a1116f44d1a4a5e612d315143af9916e27572d073663e9877fc5',
+    wordleSolveResolver: '0x603e32ddaf5f4b6ada77e04bb7c44c4603f59eee',
+    wordleSchemaUid: '0x68880687b7c28fa1618ad4f612173b23aef8443fc5df354d2e6693f6df243f37',
   },
   // Deployed by the 2026-06-11 mainnet bring-up (gate run + ink-pools; e2e/scripts/369-deployment.json).
   // deployBlock = the web pools' ink block so the site and the cast watcher count heats
@@ -161,5 +177,11 @@ export const deployments: GameDeployment[] = [
     // P2P guessing-game coinflip offer book (deployed + exercised on-chain 2026-07-20; Sourcify exact_match).
     flipBook: '0x603e32ddaf5f4b6ada77e04bb7c44c4603f59eee',
     flipBookDeployBlock: '27080922',
+    // EAS leaderboard layer (deployed + schemas registered 2026-07-20; SolveResolvers.t.sol).
+    eas: '0x9e84Aa4BD0C1931A34B14C1EC918A53C33e2B0F8',
+    sudokuSolveResolver: '0x9e232e84e80fcac3c78de0820dabccf660511275',
+    sudokuSchemaUid: '0x3a8ce1bd299f82fb7f25a88386fbf6320fa066db643f5bb995c67ec46b6a129e',
+    wordleSolveResolver: '0x921bfc21e69c65ed295dbdb7ed69c8c5161b1b1f',
+    wordleSchemaUid: '0xd827ebf0849a1328cb1527195b426db2a8c65a2e18102fd79cdb39fff358fde8',
   },
 ]
