@@ -27,7 +27,11 @@ export const SUDOKU_SOLVE_CIRCUIT: CircuitManifestEntry = {
   release: 'proving-keys-v2',
 }
 
-const ASSET_BASE_URL = 'https://github.com/gibsfinance/random/releases/download/proving-keys-v2'
+// The box mirror of release `proving-keys-v2` (sha256-verified against the manifest at upload).
+// GitHub release downloads send NO CORS headers on any hop of their redirect chain, so a browser
+// fetch() of the artifacts fails outright — same-origin serving (plus ACAO * for localhost dev)
+// is the fix, and the sha256 check below keeps the mirror honest.
+const ASSET_BASE_URL = 'https://games.msgboard.xyz/proving-keys'
 
 /** The bundled Vite worker entry for the PLONK prover (src/workers/sudokuProver.worker.ts). */
 const newProverWorker = () =>

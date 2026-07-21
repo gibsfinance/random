@@ -31,7 +31,9 @@ export const WORDLE_SOLVE_CIRCUIT: CircuitManifestEntry = {
   release: 'proving-keys-v2',
 }
 
-const ASSET_BASE_URL = 'https://github.com/gibsfinance/random/releases/download/proving-keys-v2'
+// The box mirror of release `proving-keys-v2` — GitHub release downloads send no CORS headers, so
+// browsers can't fetch them; see sudokuProving.ts for the full note.
+const ASSET_BASE_URL = 'https://games.msgboard.xyz/proving-keys'
 
 const newProverWorker = () =>
   new Worker(new URL('../workers/wordleProver.worker.ts', import.meta.url), { type: 'module' })

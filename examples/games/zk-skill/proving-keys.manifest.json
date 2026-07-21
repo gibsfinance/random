@@ -4,7 +4,9 @@
   "repo": "gibsfinance/random",
   "release": {
     "tag": "proving-keys-v2",
-    "assetBaseUrl": "https://github.com/gibsfinance/random/releases/download/proving-keys-v2"
+    "assetBaseUrl": "https://games.msgboard.xyz/proving-keys",
+    "originUrl": "https://github.com/gibsfinance/random/releases/download/proving-keys-v2",
+    "note": "assetBaseUrl is the CORS-enabled box mirror (GitHub release downloads send no CORS headers, so browsers cannot fetch them); originUrl is the release of record the mirror was verified against."
   },
   "circuits": [
     {
