@@ -76,11 +76,10 @@ export const deployments: GameDeployment[] = [
     coinFlip: '0x8d3a58d77d22636026066200f8868cd653ec2b2a',
     raffle: '0x33f506fafe4f05c8de9a07e1c8a7f73f50f1da36',
     random: '0x775AF72d62c85d2F7f0Bcc05BAa4Be0830087217',
-    // Read 943 through our own valve.city node (archive + CORS for this origin) instead of the flaky
-    // public RPCs the core registry defaults to (g4mm4 / rpc.v4.testnet were failing "Failed to
-    // fetch" in the browser → no rounds shown). vk_demo is the public demo key; a domain-scoped
-    // games.msgboard.xyz/rpc proxy (key server-side) is the planned follow-up.
-    rpc: 'https://one.valve.city/rpc/vk_demo/evm/943',
+    // Read 943 through the domain-scoped games.msgboard.xyz/rpc proxy: Caddy on the box rewrites to
+    // our valve.city node with the REAL key server-side, so the bundle no longer ships the shared
+    // vk_demo demo key (which was getting rate-limited into 429s).
+    rpc: 'https://games.msgboard.xyz/rpc/evm/943',
     canonicalSubset: [
       '0xAe96b0748f933914867d59486251043790cB2896',
       '0x2a638D7135966a5cA1973c930bD0317cd7d6874c',
@@ -95,7 +94,7 @@ export const deployments: GameDeployment[] = [
     poolSize: 64,
     explorer: 'https://scan.v4.testnet.pulsechain.com/#',
     archive: 'https://archive.msgboard.xyz',
-    boardRpc: 'https://one.valve.city/rpc/vk_demo/evm/943',
+    boardRpc: 'https://games.msgboard.xyz/rpc/evm/943',
     // Ponder indexer (deploy/games-indexer on the msgboard box) — CoinFlip+Raffle logs served as
     // GraphQL under the already-resolving games host, so the lobby/round views read from one indexed
     // query per poll instead of scanning the chain (was hammering the RPC into 429s). Full GraphQL URL.
@@ -127,8 +126,8 @@ export const deployments: GameDeployment[] = [
     coinFlip: '0x66bdacfdd918f9d4c29f0a7d26609912ab478f4d',
     raffle: '0x004564d44E6921FFA68936F44ae58988Cd146b10',
     random: '0x87fc31413534733a09df5dc5aa33b4dba1f64b61',
-    // Read mainnet through our own valve.city node (same reasoning as 943 above).
-    rpc: 'https://one.valve.city/rpc/vk_demo/evm/369',
+    // Read mainnet through the domain-scoped keyed proxy (same reasoning as 943 above).
+    rpc: 'https://games.msgboard.xyz/rpc/evm/369',
     canonicalSubset: [
       '0xAe96b0748f933914867d59486251043790cB2896',
       '0x2a638D7135966a5cA1973c930bD0317cd7d6874c',
@@ -143,7 +142,10 @@ export const deployments: GameDeployment[] = [
     poolSize: 64,
     explorer: 'https://scan.pulsechain.com/#',
     archive: 'https://archive.msgboard.xyz',
-    boardRpc: 'https://one.valve.city/rpc/vk_demo/evm/369',
+    boardRpc: 'https://games.msgboard.xyz/rpc/evm/369',
+    // Same Ponder instance as 943 (it indexes both chains + the flipbook now); the frontend filters
+    // by chainId + game. Kills the ~68-call getLogs first-load burst mainnet used to fire.
+    gamesIndexer: 'https://games.msgboard.xyz/games-indexer/graphql',
     // ZK skill games — both live on mainnet, both non-wagered. Sudoku timed leaderboard (SudokuLog) +
     // Wordle "play with friends" (WordleLog: open a hidden-word challenge, friends submit ZK solve
     // proofs, ranked by guesses-used). No Chips/house/escrow.

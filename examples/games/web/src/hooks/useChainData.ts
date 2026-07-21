@@ -95,13 +95,15 @@ const rehydrate = (args: Record<string, unknown>): Record<string, unknown> => {
   return out
 }
 
-const fetchViaIndexer = async (url: string, from: bigint, to: bigint): Promise<RawEvent[]> => {
+const fetchViaIndexer = async (url: string, chainId: number, from: bigint, to: bigint): Promise<RawEvent[]> => {
   const out: RawEvent[] = []
   let after: string | null = null
-  // Ponder cursor pagination; only the new [from, to] window each poll.
+  // Ponder cursor pagination; only the new [from, to] window each poll. The indexer serves BOTH
+  // chains and the flipbook from one gameEvent table, so filter by chainId + game here — Raffle and
+  // FlipBook even share an event name ('Revealed'); name alone is not an identity.
   do {
-    const query = `query($from: BigInt!, $to: BigInt!, $after: String) {
-      gameEvents(where: { blockNumber_gte: $from, blockNumber_lte: $to }, orderBy: "blockNumber", orderDirection: "asc", limit: 1000, after: $after) {
+    const query = `query($chainId: Int!, $from: BigInt!, $to: BigInt!, $after: String) {
+      gameEvents(where: { chainId: $chainId, game_in: ["coinflip", "raffle"], blockNumber_gte: $from, blockNumber_lte: $to }, orderBy: "blockNumber", orderDirection: "asc", limit: 1000, after: $after) {
         items { name args blockNumber blockTimestamp txHash }
         pageInfo { hasNextPage endCursor }
       }
@@ -109,7 +111,7 @@ const fetchViaIndexer = async (url: string, from: bigint, to: bigint): Promise<R
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ query, variables: { from: from.toString(), to: to.toString(), after } }),
+      body: JSON.stringify({ query, variables: { chainId, from: from.toString(), to: to.toString(), after } }),
     })
     if (!res.ok) throw new Error(`indexer HTTP ${res.status}`)
     const json = (await res.json()) as {
@@ -162,7 +164,7 @@ export const useChainData = (deployment: GameDeployment | null, myAddress?: viem
       const from = acc.current.lastBlock + 1n
       if (head >= from) {
         const fresh = deployment.gamesIndexer
-          ? await fetchViaIndexer(deployment.gamesIndexer, from, head)
+          ? await fetchViaIndexer(deployment.gamesIndexer, deployment.chainId, from, head)
           : await fetchViaLogs(client, deployment, from, head)
         acc.current.events.push(...fresh)
         acc.current.lastBlock = head

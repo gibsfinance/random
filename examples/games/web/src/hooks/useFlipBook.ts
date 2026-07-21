@@ -48,6 +48,48 @@ export type FlipBookData = {
 
 type RawEvent = { eventName: string; args: Record<string, unknown>; transactionHash: viem.Hex }
 
+// ── indexer source (Ponder GraphQL) ──────────────────────────────────────────────────────────────
+/** Decimal-string args are re-hydrated to bigint (hex/addresses stay strings; numbers/bools untouched). */
+const rehydrate = (args: Record<string, unknown>): Record<string, unknown> => {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(args)) out[k] = typeof v === 'string' && /^[0-9]+$/.test(v) ? BigInt(v) : v
+  return out
+}
+
+const fetchViaIndexer = async (url: string, chainId: number, from: bigint, to: bigint): Promise<RawEvent[]> => {
+  const rows: { name: string; args: Record<string, unknown>; txHash: viem.Hex; blockNumber: bigint; logIndex: number }[] = []
+  let after: string | null = null
+  // Ponder cursor pagination over the shared gameEvent table, filtered to THIS chain's flipbook rows.
+  do {
+    const query = `query($chainId: Int!, $from: BigInt!, $to: BigInt!, $after: String) {
+      gameEvents(where: { chainId: $chainId, game: "flipbook", blockNumber_gte: $from, blockNumber_lte: $to }, orderBy: "blockNumber", orderDirection: "asc", limit: 1000, after: $after) {
+        items { name args blockNumber logIndex txHash }
+        pageInfo { hasNextPage endCursor }
+      }
+    }`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query, variables: { chainId, from: from.toString(), to: to.toString(), after } }),
+    })
+    if (!res.ok) throw new Error(`indexer HTTP ${res.status}`)
+    const json = (await res.json()) as {
+      errors?: { message: string }[]
+      data?: { gameEvents: { items: { name: string; args: Record<string, unknown>; blockNumber: string; logIndex: number; txHash: viem.Hex }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } }
+    }
+    if (json.errors?.length) throw new Error(json.errors[0]!.message)
+    const page = json.data?.gameEvents
+    if (!page) break
+    for (const e of page.items) {
+      rows.push({ name: e.name, args: rehydrate(e.args ?? {}), txHash: e.txHash, blockNumber: BigInt(e.blockNumber), logIndex: e.logIndex })
+    }
+    after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null
+  } while (after)
+  // Fold order matters (post before take before settle): sort by (block, logIndex) before folding.
+  rows.sort((a, b) => (a.blockNumber === b.blockNumber ? a.logIndex - b.logIndex : a.blockNumber < b.blockNumber ? -1 : 1))
+  return rows.map((r) => ({ eventName: r.name, args: r.args, transactionHash: r.txHash }))
+}
+
 const foldOffers = (events: RawEvent[]): OfferView[] => {
   const byId = new Map<string, OfferView>()
   for (const e of events) {
@@ -110,6 +152,9 @@ export const useFlipBook = (deployment: GameDeployment | null, myAddress?: viem.
     loading: false,
   })
   const busy = useRef(false)
+  // Accumulated events + the highest block scanned (same incremental discipline as useChainData):
+  // the one-time history scan pays the chunked cost once, then each poll only reads [last+1, head].
+  const acc = useRef<{ chainId: number; contract: viem.Hex; events: RawEvent[]; lastBlock: bigint } | null>(null)
 
   const load = useCallback(async () => {
     if (!deployment?.flipBook || busy.current) return
@@ -120,26 +165,49 @@ export const useFlipBook = (deployment: GameDeployment | null, myAddress?: viem.
       const client = publicClientFor(deployment.chainId, deployment.rpc)
       const headBlock = await client.getBlock({ blockTag: 'latest' })
       const head = headBlock.number
-      const fromBlock = BigInt(deployment.flipBookDeployBlock ?? deployment.deployBlock)
-
-      const events: RawEvent[] = []
-      for (let lo = fromBlock; lo <= head; lo += MAX_RANGE) {
-        const hi = lo + MAX_RANGE - 1n < head ? lo + MAX_RANGE - 1n : head
-        const logs = await client.getContractEvents({
-          address: flipBook,
-          abi: flipBookAbi,
-          fromBlock: lo,
-          toBlock: hi,
-          strict: true,
-        })
-        for (const l of logs) {
-          events.push({
-            eventName: l.eventName,
-            args: l.args as Record<string, unknown>,
-            transactionHash: l.transactionHash,
-          })
+      if (!acc.current || acc.current.chainId !== deployment.chainId || acc.current.contract !== flipBook) {
+        acc.current = {
+          chainId: deployment.chainId,
+          contract: flipBook,
+          events: [],
+          lastBlock: BigInt(deployment.flipBookDeployBlock ?? deployment.deployBlock) - 1n,
         }
       }
+      const from = acc.current.lastBlock + 1n
+      if (head >= from) {
+        // Indexer first (one GraphQL query per poll); chunked getLogs only as the fallback.
+        let fresh: RawEvent[] | undefined
+        if (deployment.gamesIndexer) {
+          try {
+            fresh = await fetchViaIndexer(deployment.gamesIndexer, deployment.chainId, from, head)
+          } catch {
+            fresh = undefined // fall through to the chain scan below
+          }
+        }
+        if (!fresh) {
+          fresh = []
+          for (let lo = from; lo <= head; lo += MAX_RANGE) {
+            const hi = lo + MAX_RANGE - 1n < head ? lo + MAX_RANGE - 1n : head
+            const logs = await client.getContractEvents({
+              address: flipBook,
+              abi: flipBookAbi,
+              fromBlock: lo,
+              toBlock: hi,
+              strict: true,
+            })
+            for (const l of logs) {
+              fresh.push({
+                eventName: l.eventName,
+                args: l.args as Record<string, unknown>,
+                transactionHash: l.transactionHash,
+              })
+            }
+          }
+        }
+        acc.current.events.push(...fresh)
+        acc.current.lastBlock = head
+      }
+      const events = acc.current.events
 
       const owed = myAddress
         ? ((await client.readContract({

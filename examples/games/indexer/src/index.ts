@@ -8,14 +8,15 @@ import { gameEvent } from 'ponder:schema'
  * bigint); the frontend re-hydrates. The `id` is unique per log, so re-indexing is idempotent.
  */
 const store =
-  (game: 'coinflip' | 'raffle', name: string) =>
+  (game: 'coinflip' | 'raffle' | 'flipbook', name: string) =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async ({ event, context }: any) => {
     const args = JSON.parse(JSON.stringify(event.args ?? {}, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)))
     await context.db
       .insert(gameEvent)
       .values({
-        id: `${event.transaction.hash}-${event.log.logIndex}`,
+        id: `${context.network.chainId}-${event.transaction.hash}-${event.log.logIndex}`,
+        chainId: context.network.chainId,
         game,
         name,
         args,
@@ -50,3 +51,12 @@ on('Raffle:Revealed', store('raffle', 'Revealed'))
 on('Raffle:Finalised', store('raffle', 'Finalised'))
 on('Raffle:NoContest', store('raffle', 'NoContest'))
 on('Raffle:TicketRefunded', store('raffle', 'TicketRefunded'))
+
+// FlipBook (the P2P coin flip offer book): the full offer lifecycle. Note the name overlap with
+// Raffle ('Revealed') — the frontend filters by the `game` column, never by name alone.
+on('FlipBook:OfferPosted', store('flipbook', 'OfferPosted'))
+on('FlipBook:OfferCancelled', store('flipbook', 'OfferCancelled'))
+on('FlipBook:OfferTaken', store('flipbook', 'OfferTaken'))
+on('FlipBook:Revealed', store('flipbook', 'Revealed'))
+on('FlipBook:Forfeited', store('flipbook', 'Forfeited'))
+on('FlipBook:Withdrawn', store('flipbook', 'Withdrawn'))
