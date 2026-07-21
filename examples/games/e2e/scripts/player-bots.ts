@@ -42,7 +42,7 @@ import {
 import { makePresets as coinflipPresets } from '@gibs/coinflip'
 import { makePresets as rafflePresets } from '@gibs/raffle'
 import { seeds0Secret } from './seeds0'
-import { loadDeployment, makeActor, sendAs, heatsSince } from './actor-common'
+import { loadDeployment, makeActor, sendAs, heatsSince, flooredFees, chunkedEvents } from './actor-common'
 
 const env = process.env
 const CHAIN = (env.CHAIN ? Number(env.CHAIN) : 943) as GamesChainId
@@ -127,12 +127,10 @@ const main = async () => {
     for (const bot of [...bots, ops]) {
       const balance = await publicClient.getBalance({ address: bot.account.address })
       if (balance >= TOP_UP_BELOW) continue
-      const gasPrice = await publicClient.getGasPrice()
       const hash = await funder.wallet.sendTransaction({
         to: bot.account.address,
         value: TOP_UP_TO - balance,
-        maxFeePerGas: gasPrice * 2n,
-        maxPriorityFeePerGas: gasPrice / 10n || 1n,
+        ...(await flooredFees(publicClient)),
       })
       await publicClient.waitForTransactionReceipt({ hash })
       console.log(`topped up ${bot.account.address}`)
@@ -144,9 +142,9 @@ const main = async () => {
     if (vaultPaused) return
     // open entries = Entered minus anything no longer active (paired or cancelled), straight
     // from the contract's own entries(id).active flag — no event-derivation heuristics
-    const entered = await publicClient.getContractEvents({
+    const entered = await chunkedEvents(publicClient, {
       address: config.coinFlip,
-      abi: coinFlipAbi,
+      abi: coinFlipAbi as viem.Abi,
       eventName: 'Entered',
       fromBlock: from,
     })
@@ -208,9 +206,9 @@ const main = async () => {
   const tickRaffle = async () => {
     const subsetHash = viem.keccak256(viem.encodeAbiParameters([{ type: 'address[]' }], [subset]))
     const currentBlock = await publicClient.getBlockNumber()
-    const committedLogs = await publicClient.getContractEvents({
+    const committedLogs = await chunkedEvents(publicClient, {
       address: config.raffle,
-      abi: raffleAbi,
+      abi: raffleAbi as viem.Abi,
       eventName: 'Committed',
       fromBlock: from,
     })
@@ -228,9 +226,9 @@ const main = async () => {
 
     // 1. fill / arm ANY filling round on our subset — manual stake/threshold tuples included,
     // capped at MAX_STAKE per ticket so a whale round can't drain the bots
-    const openedLogs = await publicClient.getContractEvents({
+    const openedLogs = await chunkedEvents(publicClient, {
       address: config.raffle,
-      abi: raffleAbi,
+      abi: raffleAbi as viem.Abi,
       eventName: 'RoundOpened',
       fromBlock: from,
     })
@@ -361,8 +359,8 @@ const main = async () => {
     }
     vaultPaused = nowPaused
     await topUp()
-    await tickCoinFlip().catch((e) => console.error(`flip tick: ${(e as Error).message?.split('\n')[0]}`))
-    await tickRaffle().catch((e) => console.error(`raffle tick: ${(e as Error).message?.split('\n')[0]}`))
+    await tickCoinFlip().catch((e) => console.error(`flip tick: ${(e as Error).message?.split('\n').slice(0, 3).join(' ¦ ')}`))
+    await tickRaffle().catch((e) => console.error(`raffle tick: ${(e as Error).message?.split('\n').slice(0, 3).join(' ¦ ')}`))
   }
 
   if (env.ONCE === 'true') {
@@ -370,7 +368,7 @@ const main = async () => {
     return
   }
   for (;;) {
-    await tick().catch((e) => console.error(`tick failed: ${(e as Error).message?.split('\n')[0]}`))
+    await tick().catch((e) => console.error(`tick failed: ${(e as Error).message?.split('\n').slice(0, 3).join(' ¦ ')}`))
     const jitter = 0.5 + Math.random() // 0.5x..1.5x the interval
     await new Promise((resolve) => setTimeout(resolve, Math.round(INTERVAL_MS * jitter)))
   }

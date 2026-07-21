@@ -46,8 +46,8 @@ const main = async () => {
   const random = (env.RANDOM_ADDRESS as viem.Hex | undefined) ?? knownRandom[CHAIN]
   if (!random) throw new Error('no Random address; set RANDOM_ADDRESS')
 
-  const gasPrice = await publicClient.getGasPrice()
-  const fees = { maxFeePerGas: gasPrice * 2n + gasPrice / 10n, maxPriorityFeePerGas: gasPrice / 10n || 1n }
+  const { flooredFees } = await import('./actor-common')
+  const fees = await flooredFees(publicClient)
 
   console.log(`inking ${VALIDATOR_COUNT} pools of ${POOL_SIZE} on chain ${CHAIN} (payer ${account.address})`)
   const poolOffsets: Record<string, string> = {}

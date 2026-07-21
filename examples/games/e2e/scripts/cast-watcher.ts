@@ -27,7 +27,7 @@ import * as viem from 'viem'
 import { MsgBoardClient } from '@msgboard/sdk'
 import { randomAbi, poolLocationFor, type GamesChainId, type Info } from '@gibs/games-core'
 import { seeds0Secret, SECRET_STRIDE } from './seeds0'
-import { loadDeployment, makeActor, sendAs, heatsSince } from './actor-common'
+import { loadDeployment, makeActor, sendAs, heatsSince, flooredFees } from './actor-common'
 
 const env = process.env
 const CHAIN = (env.CHAIN ? Number(env.CHAIN) : 943) as GamesChainId
@@ -60,12 +60,10 @@ const main = async () => {
     if (balance >= OPS_TOP_UP_BELOW) return
     const vault = await publicClient.getBalance({ address: treasury.account.address })
     if (vault < VAULT_FLOOR) return // dry vault: don't scrape the bottom
-    const gasPrice = await publicClient.getGasPrice()
     const hash = await treasury.wallet.sendTransaction({
       to: account.address,
       value: OPS_TOP_UP_TO - balance,
-      maxFeePerGas: gasPrice * 2n,
-      maxPriorityFeePerGas: gasPrice / 10n || 1n,
+      ...(await flooredFees(publicClient)),
     })
     await publicClient.waitForTransactionReceipt({ hash })
     console.log(`ops wallet topped up to ${viem.formatEther(OPS_TOP_UP_TO)}`)
@@ -83,7 +81,7 @@ const main = async () => {
       await board.addMessage(work.message)
       console.log(`msgboard notice: ${data}`)
     } catch (error) {
-      console.error(`msgboard notice failed (non-fatal): ${(error as Error).message?.split('\n')[0]}`)
+      console.error(`msgboard notice failed (non-fatal): ${(error as Error).message?.split('\n').slice(0, 3).join(' ¦ ')}`)
     }
   }
 
@@ -102,46 +100,55 @@ const main = async () => {
       }
     })
 
-  /** Ink pool n+1 for every validator when the live pool is nearly spent. */
+  /**
+   * Ensure the pool the CURRENT heat slot lives in exists, and pre-ink pool n+1 when the live
+   * pool is nearly spent. The current-pool check is the recovery path: if this watcher was down
+   * across a pool boundary (exactly what happens when its sends stop mining), heatCount sits at
+   * the start of a pool nobody ever inked — and the old "only ink n+1 when nearly spent" logic
+   * would never repair it (remaining == poolSize > INK_AHEAD), wedging the games permanently.
+   */
   const maintainPools = async (heatCount: bigint) => {
     const remaining = poolSize - (heatCount % poolSize)
-    if (remaining > INK_AHEAD) return
-    const vault = await publicClient.getBalance({ address: treasury.account.address })
-    if (vault < VAULT_FLOOR) {
-      console.log(`vault below floor (${viem.formatEther(vault)} < ${viem.formatEther(VAULT_FLOOR)}) — pool inking paused until refilled`)
-      return
-    }
-    for (const [i, provider] of config.canonicalSubset.entries()) {
-      const base = BigInt(config.poolOffsets[provider.toLowerCase()] ?? '0')
-      const nextPool = poolLocationFor(((heatCount / poolSize) + 1n) * poolSize, base, poolSize)
-      const probe: Info = {
-        provider,
-        callAtChange: false,
-        durationIsTimestamp: false,
-        duration: 12n,
-        token: viem.zeroAddress,
-        price: 0n,
-        offset: nextPool.offset,
-        index: 0n,
+    const poolStarts = [(heatCount / poolSize) * poolSize] // the CURRENT pool must always exist
+    if (remaining <= INK_AHEAD) poolStarts.push(((heatCount / poolSize) + 1n) * poolSize)
+    for (const poolStart of poolStarts) {
+      for (const [i, provider] of config.canonicalSubset.entries()) {
+        const base = BigInt(config.poolOffsets[provider.toLowerCase()] ?? '0')
+        const pool = poolLocationFor(poolStart, base, poolSize)
+        const probe: Info = {
+          provider,
+          callAtChange: false,
+          durationIsTimestamp: false,
+          duration: 12n,
+          token: viem.zeroAddress,
+          price: 0n,
+          offset: pool.offset,
+          index: 0n,
+        }
+        const pointer = (await publicClient.readContract({
+          address: config.random,
+          abi: randomAbi,
+          functionName: 'pointer',
+          args: [probe],
+        })) as viem.Hex
+        if (pointer !== viem.zeroAddress) continue // this pool already inked
+        const vault = await publicClient.getBalance({ address: treasury.account.address })
+        if (vault < VAULT_FLOOR) {
+          console.log(`vault below floor (${viem.formatEther(vault)} < ${viem.formatEther(VAULT_FLOOR)}) — pool inking paused until refilled`)
+          return
+        }
+        const firstSecretIndex = Number(poolStart)
+        const preimages = Array.from({ length: config.poolSize }, (_p, j) =>
+          viem.keccak256(seeds0Secret(env.SEEDS0!, i * SECRET_STRIDE + firstSecretIndex + j)),
+        )
+        await sendAs(publicClient, wallet, {
+          address: config.random,
+          abi: randomAbi,
+          functionName: 'ink',
+          args: [{ ...probe, offset: 0n }, viem.concatHex(preimages)],
+        })
+        console.log(`inked pool at slot ${poolStart} for validator ${i} (${provider}) at offset ${pool.offset}`)
       }
-      const pointer = (await publicClient.readContract({
-        address: config.random,
-        abi: randomAbi,
-        functionName: 'pointer',
-        args: [probe],
-      })) as viem.Hex
-      if (pointer !== viem.zeroAddress) continue // next pool already inked
-      const firstSecretIndex = Number(((heatCount / poolSize) + 1n) * poolSize)
-      const preimages = Array.from({ length: config.poolSize }, (_p, j) =>
-        viem.keccak256(seeds0Secret(env.SEEDS0!, i * SECRET_STRIDE + firstSecretIndex + j)),
-      )
-      await sendAs(publicClient, wallet, {
-        address: config.random,
-        abi: randomAbi,
-        functionName: 'ink',
-        args: [{ ...probe, offset: 0n }, viem.concatHex(preimages)],
-      })
-      console.log(`inked next pool for validator ${i} (${provider}) at offset ${nextPool.offset}`)
     }
   }
 
@@ -172,7 +179,7 @@ const main = async () => {
         await postNotice(`cast ${heat.key.slice(0, 10)} blk ${receipt.blockNumber} chain ${CHAIN}`)
       } catch (error) {
         // expired window, raced by another caster, etc. — log and keep watching
-        console.error(`cast ${heat.key} failed: ${(error as Error).message?.split('\n')[0]}`)
+        console.error(`cast ${heat.key} failed: ${(error as Error).message?.split('\n').slice(0, 3).join(' ¦ ')}`)
       }
     }
   }
@@ -185,7 +192,7 @@ const main = async () => {
     try {
       await pass()
     } catch (error) {
-      console.error(`pass failed: ${(error as Error).message?.split('\n')[0]}`)
+      console.error(`pass failed: ${(error as Error).message?.split('\n').slice(0, 3).join(' ¦ ')}`)
     }
     await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS))
   }
