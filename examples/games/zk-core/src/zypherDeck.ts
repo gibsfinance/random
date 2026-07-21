@@ -60,8 +60,19 @@ let _engine: ZypherEngine | undefined
 let _proverKeyReady = false
 function engine(): ZypherEngine {
   if (!_engine) {
-    const require = createRequire(import.meta.url)
-    _engine = require('@zypher-game/secret-engine') as ZypherEngine
+    // Dual-mode resolver: under ts-node's CJS compile (the contracts test runner forces this whole
+    // package to "cjs" via tsconfig moduleTypes — a literal `import.meta` would be a SyntaxError
+    // there), the ambient `require` exists and is used directly. Under real ESM execution it does
+    // not, and the DIRECT eval — evaluated only then, so CJS never parses the token — reads
+    // import.meta.url from module scope for createRequire. The eval argument is this fixed literal,
+    // never data: it exists purely to keep the ESM-only token out of the CJS parse, not to execute
+    // anything dynamic. Browser builds never get here at all (node:module is stubbed; see header).
+    const req =
+      typeof require !== 'undefined'
+        ? require
+        : // eslint-disable-next-line no-eval
+          createRequire(eval('import.meta.url') as string)
+    _engine = req('@zypher-game/secret-engine') as ZypherEngine
   }
   return _engine
 }
