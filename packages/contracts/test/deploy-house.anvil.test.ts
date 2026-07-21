@@ -9,7 +9,7 @@
  * it validates that the legacy-fee deploy/configure flow produces mineable transactions and the
  * correct end state — the logic the gas.test.ts unit tests pin to the PulseChain numbers.
  */
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { expect } from 'chai'
@@ -56,7 +56,12 @@ describe('deploy + configure HouseChannel on anvil (legacy-gas path)', function 
   const publicClient = viem.createPublicClient({ chain: anvilChain, transport: viem.http(RPC) })
   const walletClient = viem.createWalletClient({ account: owner, chain: anvilChain, transport: viem.http(RPC) })
 
-  before(async () => {
+  before(async function () {
+    // CI runners (and machines without foundry) have no anvil binary — spawning it there throws
+    // an uncatchable async ENOENT that fails the whole suite. This is an integration test of the
+    // deploy script against a REAL node; skip it cleanly where that node cannot exist.
+    const probe = spawnSync('anvil', ['--version'], { stdio: 'ignore' })
+    if (probe.error) this.skip()
     anvil = spawn('anvil', ['--port', String(PORT), '--mnemonic', ANVIL_MNEMONIC, '--silent'], { stdio: 'ignore' })
     await waitForRpc(30_000)
   })

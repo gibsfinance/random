@@ -216,16 +216,19 @@ async function runWalk(
 }
 
 describe('HiLoWar TS<->Solidity parity', () => {
-  it('500 seeded random walks agree on every transition', async function () {
+  // Instrumented (solidity-coverage) runs are several-fold slower and measure line coverage,
+  // not statistical depth — shrink the sweep there; the full 500 walks run uninstrumented.
+  const WALKS = process.env.SOLIDITY_COVERAGE === 'true' ? 60 : 500
+  it(`${WALKS} seeded random walks agree on every transition`, async function () {
     this.timeout(240_000)
     const rules = (await hre.viem.deployContract('HiLoWarRules' as any, [REVEAL, SHUFFLE])) as unknown as RulesReader
     const stats: WalkStats = { accepted: {}, showdowns: 0, folds: 0, reachedTerminal: 0, failure: null }
     // Walks are independent; run them in concurrent batches so the in-process hardhat
-    // node stays busy and the 500-walk sweep fits comfortably under the timeout.
+    // node stays busy and the walk sweep fits comfortably under the timeout.
     const BATCH = 50
-    for (let base = 1; base <= 500 && !stats.failure; base += BATCH) {
+    for (let base = 1; base <= WALKS && !stats.failure; base += BATCH) {
       const batch: Promise<void>[] = []
-      for (let seed = base; seed < base + BATCH && seed <= 500; seed++) {
+      for (let seed = base; seed < base + BATCH && seed <= WALKS; seed++) {
         batch.push(runWalk(rules, seed, stats))
       }
       await Promise.all(batch)

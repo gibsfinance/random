@@ -86,7 +86,9 @@ describe('HoldemHandEval TS<->Solidity parity', () => {
     // 1) Absolute-score parity over N random 7-card hands. N is sized so the whole suite stays
     //    well under the mocha timeout (each hand is one in-process eth_call; see report for the
     //    count rationale — same "fewer runs, coverage still asserted" posture as Task 5).
-    const N = 1200
+    //    Instrumented runs are several-fold slower and measure LINE coverage, not statistical
+    //    depth — a small sample walks the same code paths, so shrink the sweep there.
+    const N = process.env.SOLIDITY_COVERAGE === 'true' ? 150 : 1200
     const rnd = mulberry32(0x5eed)
     const BATCH = 100 // batch the reads so the in-process node stays busy
     for (let base = 0; base < N && !scoreMismatch; base += BATCH) {
@@ -112,7 +114,7 @@ describe('HoldemHandEval TS<->Solidity parity', () => {
     //    Pairs are drawn from the full pool (anchors + random) so cross-category orderings —
     //    incl. the rare straight flush vs everything below it — are exercised.
     let orderMismatch: string | null = null
-    const PAIRS = 3000
+    const PAIRS = process.env.SOLIDITY_COVERAGE === 'true' ? 300 : 3000
     const prnd = mulberry32(0xc0ffee)
     for (let i = 0; i < PAIRS && !orderMismatch; i++) {
       const ia = Math.floor(prnd() * sets.length)

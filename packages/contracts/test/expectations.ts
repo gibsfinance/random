@@ -45,10 +45,14 @@ export const revertedWithCustomError = async (
         : undefined
     if (!hexData) {
       // Under solidity-coverage the provider surfaces nested custom errors only as prose —
-      // "reverted with an unrecognized custom error (return data: 0x…)" in details/message —
-      // with no structured data field anywhere in the cause chain. Fish the selector out of
-      // the text so the exact-error assertion keeps working instrumented.
-      const text = `${rpcError.details ?? ''} ${(rpcError as Error).message ?? ''}`
+      // "reverted with an unrecognized custom error (return data: 0x…)" — with no structured
+      // data field. WHERE that prose lives varies by Node version (top-level details on 24,
+      // a nested cause's on 23), so walk the whole cause chain collecting every text field
+      // and fish the selector out, keeping the exact-error assertion working instrumented.
+      let text = ''
+      for (let cur: any = rpcError; cur; cur = cur.cause) {
+        text += ` ${cur.details ?? ''} ${cur.shortMessage ?? ''} ${cur.message ?? ''}`
+      }
       hexData = text.match(/return data: (0x[0-9a-fA-F]+)/)?.[1]
     }
     if (!hexData) throw new Error('no revert data found')

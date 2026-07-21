@@ -244,9 +244,10 @@ describe('Holdem TS<->Solidity parity', () => {
   // every walk step is an expensive eth_call against the in-process EDR node. 180 independent
   // seeded walks (across N∈{2,3,6}) already drive every interior phase, multiple all-ins, folds
   // and multi-way side pots — the coverage assertions below FAIL the test if depth is ever lost,
-  // so the count is sized for signal, not ceremony.
-  const WALKS = 180
-  it(`${180} seeded random walks agree on every betting transition (N in {2,3,6})`, async function () {
+  // so the count is sized for signal, not ceremony. Instrumented (solidity-coverage) runs are
+  // several-fold slower and measure line coverage, not statistical depth — shrink the sweep there.
+  const WALKS = process.env.SOLIDITY_COVERAGE === 'true' ? 24 : 180
+  it(`${WALKS} seeded random walks agree on every betting transition (N in {2,3,6})`, async function () {
     this.timeout(420_000)
     const rules = (await hre.viem.deployContract('HoldemRules' as any, [])) as unknown as RulesReader
     const stats: WalkStats = {
