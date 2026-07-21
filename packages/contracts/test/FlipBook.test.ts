@@ -321,8 +321,10 @@ describe('FlipBook', () => {
       // settlement must SUCCEED even though paying the winner reverts
       await confirm(ctx, ctx.flipBook.write.reveal([1n, true, SALT]))
       expect(await ctx.flipBook.read.owed([ctx.rejector.address])).to.equal(STAKE * 2n)
-      // withdraw still fails while the receive path is broken, and the credit survives
-      await expectations.revertedWithCustomError(ctx.rejector, ctx.rejector.write.withdraw(), 'NothingOwed')
+      // withdraw still fails while the receive path is broken, and the credit survives.
+      // Decode against the FLIPBOOK abi — NothingOwed is its error (the rejector's abi declares
+      // none), and the revert bubbles through the rejector's passthrough.
+      await expectations.revertedWithCustomError(ctx.flipBook, ctx.rejector.write.withdraw(), 'NothingOwed')
       expect(await ctx.flipBook.read.owed([ctx.rejector.address])).to.equal(STAKE * 2n)
       // flip the receiver on and collect
       await confirm(ctx, ctx.rejector.write.setAccept([true]))

@@ -32,43 +32,49 @@ export const revertedWithCustomError = async (
       // be sure to implement args check!
     }
   }
+  // Collect every candidate revert payload and try to decode each — the error shapes differ by
+  // Node version and instrumentation:
+  //  - a cause's structured `.data` is USUALLY the revert data, but on some providers the first
+  //    `.data` in the chain is the REQUEST calldata (a function selector), so it can't be trusted
+  //    alone — a failed decode must fall through to the next candidate, not fail the assertion;
+  //  - under solidity-coverage the revert often exists ONLY as prose ("… unrecognized custom
+  //    error (return data: 0x…)") somewhere in the cause chain's details/message text.
+  const candidates: string[] = []
   try {
-    const er = rpcError.walk((err: unknown) => {
-      return !!(err as any).data
-    })
+    const er = rpcError.walk((err: unknown) => !!(err as any).data)
     const rawData = (er as any)?.data
-    let hexData: string | undefined =
-      typeof rawData === 'string' && rawData.startsWith('0x')
-        ? rawData
-        : typeof rawData === 'object' && rawData !== null && typeof rawData.data === 'string'
-        ? rawData.data
-        : undefined
-    if (!hexData) {
-      // Under solidity-coverage the provider surfaces nested custom errors only as prose —
-      // "reverted with an unrecognized custom error (return data: 0x…)" — with no structured
-      // data field. WHERE that prose lives varies by Node version (top-level details on 24,
-      // a nested cause's on 23), so walk the whole cause chain collecting every text field
-      // and fish the selector out, keeping the exact-error assertion working instrumented.
-      let text = ''
-      for (let cur: any = rpcError; cur; cur = cur.cause) {
-        text += ` ${cur.details ?? ''} ${cur.shortMessage ?? ''} ${cur.message ?? ''}`
-      }
-      hexData = text.match(/return data: (0x[0-9a-fA-F]+)/)?.[1]
+    if (typeof rawData === 'string' && rawData.startsWith('0x')) candidates.push(rawData)
+    else if (typeof rawData === 'object' && rawData !== null && typeof rawData.data === 'string') {
+      candidates.push(rawData.data)
     }
-    if (!hexData) throw new Error('no revert data found')
-    const parsed = viem.decodeErrorResult({
-      abi: contract.abi,
-      data: hexData as `0x${string}`,
-    })
-    if (parsed.errorName === errorName) {
-      if (!parsed.args || _.isEqual(parsed.args, args)) {
-        return
-      }
-    }
-    console.log(parsed)
-  } catch (err) {
-    console.log('failed to parse', e)
+  } catch {
+    // not a viem error chain — the prose scan below still gets its shot
   }
+  {
+    let text = ''
+    for (let cur: any = rpcError; cur; cur = cur.cause) {
+      text += ` ${cur.details ?? ''} ${cur.shortMessage ?? ''} ${cur.message ?? ''}`
+    }
+    const prose = text.match(/return data: (0x[0-9a-fA-F]+)/)?.[1]
+    if (prose && !candidates.includes(prose)) candidates.push(prose)
+  }
+  for (const hexData of candidates) {
+    try {
+      const parsed = viem.decodeErrorResult({
+        abi: contract.abi,
+        data: hexData as `0x${string}`,
+      })
+      if (parsed.errorName === errorName) {
+        if (!parsed.args || _.isEqual(parsed.args, args)) {
+          return
+        }
+      }
+      console.log(parsed)
+    } catch {
+      // this candidate wasn't decodable revert data (or the abi doesn't know it) — try the next
+    }
+  }
+  console.log('failed to check custom error, original error:', e)
   throw new Error('unable to check error')
 }
 
