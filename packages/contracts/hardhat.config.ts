@@ -578,7 +578,9 @@ const config: HardhatUserConfig = {
     },
   },
   mocha: {
-    timeout: 180_000,
+    // Coverage instrumentation makes the heavy parity/fuzz suites several-fold slower (the whole
+    // instrumented run is ~1h in CI) — give them room there instead of failing on the clock.
+    timeout: process.env.SOLIDITY_COVERAGE === 'true' ? 1_200_000 : 180_000,
   },
   fourByteUploader: {
     runOnCompile: process.env.BYTE4 === 'true',

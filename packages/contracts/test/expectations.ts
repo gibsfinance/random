@@ -36,13 +36,21 @@ export const revertedWithCustomError = async (
     const er = rpcError.walk((err: unknown) => {
       return !!(err as any).data
     })
-    const rawData = (er as any).data
-    const hexData: string | undefined =
+    const rawData = (er as any)?.data
+    let hexData: string | undefined =
       typeof rawData === 'string' && rawData.startsWith('0x')
         ? rawData
         : typeof rawData === 'object' && rawData !== null && typeof rawData.data === 'string'
         ? rawData.data
         : undefined
+    if (!hexData) {
+      // Under solidity-coverage the provider surfaces nested custom errors only as prose —
+      // "reverted with an unrecognized custom error (return data: 0x…)" in details/message —
+      // with no structured data field anywhere in the cause chain. Fish the selector out of
+      // the text so the exact-error assertion keeps working instrumented.
+      const text = `${rpcError.details ?? ''} ${(rpcError as Error).message ?? ''}`
+      hexData = text.match(/return data: (0x[0-9a-fA-F]+)/)?.[1]
+    }
     if (!hexData) throw new Error('no revert data found')
     const parsed = viem.decodeErrorResult({
       abi: contract.abi,
