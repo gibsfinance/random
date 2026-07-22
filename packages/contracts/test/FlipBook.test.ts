@@ -280,6 +280,32 @@ describe('FlipBook', () => {
       await expectations.revertedWithCustomError(ctx.flipBook, ctx.flipBook.write.claim([1n]), 'UnknownOffer')
     })
 
+    it('charges the ABANDONING maker stake + bond — exactly one bond more than revealing the same loss', async () => {
+      const ctx = await helpers.loadFixture(deployFixture)
+      const [maker, taker, cranker] = ctx.signers
+
+      // Flip 1: the maker REVEALS a losing flip (taker guessed right). The cranker submits the
+      // reveal (permissionless), so the maker's balance delta is gas-clean: +bond back.
+      await postOffer(ctx, { choice: true })
+      await confirm(ctx, ctx.flipBook.write.take([1n, true], { value: STAKE, account: taker!.account }))
+      const m1 = await balance(ctx, maker!.account.address)
+      await confirm(ctx, ctx.flipBook.write.reveal([1n, true, SALT], { account: cranker!.account }))
+      const honestReturn = (await balance(ctx, maker!.account.address)) - m1
+      expect(honestReturn).to.equal(BOND) // escrowed stake+bond, bond came home → honest loss = stake
+
+      // Flip 2: identical position, but the maker ABANDONS. Nothing comes home → loss = stake + bond.
+      await postOffer(ctx, { choice: true })
+      await confirm(ctx, ctx.flipBook.write.take([2n, true], { value: STAKE, account: taker!.account }))
+      const m2 = await balance(ctx, maker!.account.address)
+      await helpers.time.increase(REVEAL_WINDOW + 1)
+      await confirm(ctx, ctx.flipBook.write.claim([2n], { account: cranker!.account }))
+      const abandonReturn = (await balance(ctx, maker!.account.address)) - m2
+      expect(abandonReturn).to.equal(0n)
+
+      // The theorem the bond exists for: quitting costs exactly one bond more than losing honestly.
+      expect(honestReturn - abandonReturn).to.equal(BOND)
+    })
+
     it('cannot claim while the reveal window is open, nor on an untaken offer', async () => {
       const ctx = await helpers.loadFixture(deployFixture)
       await postOffer(ctx, { choice: true })

@@ -265,6 +265,107 @@ contract FlipBookXTest is Test {
         book.take(o, makerSig, taker, gc, ts);
     }
 
+    // ── abandonment economics: whoever stops participating GETS CHARGED ─────────────────────────
+    //
+    // The two bonds price the two reveal duties. These variations assert the QUITTER'S side of
+    // the ledger (not just the winner's), at every abandonment point:
+    //   · a maker who goes silent after the take is charged stake + makerBond;
+    //   · a taker who goes silent after the choice reveal is charged stake + takerBond;
+    //   · the charge lands even when the quitter's HIDDEN position was winning — the contract
+    //     cannot see unopened commits, so absence is what's punished;
+    //   · revealing a LOSS always costs exactly `bond` less than abandoning the same flip, so
+    //     finishing is strictly dominant for both sides;
+    //   · claims have no deadline — abandonment cannot be waited out.
+
+    function test_abandon_maker_isChargedStakeAndBond() public {
+        uint256 m0 = token.balanceOf(maker);
+        bytes32 id = _take(true, false); // maker's hidden heads vs a WRONG guess — maker was WINNING
+        vm.warp(block.timestamp + W1 + 1);
+        vm.prank(crank);
+        book.claimMakerDefault(id);
+        // The maker held the winning side and still pays full freight for not finishing.
+        assertEq(token.balanceOf(maker), m0 - STAKE - MAKER_BOND, "maker charged stake + bond despite a winning hand");
+        assertEq(token.balanceOf(address(book)), 0, "no dust");
+    }
+
+    function test_abandon_taker_isChargedStakeAndBond_evenWithWinningGuess() public {
+        uint256 t0 = token.balanceOf(taker);
+        bytes32 id = _take(true, true); // taker's hidden guess MATCHES — they were winning
+        book.revealChoice(id, true, SALT);
+        vm.warp(block.timestamp + W2 + 1);
+        vm.prank(crank);
+        book.claimTakerDefault(id);
+        // A winning guess left unopened is worthless: the quitting taker pays stake + bond.
+        assertEq(token.balanceOf(taker), t0 - STAKE - TAKER_BOND, "taker charged stake + bond despite a winning guess");
+        assertEq(token.balanceOf(address(book)), 0, "no dust");
+    }
+
+    function test_abandon_costsExactlyOneBondMoreThanRevealingALoss_maker() public {
+        // Flip 1: the maker REVEALS a losing flip (guess matched) — honest loss.
+        uint256 m0 = token.balanceOf(maker);
+        bytes32 id1 = _take(true, true);
+        book.revealChoice(id1, true, SALT);
+        book.revealGuess(id1, true, SALT2);
+        uint256 honestLoss = m0 - token.balanceOf(maker);
+        assertEq(honestLoss, STAKE, "revealing a loss costs the stake only (bond returned)");
+
+        // Flip 2: identical position, but the maker ABANDONS instead.
+        uint256 m1 = token.balanceOf(maker);
+        vm.warp(block.timestamp + 10); // fresh offer under a new deadline
+        (FlipBookX.Offer memory o, bytes32 id2, bytes memory makerSig) = _signedOffer(true);
+        vm.prank(crank);
+        book.take(o, makerSig, taker, _guessCommit(true), _takerSig(o, id2));
+        vm.warp(block.timestamp + W1 + 1);
+        book.claimMakerDefault(id2);
+        uint256 abandonLoss = m1 - token.balanceOf(maker);
+
+        assertEq(abandonLoss, STAKE + MAKER_BOND, "abandoning charges stake + bond");
+        assertEq(abandonLoss - honestLoss, MAKER_BOND, "quitting costs exactly one bond more than losing honestly");
+    }
+
+    function test_abandon_costsExactlyOneBondMoreThanRevealingALoss_taker() public {
+        // Flip 1: the taker REVEALS a losing guess — honest loss = stake (bond back at reveal).
+        uint256 t0 = token.balanceOf(taker);
+        bytes32 id1 = _take(true, false);
+        book.revealChoice(id1, true, SALT);
+        book.revealGuess(id1, false, SALT2);
+        uint256 honestLoss = t0 - token.balanceOf(taker);
+        assertEq(honestLoss, STAKE, "revealing a losing guess costs the stake only");
+
+        // Flip 2: identical position, but the taker ABANDONS after the choice reveal.
+        uint256 t1 = token.balanceOf(taker);
+        vm.warp(block.timestamp + 10);
+        (FlipBookX.Offer memory o, bytes32 id2, bytes memory makerSig) = _signedOffer(true);
+        vm.prank(crank);
+        book.take(o, makerSig, taker, _guessCommit(false), _takerSig(o, id2));
+        book.revealChoice(id2, true, SALT);
+        vm.warp(block.timestamp + W2 + 1);
+        book.claimTakerDefault(id2);
+        uint256 abandonLoss = t1 - token.balanceOf(taker);
+
+        assertEq(abandonLoss, STAKE + TAKER_BOND, "abandoning charges stake + bond");
+        assertEq(abandonLoss - honestLoss, TAKER_BOND, "quitting costs exactly one bond more than losing honestly");
+    }
+
+    function test_abandon_chargeCannotBeWaitedOut() public {
+        uint256 m0 = token.balanceOf(maker);
+        bytes32 id = _take(true, true);
+        vm.warp(block.timestamp + 365 days); // a year of silence changes nothing
+        vm.prank(crank);
+        book.claimMakerDefault(id);
+        assertEq(token.balanceOf(maker), m0 - STAKE - MAKER_BOND, "the charge lands no matter how late the crank");
+    }
+
+    function test_abandon_beforeTake_isFree() public {
+        // The boundary of the rule: an offer nobody took is NOT participation — walking away from
+        // an untaken signed offer moves no funds at all (that's the whole point of variant B).
+        uint256 m0 = token.balanceOf(maker);
+        _signedOffer(true) // signed, never taken, simply expires
+        ;
+        vm.warp(block.timestamp + 2 days);
+        assertEq(token.balanceOf(maker), m0, "an untaken offer costs nothing to abandon");
+    }
+
     // ── EIP-7598 / ERC-1271: a smart-wallet maker ───────────────────────────────────────────────
 
     function test_erc1271Maker_bytesSignaturePath() public {
