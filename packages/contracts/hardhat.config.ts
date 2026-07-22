@@ -281,6 +281,17 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      'contracts/games/FlipBookX.sol': {
+        version: '0.8.25',
+        settings: {
+          viaIR: true,
+          evmVersion: 'shanghai',
+          optimizer: {
+            enabled: true,
+            runs: 1_000,
+          },
+        },
+      },
       // EAS solve resolvers — deploy to 943/369 like the games, so pin Shanghai (no MCOPY/TSTORE).
       'contracts/eas/SudokuSolveResolver.sol': {
         version: '0.8.25',

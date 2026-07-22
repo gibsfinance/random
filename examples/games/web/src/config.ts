@@ -55,6 +55,14 @@ export type GameDeployment = {
   flipBook?: viem.Hex
   /** Scan FlipBook offer events from here (its deploy block) to keep scans cheap. */
   flipBookDeployBlock?: string
+  /** FlipBookX — VARIANT B of the P2P coin flip: fully off-chain signed offers (EIP-3009/7598
+   *  receiveWithAuthorization over the x402PLS wrapper), hidden guesses both sides, two-phase
+   *  reveal. Offers cost nothing to post; funds move only on take. */
+  flipBookX?: viem.Hex
+  /** Scan FlipBookX events from here (its deploy block). */
+  flipBookXDeployBlock?: string
+  /** The x402PLS wrapper (EIP-3009+7598 wrapped native PLS; valve's canonical deployment). */
+  x402Pls?: viem.Hex
   /** The Provex-controlled EAS instance (EAS has no canonical PulseChain deployment; @provex/eas). */
   eas?: viem.Hex
   /** Proof-gated EAS resolver for sudoku_solve attestations (contracts/eas/SudokuSolveResolver.sol). */
@@ -126,6 +134,10 @@ export const deployments: GameDeployment[] = [
     // P2P guessing-game coinflip offer book (deployed + all 4 paths exercised on-chain 2026-07-20).
     flipBook: '0xb009bd8b849dd33d9c5081ec6e53f29a947f6832',
     flipBookDeployBlock: '24921235',
+    // Variant-B flip book over x402PLS (deployed + live-exercised 2026-07-21).
+    flipBookX: '0x9e232e84E80FCaC3c78dE0820dABccf660511275',
+    flipBookXDeployBlock: '24932217',
+    x402Pls: '0xeb274050cb029288B8A4F232Da8d23F393d54A1E',
     // EAS leaderboard layer (deployed + schemas registered 2026-07-20; SolveResolvers.t.sol).
     eas: '0x9e84Aa4BD0C1931A34B14C1EC918A53C33e2B0F8',
     sudokuSolveResolver: '0x0e58f22a9fd1c7260d0add6eea809f49bf6fc75c',
@@ -177,6 +189,10 @@ export const deployments: GameDeployment[] = [
     // P2P guessing-game coinflip offer book (deployed + exercised on-chain 2026-07-20; Sourcify exact_match).
     flipBook: '0x603e32ddaf5f4b6ada77e04bb7c44c4603f59eee',
     flipBookDeployBlock: '27080922',
+    // Variant-B flip book over x402PLS (deployed 2026-07-21; Sourcify exact_match).
+    flipBookX: '0x28EfA8fA6c956C0b49f6Cdc6273b1eBe76382CD8',
+    flipBookXDeployBlock: '27091482',
+    x402Pls: '0xeb274050cb029288B8A4F232Da8d23F393d54A1E',
     // EAS leaderboard layer (deployed + schemas registered 2026-07-20; SolveResolvers.t.sol).
     eas: '0x9e84Aa4BD0C1931A34B14C1EC918A53C33e2B0F8',
     sudokuSolveResolver: '0x9e232e84e80fcac3c78de0820dabccf660511275',
