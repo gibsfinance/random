@@ -35,6 +35,7 @@ import { HiLoWarScreen } from './components/HiLoWarScreen'
 import { SudokuScreen } from './components/SudokuScreen'
 import { WordleScreen } from './components/WordleScreen'
 import { LiveFeed } from './components/LiveFeed'
+import { StandingsScreen } from './components/StandingsScreen'
 import { Menu } from './components/Menu'
 
 const short = (a?: viem.Hex) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '')
@@ -76,6 +77,7 @@ const GAMES = [
   { id: 'hilo', label: '⚔️ Hi-Lo War' },
   { id: 'sudoku', label: '🧩 ZK Sudoku' },
   { id: 'wordle', label: '🟩 ZK Wordle' },
+  { id: 'standings', label: '🏆 Standings' },
   { id: 'live', label: '🟢 Live' },
 ] as const
 type Tab = (typeof GAMES)[number]['id']
@@ -88,7 +90,7 @@ const VALIDATOR_GAMES = new Set<Tab>(['raffle'])
 const P2P_GAMES = new Set<Tab>(['coinflip'])
 const ZK_GAMES = new Set<Tab>(['sudoku', 'wordle'])
 const trustModelFor = (tab: Tab): TrustModel | null =>
-  tab === 'live'
+  tab === 'live' || tab === 'standings'
     ? null
     : VALIDATOR_GAMES.has(tab)
       ? 'validator'
@@ -496,6 +498,7 @@ export const App = () => {
           myAddress={wallet.address}
         />
       )}
+      {tab === 'standings' && <StandingsScreen deployment={deployment} myAddress={wallet.address} />}
       {tab === 'live' && <LiveFeed deployment={deployment} />}
       <div className="colophon">
         <span>
