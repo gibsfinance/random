@@ -5,6 +5,7 @@ import type { GameDeployment } from '../config'
 import { useSudoku, checkNullifierSpent, type LeaderboardRow } from '../hooks/useSudoku'
 import { sudokuLogAbi } from '../lib/sudokuContract'
 import { proveSudokuSolve } from '../lib/sudokuProving'
+import { attestSudokuSolve, sudokuAttestedSet, sudokuEasReady } from '../lib/easAttest'
 import { sendGameTx } from '../tx'
 import { InfoDot } from './Meta'
 
@@ -109,7 +110,17 @@ const Board = ({
   </div>
 )
 
-const Leaderboard = ({ rows, source, myAddress }: { rows: LeaderboardRow[]; source: string; myAddress?: viem.Hex }) => (
+const Leaderboard = ({
+  rows,
+  source,
+  myAddress,
+  attested,
+}: {
+  rows: LeaderboardRow[]
+  source: string
+  myAddress?: viem.Hex
+  attested: Set<string>
+}) => (
   <div className="card">
     <h3>Leaderboard</h3>
     {rows.length === 0 ? (
@@ -133,6 +144,11 @@ const Leaderboard = ({ rows, source, myAddress }: { rows: LeaderboardRow[]; sour
                 <td className="mono">
                   {short(addr)}
                   {mine && <span className="tag ok" style={{ marginLeft: '0.4rem' }}>you</span>}
+                  {attested.has(row.nullifier.toString()) && (
+                    <span className="tag gold" style={{ marginLeft: '0.4rem' }} title="also recorded as an EAS attestation (proof-gated by the on-chain resolver)">
+                      EAS
+                    </span>
+                  )}
                 </td>
                 <td>{fmtElapsed(row.elapsed)}</td>
               </tr>
@@ -170,6 +186,26 @@ export const SudokuScreen = ({
   const [message, setMessage] = useState<string>()
   const [txHash, setTxHash] = useState<viem.Hex>()
 
+  // The last successfully generated proof bundle — kept so the solve can ALSO be recorded as an
+  // EAS attestation (proof-gated by the on-chain resolver; see lib/easAttest.ts). Held even when
+  // logSolve says "already logged": the two canonical records spend their nullifiers independently.
+  const [lastSolve, setLastSolve] = useState<{ proof: bigint[]; nullifier: bigint; player: bigint }>()
+  const [attestStatus, setAttestStatus] = useState<'idle' | 'attesting' | 'done' | 'error'>('idle')
+  const [attestMessage, setAttestMessage] = useState<string>()
+  const [attestUid, setAttestUid] = useState<viem.Hex>()
+
+  // Which leaderboard nullifiers already carry an EAS attestation (the resolver's spent book).
+  const [attestedRows, setAttestedRows] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    let cancelled = false
+    void sudokuAttestedSet(deployment, sudoku.leaderboard.map((r) => r.nullifier)).then((s) => {
+      if (!cancelled) setAttestedRows(s)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [deployment, sudoku.leaderboard])
+
   const conflicts = useMemo(() => (work.length === 81 ? conflictingCells(work) : new Set<number>()), [work])
   const complete = useMemo(
     () => grid !== undefined && work.length === 81 && isValidSolution(grid, work),
@@ -178,6 +214,31 @@ export const SudokuScreen = ({
 
   const wrongChain = walletClient?.chain !== undefined && walletClient.chain.id !== deployment.chainId
   const busy = status === 'proving' || status === 'checking' || status === 'submitting'
+
+  const attest = async () => {
+    if (!walletClient?.account || !grid || !myAddress || !lastSolve) return
+    setAttestMessage(undefined)
+    setAttestUid(undefined)
+    try {
+      setAttestStatus('attesting')
+      const { txHash: hash, uid } = await attestSudokuSolve(deployment, walletClient, {
+        puzzleId: PUZZLE_ID,
+        player: lastSolve.player,
+        nullifier: lastSolve.nullifier,
+        proof: lastSolve.proof,
+        puzzle: grid.map((c) => BigInt(c)),
+        recipient: myAddress,
+      })
+      setAttestUid(uid)
+      setAttestStatus('done')
+      setAttestMessage(`attested — uid ${uid ? `${uid.slice(0, 10)}…` : hash}`)
+      setAttestedRows((s) => new Set([...s, lastSolve.nullifier.toString()]))
+    } catch (e) {
+      setAttestStatus('error')
+      const raw = e instanceof Error ? e.message : String(e)
+      setAttestMessage(raw.includes('NullifierSpent') ? 'this solve is already attested' : raw)
+    }
+  }
 
   const setCell = (i: number, v: number) => {
     if (clues[i]) return
@@ -201,6 +262,7 @@ export const SudokuScreen = ({
         solution: work,
         player,
       })
+      setLastSolve({ proof, nullifier, player: provenPlayer })
 
       // A copied/duplicate proof would revert — surface the friendly "already solved" case up front.
       setStatus('checking')
@@ -298,6 +360,25 @@ export const SudokuScreen = ({
               </p>
             )}
             {message && <p className={status === 'done' ? 'ok' : 'bad'}>{message}</p>}
+            {lastSolve && sudokuEasReady(deployment) && (
+              <div className="row">
+                <button
+                  className="secondary"
+                  onClick={() => void attest()}
+                  disabled={attestStatus === 'attesting' || attestStatus === 'done' || wrongChain}
+                >
+                  {attestStatus === 'attesting' ? 'Attesting…' : attestStatus === 'done' ? 'Attested ✓' : 'Record to EAS'}
+                </button>
+                <InfoDot label="what an EAS attestation is">
+                  Optionally record the same proven solve as an <strong>EAS attestation</strong> — a standard,
+                  composable credential other apps can read. It is gated by an on-chain resolver that re-verifies
+                  your PLONK proof, so the attestation can only exist because the solve is real, and it can never
+                  be revoked. Same proof, second canonical record; the leaderboard entry above stands either way.
+                </InfoDot>
+                {attestMessage && <span className={attestStatus === 'done' ? 'ok' : 'bad'}>{attestMessage}</span>}
+                {attestUid && <span className="mono muted">{attestUid.slice(0, 14)}…</span>}
+              </div>
+            )}
             {txHash && (
               <p className="card-meta muted">
                 tx{' '}
@@ -314,7 +395,7 @@ export const SudokuScreen = ({
         )}
       </div>
 
-      <Leaderboard rows={sudoku.leaderboard} source={sudoku.source} myAddress={myAddress} />
+      <Leaderboard rows={sudoku.leaderboard} source={sudoku.source} myAddress={myAddress} attested={attestedRows} />
     </div>
   )
 }

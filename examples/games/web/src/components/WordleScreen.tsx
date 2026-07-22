@@ -7,6 +7,7 @@ import type { GameDeployment } from '../config'
 import { useWordle, saveSecret, loadSecret, type WordleRole, type GuessRow, type WordleSecret } from '../hooks/useWordle'
 import { wordleCategory } from '../hooks/useWordleBoard'
 import { wordleLogAbi } from '../lib/wordleContract'
+import { attestWordleSolve, wordleEasReady } from '../lib/easAttest'
 import type { SolveProof } from '../lib/wordleProving'
 import { sendGameTx } from '../tx'
 import { InfoDot } from './Meta'
@@ -271,6 +272,7 @@ export const WordleScreen = ({
             setGuessInput={setGuessInput}
             wrongChain={wrongChain}
             walletConnected={!!walletClient}
+            walletClient={walletClient}
             game={game}
           />
         )}
@@ -445,6 +447,7 @@ const GuesserPanel = ({
   setGuessInput,
   wrongChain,
   walletConnected,
+  walletClient,
   game,
 }: {
   deployment: GameDeployment
@@ -457,8 +460,13 @@ const GuesserPanel = ({
   setGuessInput: (s: string) => void
   wrongChain: boolean
   walletConnected: boolean
+  walletClient?: viem.WalletClient
   game: ReturnType<typeof useWordle>
 }) => {
+  // EAS attest state (hooks before the early return below).
+  const [attestStatus, setAttestStatus] = useState<'idle' | 'attesting' | 'done' | 'error'>('idle')
+  const [attestMessage, setAttestMessage] = useState<string>()
+  const [attestUid, setAttestUid] = useState<viem.Hex>()
   if (!challengeId) {
     return (
       <div>
@@ -476,6 +484,32 @@ const GuesserPanel = ({
   }
   const canGuess = !!myAddress && !game.solved && game.rows.every((r) => r.status !== 'pending')
   const canAnchor = deployment.wordleLog && walletConnected && !wrongChain && !!game.reveal
+
+  // Record the proven solve as an EAS attestation (proof-gated by the on-chain resolver; the
+  // resolver requires recipient == attester, mirroring WordleLog's msg.sender binding).
+  const attest = async () => {
+    const proof = game.solve.proof
+    if (!walletClient?.account || !myAddress || !proof || !challengeId) return
+    setAttestMessage(undefined)
+    setAttestUid(undefined)
+    try {
+      setAttestStatus('attesting')
+      const { txHash, uid } = await attestWordleSolve(deployment, walletClient, {
+        challengeId: BigInt(challengeId),
+        guessesUsed: BigInt(proof.guessesUsed),
+        guessesCommit: proof.guessesCommit,
+        proof: proof.calldata,
+        recipient: myAddress,
+      })
+      setAttestUid(uid)
+      setAttestStatus('done')
+      setAttestMessage(`attested — uid ${uid ? `${uid.slice(0, 10)}…` : txHash}`)
+    } catch (e) {
+      setAttestStatus('error')
+      const raw = e instanceof Error ? e.message : String(e)
+      setAttestMessage(raw.includes('AlreadyAttested') ? 'this solve is already attested' : raw)
+    }
+  }
   return (
     <div>
       <p className="card-meta muted">
@@ -545,6 +579,25 @@ const GuesserPanel = ({
                 <span className="mono">{short(game.solve.txHash)}</span>
               )}
             </p>
+          )}
+          {game.solve.proof && wordleEasReady(deployment) && walletConnected && !wrongChain && (
+            <div className="row">
+              <button
+                className="secondary"
+                onClick={() => void attest()}
+                disabled={attestStatus === 'attesting' || attestStatus === 'done'}
+              >
+                {attestStatus === 'attesting' ? 'Attesting…' : attestStatus === 'done' ? 'Attested ✓' : 'Record to EAS'}
+              </button>
+              <InfoDot label="what an EAS attestation is">
+                Optionally record the same proven win as an <strong>EAS attestation</strong> — a standard,
+                composable credential other apps can read. An on-chain resolver re-verifies your solve proof
+                before the attestation can exist, and it can never be revoked. Your wallet is both attester and
+                recipient (same self-claim rule as the on-chain anchor).
+              </InfoDot>
+              {attestMessage && <span className={attestStatus === 'done' ? 'ok' : 'bad'}>{attestMessage}</span>}
+              {attestUid && <span className="mono muted">{attestUid.slice(0, 14)}…</span>}
+            </div>
           )}
         </div>
       )}
