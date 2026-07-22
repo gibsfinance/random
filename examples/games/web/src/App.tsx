@@ -5,6 +5,7 @@ import { useWallet } from './hooks/useWallet'
 import { useChainData } from './hooks/useChainData'
 import { TrustBanner, isTrustAcknowledgedFor, TRUST_ICON, type TrustModel } from './components/TrustBanner'
 import { FlipBookScreen } from './components/FlipBookScreen'
+import { FlipBookXScreen } from './components/FlipBookXScreen'
 import { RaffleScreen } from './components/RaffleScreen'
 import { DiceScreen } from './components/DiceScreen'
 import { DiceX2Screen } from './components/DiceX2Screen'
@@ -48,6 +49,7 @@ const chainIcon = (chainId: number): string | undefined =>
 /** The venue's table list — too many for a tab strip now, so the picker is a select-style Menu. */
 const GAMES = [
   { id: 'coinflip', label: '🪙 Coin Flip' },
+  { id: 'flipx', label: '✍️ Signed Flips' },
   { id: 'raffle', label: '🎟 The Numbers' },
   { id: 'dice', label: '🎲 Dice' },
   { id: 'dicex2', label: '🎲 Dice X2' },
@@ -87,7 +89,7 @@ type Tab = (typeof GAMES)[number]['id']
 // the tables are commit-before-bet + co-signed recompute; the ZK games trust only the proof.
 // 'live' is a feed, not a game, so it shows no trust strip.
 const VALIDATOR_GAMES = new Set<Tab>(['raffle'])
-const P2P_GAMES = new Set<Tab>(['coinflip'])
+const P2P_GAMES = new Set<Tab>(['coinflip', 'flipx'])
 const ZK_GAMES = new Set<Tab>(['sudoku', 'wordle'])
 const trustModelFor = (tab: Tab): TrustModel | null =>
   tab === 'live' || tab === 'standings'
@@ -259,6 +261,14 @@ export const App = () => {
       )}
       {tab === 'coinflip' && (
         <FlipBookScreen
+          deployment={deployment}
+          walletClient={wallet.walletClient}
+          trustAcknowledged={trustAcknowledged}
+          myAddress={wallet.address}
+        />
+      )}
+      {tab === 'flipx' && (
+        <FlipBookXScreen
           deployment={deployment}
           walletClient={wallet.walletClient}
           trustAcknowledged={trustAcknowledged}
