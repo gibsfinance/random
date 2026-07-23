@@ -25,6 +25,9 @@
  *      bots PAUSE all spending on that chain — no top-ups, entries, commits, arms or
  *      finalises (reveals still go out; they recover escrowed stakes). Play resumes by
  *      itself once the vault is refilled.
+ *      GAS_CUSHION / TOP_UP_BELOW / TOP_UP_TO (coins, defaults 1/50/200 — 943-sized): the
+ *      play-eligibility cushion and the treasury top-up band. MUST be chain-sized: see the
+ *      note at the constants below (369 needs a ~3.5k-PLS cushion at mainnet gas prices).
  *      SELF_PLAY_INTERVAL_MS (default 0 = off): minimum gap between SELF-INITIATED spends
  *      (fresh queue entries, opening rounds, filling bot-only rounds). Pairing a human
  *      entry or filling a round a human sits in stays immediate — sparing cadence never
@@ -54,9 +57,14 @@ const ENTER_PROBABILITY = env.ENTER_PROBABILITY ? Number(env.ENTER_PROBABILITY) 
 const MAX_STAKE = viem.parseEther(env.MAX_STAKE || '25') // biggest entry/ticket a bot takes on
 const VAULT_FLOOR = viem.parseEther(env.VAULT_FLOOR || '100')
 const SELF_PLAY_INTERVAL_MS = env.SELF_PLAY_INTERVAL_MS ? Number(env.SELF_PLAY_INTERVAL_MS) : 0
-const GAS_CUSHION = viem.parseEther('1') // keep enough aside to always afford the gas
-const TOP_UP_BELOW = viem.parseEther('50')
-const TOP_UP_TO = viem.parseEther('200')
+// Float sizing is CHAIN-SIZED via env: the defaults fit 943 (wei-level gas), but on 369 the
+// pre-flight cost check compares balance against the EXPLICIT gas cap × maxFee — ~3.5k PLS for a
+// 4M-gas enter at ~4e5-gwei mainnet prices — so testnet-sized floats wedge every play before it
+// is ever sent (and a wedged bot above TOP_UP_BELOW never self-heals). Size GAS_CUSHION to one
+// worst-case envelope and TOP_UP_BELOW above GAS_CUSHION + MAX_STAKE.
+const GAS_CUSHION = viem.parseEther(env.GAS_CUSHION || '1') // keep enough aside to always afford the gas
+const TOP_UP_BELOW = viem.parseEther(env.TOP_UP_BELOW || '50')
+const TOP_UP_TO = viem.parseEther(env.TOP_UP_TO || '200')
 const COMMIT_GAS = 1_000_000n
 const ENTER_GAS = 4_000_000n
 const REVEAL_GAS = 500_000n
