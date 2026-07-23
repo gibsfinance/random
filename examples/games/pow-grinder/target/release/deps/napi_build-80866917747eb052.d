@@ -1,0 +1,10 @@
+/Users/michaelmclaughlin/Documents/gibs-finance/random/examples/games/pow-grinder/target/release/deps/napi_build-80866917747eb052.d: /Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/lib.rs /Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/android.rs /Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/wasi.rs /Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/windows.rs
+
+/Users/michaelmclaughlin/Documents/gibs-finance/random/examples/games/pow-grinder/target/release/deps/libnapi_build-80866917747eb052.rlib: /Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/lib.rs /Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/android.rs /Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/wasi.rs /Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/windows.rs
+
+/Users/michaelmclaughlin/Documents/gibs-finance/random/examples/games/pow-grinder/target/release/deps/libnapi_build-80866917747eb052.rmeta: /Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/lib.rs /Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/android.rs /Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/wasi.rs /Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/windows.rs
+
+/Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/lib.rs:
+/Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/android.rs:
+/Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/wasi.rs:
+/Users/michaelmclaughlin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/napi-build-2.3.2/src/windows.rs:

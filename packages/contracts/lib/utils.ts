@@ -212,11 +212,6 @@ export const contractName = {
   Constants: 'contracts/Constants.sol:Errors',
   MulticallerWithSender: 'multicaller/src/MulticallerWithSender.sol:MulticallerWithSender',
   MulticallerWithSigner: 'multicaller/src/MulticallerWithSigner.sol:MulticallerWithSigner',
-  CoinFlip: 'contracts/CoinFlip.sol:CoinFlip',
-  GameBase: 'contracts/GameBase.sol:GameBase',
-  Raffle: 'contracts/Raffle.sol:Raffle',
-  GameBaseHarness: 'contracts/test/GameBaseHarness.sol:GameBaseHarness',
-  RejectableReceiver: 'contracts/test/RejectableReceiver.sol:RejectableReceiver',
 } as const
 
 export type Names = typeof contractName
