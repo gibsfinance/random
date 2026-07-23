@@ -190,6 +190,20 @@ const main = async () => {
   }
   let vaultPaused = false
 
+  /** One crank action; a revert must not abort the tick — the other offers still need cranking. */
+  const attempt = async (label: string, fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+    } catch (e) {
+      console.error(`${label}: ${(e as Error).message?.split('\n')[0]}`)
+    }
+  }
+  /**
+   * Deadlines are BLOCK timestamps — gate on chain time, never the box clock. The box running a
+   * few seconds ahead made edge claims revert RevealWindowOpen (and edge reveals RevealWindowOver).
+   */
+  const chainNow = async () => (await publicClient.getBlock({ blockTag: 'latest' })).timestamp
+
   /** The maker's deterministic secret for an offer id — recomputable forever from seeds0. */
   const planFor = (offerId: bigint) => {
     const salt = viem.keccak256(viem.concatHex([flipKey, viem.toHex(offerId, { size: 32 })]))
@@ -290,11 +304,10 @@ const main = async () => {
   }
 
   /** Live offers currently on the board (parsed, de-duped, still takeable, auth unburned). */
-  const xReadBoard = async (): Promise<{ offer: XOffer; id: viem.Hex; makerSig: viem.Hex }[]> => {
+  const xReadBoard = async (now: bigint): Promise<{ offer: XOffer; id: viem.Hex; makerSig: viem.Hex }[]> => {
     if (!wsBoard) return []
     // SDK Content is Record<categoryHash, RPCMessage[]> with each message's payload in `data`.
     const content = (await wsBoard.content({ category: FLIPX_CATEGORY })) as unknown as Record<string, Array<{ data: viem.Hex }>>
-    const now = BigInt(Math.floor(Date.now() / 1000))
     const seen = new Map<string, { offer: XOffer; id: viem.Hex; makerSig: viem.Hex }>()
     for (const messages of Object.values(content ?? {})) {
       for (const { data: raw } of messages ?? []) {
@@ -370,7 +383,8 @@ const main = async () => {
     domainSeparator ??= (await publicClient.readContract({
       address: X402PLS, abi: x402Abi, functionName: 'DOMAIN_SEPARATOR',
     })) as viem.Hex
-    const nowS = Math.floor(Date.now() / 1000)
+    const nowTs = await chainNow()
+    const nowS = Number(nowTs)
 
     // chain state first: reveals + claims are deadline-critical
     const takenLogs = await chunkedEvents(publicClient, { address: FLIPBOOKX, abi: flipxAbi as viem.Abi, eventName: 'Taken', fromBlock: FLIPBOOKX_FROM })
@@ -402,28 +416,36 @@ const main = async () => {
           const plan = xRecover(maker.account.address, makerKey, flip[2], takenAtTs)
           if (!plan) { console.error(`x: no plan recovered for ${a.offerId.slice(0, 10)}…`); continue }
           if (plan.forfeit) continue
-          await sendAs(maker.publicClient, maker.wallet, { address: FLIPBOOKX, abi: flipxAbi as viem.Abi, functionName: 'revealChoice', args: [a.offerId, plan.bit, plan.salt] })
-          console.log(`x: revealed choice on ${a.offerId.slice(0, 10)}…`)
+          await attempt(`x: revealChoice ${a.offerId.slice(0, 10)}…`, async () => {
+            await sendAs(maker.publicClient, maker.wallet, { address: FLIPBOOKX, abi: flipxAbi as viem.Abi, functionName: 'revealChoice', args: [a.offerId, plan.bit, plan.salt] })
+            console.log(`x: revealed choice on ${a.offerId.slice(0, 10)}…`)
+          })
         } else if (nowS > Number(a.choiceRevealBy)) {
-          await sendAs(taker.publicClient, taker.wallet, { address: FLIPBOOKX, abi: flipxAbi as viem.Abi, functionName: 'claimMakerDefault', args: [a.offerId] })
-          console.log(`x: claimed maker default on ${a.offerId.slice(0, 10)}…`)
+          await attempt(`x: claimMakerDefault ${a.offerId.slice(0, 10)}…`, async () => {
+            await sendAs(taker.publicClient, taker.wallet, { address: FLIPBOOKX, abi: flipxAbi as viem.Abi, functionName: 'claimMakerDefault', args: [a.offerId] })
+            console.log(`x: claimed maker default on ${a.offerId.slice(0, 10)}…`)
+          })
         }
       } else {
         if (a.taker.toLowerCase() === taker.account.address.toLowerCase() && nowS <= Number(rev.guessRevealBy)) {
           const plan = xRecover(taker.account.address, takerKey, a.guessCommit, takenAtTs)
           if (!plan) { console.error(`x: no guess plan for ${a.offerId.slice(0, 10)}…`); continue }
-          await sendAs(taker.publicClient, taker.wallet, { address: FLIPBOOKX, abi: flipxAbi as viem.Abi, functionName: 'revealGuess', args: [a.offerId, plan.bit, plan.salt] })
-          console.log(`x: revealed guess on ${a.offerId.slice(0, 10)}…`)
+          await attempt(`x: revealGuess ${a.offerId.slice(0, 10)}…`, async () => {
+            await sendAs(taker.publicClient, taker.wallet, { address: FLIPBOOKX, abi: flipxAbi as viem.Abi, functionName: 'revealGuess', args: [a.offerId, plan.bit, plan.salt] })
+            console.log(`x: revealed guess on ${a.offerId.slice(0, 10)}…`)
+          })
         } else if (nowS > Number(rev.guessRevealBy)) {
-          await sendAs(maker.publicClient, maker.wallet, { address: FLIPBOOKX, abi: flipxAbi as viem.Abi, functionName: 'claimTakerDefault', args: [a.offerId] })
-          console.log(`x: claimed taker default on ${a.offerId.slice(0, 10)}…`)
+          await attempt(`x: claimTakerDefault ${a.offerId.slice(0, 10)}…`, async () => {
+            await sendAs(maker.publicClient, maker.wallet, { address: FLIPBOOKX, abi: flipxAbi as viem.Abi, functionName: 'claimTakerDefault', args: [a.offerId] })
+            console.log(`x: claimed taker default on ${a.offerId.slice(0, 10)}…`)
+          })
         }
       }
     }
     if (vaultPaused) return
 
     // taker: execute a live offer (humans' immediately, our own on the sparing cadence)
-    const board = await xReadBoard()
+    const board = await xReadBoard(nowTs)
     const takeable = board.filter((o) => o.offer.maker.toLowerCase() !== taker.account.address.toLowerCase() && o.offer.stake <= MAX_STAKE)
     for (const o of takeable) {
       const own = o.offer.maker.toLowerCase() === maker.account.address.toLowerCase()
@@ -477,7 +499,7 @@ const main = async () => {
     vaultPaused = nowPaused
     await topUp()
 
-    const now = BigInt(Math.floor(Date.now() / 1000))
+    const now = await chainNow()
     const offers = await book()
     const makerAddr = maker.account.address.toLowerCase()
     const takerAddr = taker.account.address.toLowerCase()
@@ -485,13 +507,17 @@ const main = async () => {
     // claim anything whose reveal window lapsed (permissionless crank; pays the offer's taker)
     for (const o of offers) {
       if (o.status !== 'taken' || now <= (o.revealBy ?? 0n)) continue
-      await sendAs(taker.publicClient, taker.wallet, {
-        address: FLIPBOOK, abi: flipBookAbi, functionName: 'claim', args: [o.offerId],
+      await attempt(`claim #${o.offerId}`, async () => {
+        await sendAs(taker.publicClient, taker.wallet, {
+          address: FLIPBOOK, abi: flipBookAbi, functionName: 'claim', args: [o.offerId],
+        })
+        console.log(`claimed forfeit on #${o.offerId} (maker sat out the window)`)
       })
-      console.log(`claimed forfeit on #${o.offerId} (maker sat out the window)`)
     }
 
-    // reveal own taken offers still inside the window — minus the deliberate forfeit slice
+    // reveal own taken offers still inside the window — minus the deliberate forfeit slice.
+    // A reveal that races the closing window and reverts is still the right call: the revert
+    // costs nothing (estimateGas throws locally), while not trying guarantees the bond is lost.
     for (const o of offers) {
       if (o.status !== 'taken' || o.maker.toLowerCase() !== makerAddr || now > (o.revealBy ?? 0n)) continue
       const plan = recoverPlan(o)
@@ -500,10 +526,12 @@ const main = async () => {
         continue
       }
       if (plan.forfeit) continue // the no-show slice: taker will claim after the window
-      await sendAs(maker.publicClient, maker.wallet, {
-        address: FLIPBOOK, abi: flipBookAbi, functionName: 'reveal', args: [o.offerId, plan.choice, plan.salt],
+      await attempt(`reveal #${o.offerId}`, async () => {
+        await sendAs(maker.publicClient, maker.wallet, {
+          address: FLIPBOOK, abi: flipBookAbi, functionName: 'reveal', args: [o.offerId, plan.choice, plan.salt],
+        })
+        console.log(`revealed #${o.offerId} (${plan.choice ? 'heads' : 'tails'})`)
       })
-      console.log(`revealed #${o.offerId} (${plan.choice ? 'heads' : 'tails'})`)
     }
 
     if (vaultPaused) return
